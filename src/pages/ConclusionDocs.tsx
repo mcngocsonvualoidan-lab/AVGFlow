@@ -619,6 +619,11 @@ const ConclusionDocs = () => {
                             <span className="text-4xl font-mono font-bold text-indigo-400">{timeLeft.minutes.toString().padStart(2, '0')}</span>
                             <span className="text-xs text-slate-500 block">Phút</span>
                         </div>
+                        <div className="text-2xl font-bold pb-2">:</div>
+                        <div>
+                            <span className="text-4xl font-mono font-bold text-indigo-400">{timeLeft.seconds.toString().padStart(2, '0')}</span>
+                            <span className="text-xs text-slate-500 block">Giây</span>
+                        </div>
                     </div>
                 </div>
 
