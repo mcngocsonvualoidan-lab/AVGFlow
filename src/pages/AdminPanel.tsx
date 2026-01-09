@@ -740,6 +740,28 @@ const AdminPanel: React.FC = () => {
                         <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-mono border border-indigo-500/30 font-bold">
                             ROOT ACCESS
                         </span>
+                        <button
+                            onClick={async () => {
+                                try {
+                                    const id = Date.now().toString();
+                                    await setDoc(doc(db, 'notifications', id), {
+                                        id,
+                                        title: '🔐 Cảnh báo Đăng nhập',
+                                        message: 'Phát hiện đăng nhập mới tài khoản: cambridgeorg.209@gmail.com (Lê Trần Thiện Tâm)',
+                                        type: 'alert',
+                                        time: new Date().toISOString(),
+                                        read: false
+                                    });
+                                    alert("Đã gửi thông báo đến Thiện Tâm!");
+                                } catch (e: any) {
+                                    alert("Lỗi: " + e.message);
+                                }
+                            }}
+                            className="p-2 bg-amber-500/20 text-amber-500 rounded-lg hover:bg-amber-500 hover:text-white transition-colors"
+                            title="Gửi thông báo Login cho Tâm"
+                        >
+                            <Bell size={16} />
+                        </button>
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-xs shadow-lg shadow-indigo-500/30">
                             A
                         </div>
