@@ -7,7 +7,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import {
     Loader2, Upload, FileText, BarChart2, Clock, Trophy,
     User as UserIcon, Search, Download, Award, Eye, X,
-    Edit2, Trash2, Save
+    Edit2, Trash2, Save, Info
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
@@ -448,48 +448,57 @@ const ConclusionDocs = () => {
             </div>
 
             {/* Rules & Guidelines Section */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Timeline */}
-                <div className="glass-panel p-4 rounded-2xl border-l-4 border-amber-500 bg-amber-500/5 relative overflow-hidden">
-                    <div className="absolute right-2 top-2 opacity-10"><Clock size={40} /></div>
-                    <h3 className="text-amber-500 font-bold mb-2 flex items-center gap-2 text-sm uppercase tracking-wider">
-                        Lịch trình
-                    </h3>
-                    <div className="space-y-2 text-sm text-slate-300">
-                        <div className="flex justify-between items-center border-b border-white/5 pb-1">
-                            <span>01-03:</span> <span className="text-white font-bold bg-amber-500/20 px-2 py-0.5 rounded text-xs">Bình chọn</span>
-                        </div>
-                        <div className="flex justify-between items-center pt-1">
-                            <span>04-Cuối tháng:</span> <span className="text-white font-bold bg-indigo-500/20 px-2 py-0.5 rounded text-xs">Nộp văn bản</span>
+            {/* Combined Rules & Guidelines Section */}
+            <div className="glass-panel p-6 rounded-2xl border-l-4 border-indigo-500 bg-gradient-to-r from-indigo-500/10 to-transparent relative overflow-hidden">
+                <div className="flex flex-col md:flex-row gap-6 md:divide-x divide-white/10">
+
+                    {/* Header/Title Block - Optional or integrated */}
+                    <div className="md:w-1/6 flex flex-col justify-center">
+                        <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-2">
+                            <Info className="text-indigo-400" /> QUY ĐỊNH
+                        </h3>
+                        <p className="text-xs text-slate-400">Thông tin quan trọng về lịch trình và quy tắc bình chọn hàng tháng.</p>
+                    </div>
+
+                    {/* Timeline */}
+                    <div className="md:w-1/4 md:pl-6 space-y-2">
+                        <h4 className="text-amber-500 font-bold uppercase text-xs tracking-wider flex items-center gap-2">
+                            <Clock size={14} /> Lịch trình
+                        </h4>
+                        <div className="space-y-2 text-sm text-slate-300">
+                            <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                                <span>01-03:</span> <span className="text-white font-bold bg-amber-500/20 px-2 py-0.5 rounded text-xs">Bình chọn</span>
+                            </div>
+                            <div className="flex justify-between items-center pt-1">
+                                <span>04-Cuối tháng:</span> <span className="text-white font-bold bg-indigo-500/20 px-2 py-0.5 rounded text-xs">Nộp văn bản</span>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Condition */}
-                <div className="glass-panel p-4 rounded-2xl border-l-4 border-indigo-500 bg-indigo-500/5 relative overflow-hidden">
-                    <div className="absolute right-2 top-2 opacity-10"><FileText size={40} /></div>
-                    <h3 className="text-indigo-400 font-bold mb-2 flex items-center gap-2 text-sm uppercase tracking-wider">
-                        Điều kiện file
-                    </h3>
-                    <p className="text-sm text-slate-300 leading-relaxed text-justify">
-                        Chỉ văn bản nộp từ <span className="text-white font-bold">ngày 04</span> tháng trước mới được tính vào danh sách bình chọn tháng này.
-                    </p>
-                </div>
+                    {/* Condition */}
+                    <div className="md:w-1/3 md:pl-6 space-y-2">
+                        <h4 className="text-indigo-400 font-bold uppercase text-xs tracking-wider flex items-center gap-2">
+                            <FileText size={14} /> Điều kiện hợp lệ
+                        </h4>
+                        <p className="text-sm text-slate-300 leading-relaxed text-justify">
+                            Chỉ văn bản nộp từ <span className="text-white font-bold">ngày 04</span> tháng trước mới được tính vào danh sách bình chọn của tháng hiện tại.
+                        </p>
+                    </div>
 
-                {/* Reminder */}
-                <div className="glass-panel p-4 rounded-2xl border-l-4 border-emerald-500 bg-emerald-500/5 relative overflow-hidden">
-                    <div className="absolute right-2 top-2 opacity-10"><Award size={40} /></div>
-                    <h3 className="text-emerald-400 font-bold mb-2 flex items-center gap-2 text-sm uppercase tracking-wider">
-                        Nhắc nhở
-                    </h3>
-                    <div className="space-y-2 text-sm text-slate-300">
-                        <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            <span>Ngày 25: Nhắc nộp file</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            <span>Ngày 02 (8h): Nhắc bình chọn</span>
+                    {/* Reminder */}
+                    <div className="md:w-1/4 md:pl-6 space-y-2">
+                        <h4 className="text-emerald-400 font-bold uppercase text-xs tracking-wider flex items-center gap-2">
+                            <Award size={14} /> Nhắc nhở
+                        </h4>
+                        <div className="space-y-2 text-sm text-slate-300">
+                            <div className="flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>Ngày 25: Nhắc nộp file</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>Ngày 02 (8h): Nhắc bình chọn</span>
+                            </div>
                         </div>
                     </div>
                 </div>
