@@ -7,6 +7,7 @@ import { Activity, CheckCircle2, AlertOctagon, Sparkles, TrendingUp, AlertTriang
 import { motion, AnimatePresence } from 'framer-motion';
 import { useData } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
+import ActiveUsersWidget from '../components/ActiveUsersWidget';
 
 const COLORS = ['#10b981', '#3b82f6', '#ef4444'];
 
@@ -123,9 +124,15 @@ const Dashboard: React.FC = () => {
                 )}
             </AnimatePresence>
 
+
+
             {/* Key Metrics Layer */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Active Orders */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+
+                {/* 1. Team Presence */}
+                <ActiveUsersWidget />
+
+                {/* 2. Active Orders */}
                 <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group hover:border-blue-500/30 transition-colors">
                     <div className="flex justify-between items-start">
                         <div>
@@ -145,7 +152,7 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Completed */}
+                {/* 3. Completed */}
                 <div className="glass-panel p-6 rounded-2xl relative overflow-hidden hover:border-emerald-500/30 transition-colors">
                     <div className="flex justify-between items-start">
                         <div>
@@ -161,7 +168,7 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Error Rate */}
+                {/* 4. Error Rate */}
                 <div className="glass-panel p-6 rounded-2xl relative overflow-hidden hover:border-red-500/30 transition-colors">
                     <div className="flex justify-between items-start">
                         <div>

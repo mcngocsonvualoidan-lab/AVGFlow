@@ -2,11 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { db, storage } from '../lib/firebase';
-import { collection, addDoc, query, onSnapshot, orderBy, where, doc, deleteDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, addDoc, query, onSnapshot, orderBy, where, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
     Loader2, Upload, FileText, BarChart2, Clock, Trophy,
-    User as UserIcon, Search, Download, Award, Eye, X
+    User as UserIcon, Search, Download, Award, Eye, X,
+    Edit2, Trash2, Save, Info
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
@@ -58,14 +59,47 @@ const ConclusionDocs = () => {
     // Preview State
     const [previewDoc, setPreviewDoc] = useState<ConclusionDoc | null>(null);
 
-    // --- Time Logic for Countdown (End of Month) ---
+    // Edit State
+    const [editingDocId, setEditingDocId] = useState<string | null>(null);
+    const [editingName, setEditingName] = useState('');
+
+    // Rules Modal State
+    const [showRules, setShowRules] = useState(false);
+
+    // --- Phase Logic ---
+    const [currentPhase, setCurrentPhase] = useState<'voting' | 'upload'>('upload');
+    const [phaseLabel, setPhaseLabel] = useState('');
+
+    // --- Time Logic for Countdown ---
     const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
 
     useEffect(() => {
-        const calculateTimeLeft = () => {
+        const calculateTimeAndPhase = () => {
             const now = new Date();
-            const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-            const diff = endOfMonth.getTime() - now.getTime();
+            const day = now.getDate();
+
+            // Determine Phase
+            // Voting: Day 1 (00:00) to Day 3 (23:59:59)
+            // Upload: Day 4 (00:00) to End of Month
+            let phase: 'voting' | 'upload' = 'upload';
+            if (day >= 1 && day <= 3) {
+                phase = 'voting';
+            }
+
+            setCurrentPhase(phase);
+            setPhaseLabel(phase === 'voting' ? 'Thời gian Bình chọn' : 'Thời gian Nộp văn bản');
+
+            // Determine Target Date for Countdown
+            let targetDate: Date;
+            if (phase === 'voting') {
+                // End of Day 3 of current month
+                targetDate = new Date(now.getFullYear(), now.getMonth(), 3, 23, 59, 59);
+            } else {
+                // End of current month
+                targetDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+            }
+
+            const diff = targetDate.getTime() - now.getTime();
 
             if (diff > 0) {
                 setTimeLeft({
@@ -74,10 +108,52 @@ const ConclusionDocs = () => {
                     minutes: Math.floor((diff / 1000 / 60) % 60),
                     seconds: Math.floor((diff / 1000) % 60)
                 });
+            } else {
+                setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
             }
         };
-        const timer = setInterval(calculateTimeLeft, 1000);
-        calculateTimeLeft();
+
+        const timer = setInterval(calculateTimeAndPhase, 1000);
+        calculateTimeAndPhase(); // Initial call
+
+        // --- Reminders Check ---
+        const checkReminders = () => {
+            const now = new Date();
+            const d = now.getDate();
+            const h = now.getHours();
+            const currentMonthKey = `${now.getFullYear()}_${now.getMonth()}`;
+
+            // 1. Upload Reminder: Day 25
+            const uploadKey = `avg_reminder_upload_${currentMonthKey}`;
+            if (d === 25 && !localStorage.getItem(uploadKey)) {
+                addNotification({
+                    id: Date.now().toString(),
+                    title: '⏰ Nhắc nhở Nộp văn bản',
+                    message: 'Hôm nay là ngày 25, vui lòng hoàn thành upload văn bản tháng này trước deadline!',
+                    type: 'alert',
+                    time: 'Hệ thống',
+                    read: false
+                });
+                localStorage.setItem(uploadKey, 'true');
+            }
+
+            // 2. Vote Reminder: Day 2 @ 08:00
+            const voteKey = `avg_reminder_vote_${currentMonthKey}`;
+            if (d === 2 && h >= 8 && !localStorage.getItem(voteKey)) {
+                addNotification({
+                    id: Date.now().toString(),
+                    title: '🗳️ Nhắc nhở Bình chọn',
+                    message: 'Đã mở cổng bình chọn văn bản tháng trước. Hãy tham gia bình chọn ngay!',
+                    type: 'info',
+                    time: 'Hệ thống',
+                    read: false
+                });
+                localStorage.setItem(voteKey, 'true');
+            }
+        };
+        // Check reminders once on mount/interval
+        checkReminders();
+
         return () => clearInterval(timer);
     }, []);
 
@@ -154,6 +230,72 @@ const ConclusionDocs = () => {
     }, [filteredDocs]);
 
     // --- Handlers ---
+    const handleDeleteDoc = async (document: ConclusionDoc) => {
+        if (!currentUser) return;
+        const u = users.find(u => u.email === currentUser.email);
+        const isOwner = document.userId === u?.id;
+        const isAdmin = u?.isAdmin;
+
+        if (!isOwner && !isAdmin) {
+            alert("Bạn không có quyền xóa tài liệu này.");
+            return;
+        }
+
+        if (!confirm(`Bạn có chắc muốn xóa văn bản "${document.name}"?\nHành động này không thể hoàn tác.`)) return;
+
+        try {
+            // 1. Delete from Storage
+            const fileRef = ref(storage, document.url);
+            await deleteObject(fileRef).catch(err => console.warn("File storage delete warn:", err));
+
+            // 2. Delete from Firestore
+            await deleteDoc(doc(db, 'conclusion_docs', document.id));
+
+            addNotification({
+                id: Date.now().toString(),
+                title: 'Đã xóa văn bản',
+                message: `Đã xóa: ${document.name}`,
+                type: 'info',
+                time: 'Vừa xong',
+                read: false
+            });
+
+        } catch (error) {
+            console.error("Delete error:", error);
+            alert("Lỗi khi xóa tài liệu.");
+        }
+    };
+
+    const handleStartEdit = (document: ConclusionDoc) => {
+        setEditingDocId(document.id);
+        setEditingName(document.name);
+    };
+
+    const handleUpdateDoc = async () => {
+        if (!editingDocId || !editingName.trim()) return;
+
+        try {
+            await updateDoc(doc(db, 'conclusion_docs', editingDocId), {
+                name: editingName.trim()
+            });
+
+            addNotification({
+                id: Date.now().toString(),
+                title: 'Cập nhật thành công',
+                message: `Đã đổi tên thành: ${editingName}`,
+                type: 'success',
+                time: 'Vừa xong',
+                read: false
+            });
+
+            setEditingDocId(null);
+            setEditingName('');
+        } catch (error) {
+            console.error("Update error:", error);
+            alert("Lỗi khi cập nhật tên văn bản.");
+        }
+    };
+
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files?.[0] || !currentUser) return;
 
@@ -247,6 +389,10 @@ const ConclusionDocs = () => {
         });
     };
 
+    // Check global permissions for UI rendering
+    const currentUserId = users.find(u => u.email === currentUser?.email)?.id;
+    const isAdmin = users.find(u => u.email === currentUser?.email)?.isAdmin;
+
     if (loading) {
         return (
             <div className="h-full flex items-center justify-center">
@@ -262,21 +408,51 @@ const ConclusionDocs = () => {
                 <div>
                     <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
                         <FileText className="text-indigo-400" /> Văn bản kết luận
+                        <button
+                            onClick={() => setShowRules(true)}
+                            className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors ml-2"
+                            title="Xem quy định"
+                        >
+                            <Info size={18} />
+                        </button>
                     </h1>
                     <p className="text-slate-400 text-sm">Kho lưu trữ và bình chọn văn bản nhân sự</p>
                 </div>
 
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={() => setShowVoteModal(true)}
-                        className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-lg shadow-amber-500/20 font-bold flex items-center gap-2 transition-all"
+                        onClick={() => {
+                            if (currentPhase === 'upload') {
+                                alert("Cổng bình chọn chưa mở! Vui lòng quay lại vào ngày 01-03 đầu tháng.");
+                                return;
+                            }
+                            setShowVoteModal(true);
+                        }}
+                        className={clsx(
+                            "px-4 py-2 rounded-xl text-white font-bold flex items-center gap-2 transition-all shadow-lg",
+                            currentPhase === 'voting'
+                                ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-500/20"
+                                : "bg-slate-700/50 text-slate-500 cursor-not-allowed shadow-none"
+                        )}
+                        title={currentPhase === 'upload' ? 'Chỉ mở vào ngày 01-03 hàng tháng' : 'Đang mở bình chọn'}
                     >
                         <Award size={18} /> Bình chọn tháng
                     </button>
-                    <label className={clsx("px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-500/20 font-bold flex items-center gap-2 transition-all cursor-pointer", uploading && "opacity-50 cursor-not-allowed")}>
+                    <label className={clsx(
+                        "px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all cursor-pointer shadow-lg",
+                        (uploading || currentPhase === 'voting')
+                            ? "bg-slate-700/50 text-slate-500 cursor-not-allowed shadow-none"
+                            : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20"
+                    )}>
                         {uploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
                         <span>Upload Văn bản</span>
-                        <input type="file" onChange={handleFileUpload} accept=".doc,.docx,.pdf" disabled={uploading} className="hidden" />
+                        <input
+                            type="file"
+                            onChange={handleFileUpload}
+                            accept=".doc,.docx,.pdf"
+                            disabled={uploading || currentPhase === 'voting'}
+                            className="hidden"
+                        />
                     </label>
                 </div>
             </div>
@@ -288,7 +464,7 @@ const ConclusionDocs = () => {
                     <div className="absolute top-0 right-0 p-4 opacity-5">
                         <Clock size={100} />
                     </div>
-                    <h3 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-4">Công bố kết quả sau</h3>
+                    <h3 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-4">{phaseLabel.toUpperCase()} SAU</h3>
                     <div className="flex items-end gap-4 text-white">
                         <div>
                             <span className="text-4xl font-mono font-bold text-indigo-400">{timeLeft.days}</span>
@@ -405,43 +581,87 @@ const ConclusionDocs = () => {
                                     </div>
 
                                     <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
-                                        {userDocs.map(doc => (
-                                            <div
-                                                key={doc.id}
-                                                className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-indigo-600/20 border border-white/5 hover:border-indigo-500/30 transition-all group/doc"
-                                            >
-                                                <div className="flex items-center gap-3 overflow-hidden flex-1 cursor-pointer" onClick={() => setPreviewDoc(doc)}>
-                                                    <FileText size={20} className="text-blue-400 shrink-0" />
-                                                    <div className="truncate">
-                                                        <div className="text-sm text-slate-200 truncate pr-2 font-medium">{doc.name}</div>
-                                                        <div className="text-[10px] text-slate-500 flex items-center gap-2">
-                                                            <span>{(doc.size / 1024).toFixed(1)} KB</span>
-                                                            <span>•</span>
-                                                            <span>{new Date(doc.uploadedAt).toLocaleString('vi-VN')}</span>
-                                                        </div>
+                                        {userDocs.map(doc => {
+                                            const isOwner = currentUserId === doc.userId;
+                                            const canEdit = isOwner || isAdmin;
+
+                                            return (
+                                                <div
+                                                    key={doc.id}
+                                                    className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-indigo-600/20 border border-white/5 hover:border-indigo-500/30 transition-all group/doc relative"
+                                                >
+                                                    <div className="flex items-center gap-3 overflow-hidden flex-1 cursor-pointer">
+                                                        <FileText size={20} className="text-blue-400 shrink-0" onClick={() => setPreviewDoc(doc)} />
+
+                                                        {editingDocId === doc.id ? (
+                                                            <div className="flex-1 flex items-center gap-2">
+                                                                <input
+                                                                    value={editingName}
+                                                                    onChange={(e) => setEditingName(e.target.value)}
+                                                                    className="flex-1 bg-slate-800 border border-indigo-500 rounded px-2 py-1 text-xs text-white outline-none"
+                                                                    autoFocus
+                                                                    onKeyDown={(e) => e.key === 'Enter' && handleUpdateDoc()}
+                                                                />
+                                                                <button onClick={handleUpdateDoc} className="p-1 text-emerald-400 hover:bg-white/10 rounded">
+                                                                    <Save size={14} />
+                                                                </button>
+                                                                <button onClick={() => setEditingDocId(null)} className="p-1 text-red-400 hover:bg-white/10 rounded">
+                                                                    <X size={14} />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="overflow-hidden" onClick={() => setPreviewDoc(doc)}>
+                                                                <div className="text-sm text-slate-200 truncate pr-2 font-medium">{doc.name}</div>
+                                                                <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                                                                    <span>{(doc.size / 1024).toFixed(1)} KB</span>
+                                                                    <span>•</span>
+                                                                    <span>{new Date(doc.uploadedAt).toLocaleString('vi-VN')}</span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <div className={clsx("flex items-center gap-1 transition-opacity", editingDocId === doc.id ? "opacity-0 pointer-events-none" : "opacity-0 group-hover/doc:opacity-100")}>
+                                                        {canEdit && (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleStartEdit(doc)}
+                                                                    className="p-1.5 hover:bg-white/10 rounded-lg text-amber-400 hover:text-white"
+                                                                    title="Đổi tên"
+                                                                >
+                                                                    <Edit2 size={14} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteDoc(doc)}
+                                                                    className="p-1.5 hover:bg-white/10 rounded-lg text-red-400 hover:text-white"
+                                                                    title="Xóa"
+                                                                >
+                                                                    <Trash2 size={14} />
+                                                                </button>
+                                                                <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
+                                                            </>
+                                                        )}
+
+                                                        <button
+                                                            onClick={() => setPreviewDoc(doc)}
+                                                            className="p-1.5 hover:bg-white/10 rounded-lg text-indigo-400 hover:text-white"
+                                                            title="Xem trước"
+                                                        >
+                                                            <Eye size={16} />
+                                                        </button>
+                                                        <a
+                                                            href={doc.url}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"
+                                                            title="Tải xuống"
+                                                        >
+                                                            <Download size={16} />
+                                                        </a>
                                                     </div>
                                                 </div>
-
-                                                <div className="flex items-center gap-2 opacity-0 group-hover/doc:opacity-100 transition-opacity">
-                                                    <button
-                                                        onClick={() => setPreviewDoc(doc)}
-                                                        className="p-1.5 hover:bg-white/10 rounded-lg text-indigo-400 hover:text-white"
-                                                        title="Xem trước"
-                                                    >
-                                                        <Eye size={16} />
-                                                    </button>
-                                                    <a
-                                                        href={doc.url}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"
-                                                        title="Tải xuống"
-                                                    >
-                                                        <Download size={16} />
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             ))}
@@ -474,7 +694,9 @@ const ConclusionDocs = () => {
                                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                                     <Award className="text-amber-500" /> Bình chọn Văn bản hay nhất
                                 </h2>
-                                <p className="text-slate-400 text-sm mt-1">Vinh danh đóng góp của đồng nghiệp tháng {new Date().getMonth() + 1}</p>
+                                <p className="text-slate-400 text-sm mt-1">
+                                    Vinh danh đóng góp của đồng nghiệp tháng {new Date().getMonth() === 0 ? 12 : new Date().getMonth()}
+                                </p>
                             </div>
 
                             <div className="p-6 space-y-4">
@@ -511,13 +733,32 @@ const ConclusionDocs = () => {
                                             className="w-full p-3 bg-slate-900 border border-white/10 rounded-xl text-white outline-none focus:border-indigo-500"
                                         >
                                             <option value="">-- Chọn Văn bản --</option>
-                                            {(docsByUser[voteCandidateId] || []).map(d => (
-                                                <option key={d.id} value={d.id}>{d.name}</option>
-                                            ))}
+                                            {/* Logic to filter Valid Candidate Docs: Uploaded in Previous Month, Day >= 4 */}
+                                            {(() => {
+                                                const prevDate = new Date();
+                                                prevDate.setMonth(prevDate.getMonth() - 1);
+                                                // Handle January going back to December of prev year
+                                                const prevMonthISO = prevDate.toISOString().slice(0, 7); // YYYY-MM
+
+                                                const candidateDocs = (docsByUser[voteCandidateId] || []).filter(d => {
+                                                    const dDate = new Date(d.uploadedAt);
+                                                    const dMonthISO = d.uploadedAt.slice(0, 7);
+                                                    const dDay = dDate.getDate();
+                                                    // Must match previous month AND day >= 4
+                                                    return dMonthISO === prevMonthISO && dDay >= 4;
+                                                });
+
+                                                if (candidateDocs.length === 0) return <option disabled>Không có văn bản hợp lệ tháng trước</option>;
+
+                                                return candidateDocs.map(d => (
+                                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                                ));
+                                            })()}
                                         </select>
-                                        {(docsByUser[voteCandidateId] || []).length === 0 && (
-                                            <p className="text-xs text-red-400 italic">User này chưa có văn bản nào.</p>
-                                        )}
+                                        {/* Optional Helpers */}
+                                        <p className="text-[10px] text-slate-500 mt-1 italic">
+                                            *Chỉ hiển thị văn bản được upload từ ngày 04 đến hết tháng trước.
+                                        </p>
                                     </div>
                                 )}
 
@@ -544,6 +785,98 @@ const ConclusionDocs = () => {
                                     className="px-6 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-lg shadow-amber-500/20 font-bold text-sm transition-all"
                                 >
                                     Gửi bình chọn
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+
+            {/* RULES MODAL */}
+            <AnimatePresence>
+                {showRules && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-[#1e293b] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden"
+                        >
+                            <div className="p-6 border-b border-white/10 bg-gradient-to-r from-blue-900/20 to-indigo-900/20 flex justify-between items-center">
+                                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                    <Info className="text-blue-400" /> Quy định & Lịch trình
+                                </h2>
+                                <button onClick={() => setShowRules(false)} className="text-slate-400 hover:text-white">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <div className="p-6 space-y-6">
+                                {/* Timeline Visual */}
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-widest">1. Lịch trình hàng tháng</h3>
+                                    <div className="flex flex-col gap-4">
+                                        <div className="flex items-start gap-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                                            <div className="bg-amber-500/20 p-2 rounded-lg text-amber-400 font-bold text-xs shrink-0 w-12 text-center">
+                                                01 - 03
+                                            </div>
+                                            <div>
+                                                <div className="text-amber-400 font-bold mb-1">📅 Giai đoạn BÌNH CHỌN</div>
+                                                <p className="text-slate-300 text-xs text-justify">
+                                                    Toàn bộ nhân sự tham gia bình chọn cho các văn bản xuất sắc của <strong>tháng trước</strong>.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-start gap-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
+                                            <div className="bg-indigo-500/20 p-2 rounded-lg text-indigo-400 font-bold text-xs shrink-0 w-12 text-center">
+                                                04 - 31
+                                            </div>
+                                            <div>
+                                                <div className="text-indigo-400 font-bold mb-1">📅 Giai đoạn NỘP VĂN BẢN</div>
+                                                <p className="text-slate-300 text-xs text-justify">
+                                                    Cổng upload mở. Nhân sự nộp các văn bản kết luận của <strong>tháng hiện tại</strong>.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Rules */}
+                                <div className="space-y-2">
+                                    <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-widest">2. Điều kiện bình chọn</h3>
+                                    <div className="text-sm text-slate-300 space-y-2 text-justify">
+                                        <p>
+                                            ⚠️ Chỉ những văn bản được upload từ <strong>ngày 04 đến hết tháng</strong> mới được hệ thống ghi nhận vào danh sách bình chọn của tháng đó.
+                                        </p>
+                                        <p className="text-slate-400 italic text-xs">
+                                            Ví dụ: Để được bình chọn vào đầu tháng 5, văn bản phải được nộp từ ngày 04/04 đến 30/04.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Notification */}
+                                <div className="space-y-2">
+                                    <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-widest">3. Nhắc nhở tự động</h3>
+                                    <ul className="text-sm text-slate-300 space-y-1 ml-4 list-disc">
+                                        <li><strong>Ngày 25:</strong> Hệ thống nhắc nhở hoàn thành nộp văn bản.</li>
+                                        <li><strong>08:00 sáng ngày 02:</strong> Hệ thống nhắc nhở tham gia bình chọn.</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div className="p-4 border-t border-white/10 bg-black/20 text-center">
+                                <button
+                                    onClick={() => setShowRules(false)}
+                                    className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium text-sm transition-colors"
+                                >
+                                    Đã hiểu
                                 </button>
                             </div>
                         </motion.div>

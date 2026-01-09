@@ -112,7 +112,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, collapsed, s
             {/* Navigation */}
             <nav className="flex-1 py-4 flex flex-col overflow-y-auto custom-scrollbar">
                 {menuGroups.map((group, groupIndex) => (
-                    <div key={groupIndex} className={clsx("flex flex-col gap-1", groupIndex > 0 && "mt-3 pt-3 border-t border-white/5 mx-3")}>
+                    <div key={groupIndex} className={clsx("flex flex-col gap-1 mx-3", groupIndex > 0 && "mt-3 pt-3 border-t border-white/5")}>
                         {group.map((item) => (
                             <button
                                 key={item.id}
