@@ -505,62 +505,93 @@ const ConclusionDocs = () => {
 
                 {/* Visual Timeline Diagram */}
                 <div className="mt-6 pt-6 border-t border-white/10">
-                    <div className="relative h-24 select-none">
-                        {/* Base Line */}
-                        <div className="absolute top-1/2 left-0 right-0 h-1 bg-slate-700/50 rounded-full -translate-y-1/2"></div>
+                    <div className="relative h-32 select-none w-full px-4">
+                        {/* Calculate Today's Position */}
+                        {(() => {
+                            const now = new Date();
+                            const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                            const currentDay = now.getDate();
+                            const percent = (currentDay / totalDays) * 100;
 
-                        {/* Day Markers */}
-                        <div className="absolute top-1/2 left-0 w-[10%] h-1 bg-amber-500 rounded-l-full -translate-y-1/2 shadow-[0_0_10px_rgba(245,158,11,0.5)]"></div>
-                        <div className="absolute top-1/2 left-[10%] right-0 h-1 bg-indigo-500 rounded-r-full -translate-y-1/2 shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
+                            return (
+                                <>
+                                    {/* Base Line */}
+                                    <div className="absolute top-1/2 left-0 right-0 h-1.5 bg-slate-700/30 rounded-full -translate-y-1/2 overflow-hidden">
+                                        <div className="absolute top-0 left-0 h-full bg-slate-600 w-full" />
+                                        {/* Colored Segments */}
+                                        <div className="absolute top-0 left-0 w-[10%] h-full bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.6)]" />
+                                        <div className="absolute top-0 left-[10%] right-0 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.4)]" />
+                                    </div>
 
-                        {/* Node 1: Start Month */}
-                        <div className="absolute top-1/2 left-0 -translate-y-1/2 flex flex-col items-center group cursor-help">
-                            <div className="w-4 h-4 rounded-full bg-amber-500 border-2 border-slate-900 shadow-lg mb-2"></div>
-                            <span className="text-[10px] font-bold text-amber-500 mt-6 absolute w-20 text-center">Ngày 01</span>
-                        </div>
+                                    {/* REAL-TIME Current Day Indicator */}
+                                    <div
+                                        className="absolute top-1/2 -translate-y-1/2 z-30 flex flex-col items-center pointer-events-none transition-all duration-1000 ease-out"
+                                        style={{ left: `${Math.max(2, Math.min(98, percent))}%` }}
+                                    >
+                                        <div className="w-4 h-4 rounded-full bg-white border-4 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.8)] animate-pulse" />
+                                        <div className="absolute -top-10 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap arrow-down">
+                                            Hôm nay ({currentDay}/{now.getMonth() + 1})
+                                        </div>
+                                    </div>
 
-                        {/* Node 2: Voting Reminder */}
-                        <div className="absolute top-1/2 left-[5%] -translate-y-1/2 flex flex-col items-center group cursor-help z-10">
-                            <div className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-900 shadow-lg animate-pulse mb-8"></div>
-                            <div className="absolute -top-12 bg-emerald-500/90 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap arrow-down">
-                                🔔 02/tháng: Nhắc Bình chọn
-                            </div>
-                        </div>
+                                    {/* Node 1: Start Month */}
+                                    <div className="absolute top-1/2 left-0 -translate-y-1/2 flex flex-col items-center z-10">
+                                        <div className="w-3 h-3 rounded-full bg-amber-500 border border-slate-900 shadow-lg mb-2"></div>
+                                        <span className="text-[10px] font-bold text-amber-500 absolute top-6 -left-2 w-20 text-left">01</span>
+                                    </div>
 
-                        {/* Node 3: End Voting / Start Upload */}
-                        <div className="absolute top-1/2 left-[10%] -translate-y-1/2 flex flex-col items-center group cursor-help z-20">
-                            <div className="w-6 h-6 rounded-full bg-slate-900 border-2 border-white shadow-xl flex items-center justify-center text-[10px] font-bold text-white mb-2 relative z-10">
-                                04
-                            </div>
-                            <div className="absolute top-8 text-center w-32">
-                                <span className="text-[10px] font-bold text-white block">CHỐT BÌNH CHỌN</span>
-                                <span className="text-[10px] text-indigo-400 block">Mở cổng Upload</span>
-                            </div>
-                            {/* Connector Line */}
-                            <div className="absolute h-8 w-[1px] bg-white/20 top-4"></div>
-                        </div>
+                                    {/* Voting Phase Text - Moved Up */}
+                                    <div className="absolute top-0 left-[5%] -translate-x-1/2 text-center w-32">
+                                        <span className="text-[9px] text-amber-500/80 font-bold tracking-wider uppercase bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                            GĐ 1: BÌNH CHỌN
+                                        </span>
+                                    </div>
 
-                        {/* Node 4: Upload Reminder */}
-                        <div className="absolute top-1/2 left-[80%] -translate-y-1/2 flex flex-col items-center group cursor-help z-10">
-                            <div className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-900 shadow-lg animate-pulse mb-8"></div>
-                            <div className="absolute -top-12 bg-emerald-500/90 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap arrow-down">
-                                ⏰ 25/tháng: Nhắc Nộp bài
-                            </div>
-                        </div>
+                                    {/* Node 2: Voting Reminder */}
+                                    {totalDays >= 2 && (
+                                        <div className="absolute top-1/2 left-[calc(2/30*100%)] -translate-y-1/2 flex flex-col items-center group cursor-help z-20">
+                                            <div className="w-2 h-2 rounded-full bg-emerald-500 border border-slate-900 shadow-lg animate-pulse mb-8"></div>
+                                            <div className="absolute -top-10 bg-emerald-500/90 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                                                🔔 02: Nhắc Bình chọn
+                                            </div>
+                                        </div>
+                                    )}
 
-                        {/* Node 5: End Month */}
-                        <div className="absolute top-1/2 right-0 -translate-y-1/2 flex flex-col items-center">
-                            <div className="w-4 h-4 rounded-full bg-indigo-500 border-2 border-slate-900 shadow-lg mb-2"></div>
-                            <span className="text-[10px] font-bold text-indigo-500 mt-6 absolute w-20 text-center">Cuối tháng</span>
-                        </div>
+                                    {/* Node 3: End Voting / Start Upload (Day 4) */}
+                                    <div className="absolute top-1/2 left-[calc(4/30*100%)] -translate-y-1/2 flex flex-col items-center group z-20">
+                                        <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-white shadow-xl flex items-center justify-center text-[10px] font-bold text-white relative z-10 transition-transform hover:scale-110">
+                                            04
+                                        </div>
+                                        <div className="absolute top-10 text-center w-40 flex flex-col gap-0.5">
+                                            <span className="text-[10px] font-bold text-white bg-indigo-600/80 px-1.5 py-0.5 rounded shadow w-fit mx-auto">CHỐT BÌNH CHỌN</span>
+                                            <span className="text-[9px] text-indigo-300 font-medium">Mở cổng Upload</span>
+                                        </div>
+                                        <div className="absolute h-8 w-[1px] bg-white/20 top-5 -z-10"></div>
+                                    </div>
 
-                        {/* Phase Labels */}
-                        <div className="absolute top-[60%] left-[5%] -translate-x-1/2 text-center">
-                            <span className="text-[10px] text-amber-500/80 font-bold tracking-wider uppercase">GĐ 1: BÌNH CHỌN</span>
-                        </div>
-                        <div className="absolute top-[60%] left-[55%] -translate-x-1/2 text-center">
-                            <span className="text-[10px] text-indigo-500/80 font-bold tracking-wider uppercase">GĐ 2: NỘP VĂN BẢN & LƯU TRỮ</span>
-                        </div>
+                                    {/* Upload Phase Text */}
+                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 text-center">
+                                        <span className="text-[9px] text-indigo-400/80 font-bold tracking-wider uppercase bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                                            GĐ 2: NỘP VĂN BẢN & LƯU TRỮ
+                                        </span>
+                                    </div>
+
+                                    {/* Node 4: Upload Reminder (Day 25) */}
+                                    <div className="absolute top-1/2 left-[calc(25/30*100%)] -translate-y-1/2 flex flex-col items-center group cursor-help z-20">
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500 border border-slate-900 shadow-lg animate-pulse mb-8"></div>
+                                        <div className="absolute -top-10 bg-emerald-500/90 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                                            ⏰ 25: Nhắc Nộp bài
+                                        </div>
+                                    </div>
+
+                                    {/* Node 5: End Month */}
+                                    <div className="absolute top-1/2 right-0 -translate-y-1/2 flex flex-col items-center z-10">
+                                        <div className="w-3 h-3 rounded-full bg-indigo-500 border border-slate-900 shadow-lg mb-2"></div>
+                                        <span className="text-[10px] font-bold text-indigo-500 absolute top-6 -right-2 w-20 text-right">Cuối tháng</span>
+                                    </div>
+                                </>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>
