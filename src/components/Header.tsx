@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bell, Settings, Check, Trash2, X, LogOut, ChevronDown, Shield, Gift, Send } from 'lucide-react';
+import { Bell, Settings, Check, Trash2, X, LogOut, ChevronDown, Shield, Gift, Send, Info, Calendar } from 'lucide-react';
 import { useData, Notification } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
@@ -19,9 +19,15 @@ const Header: React.FC = () => {
     const [wishMessage, setWishMessage] = useState('');
     const [wishType, setWishType] = useState<'birthday' | 'wedding' | 'funeral'>('birthday');
 
+    // Notification Detail Modal State
+    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
+
     const notifRef = useRef<HTMLDivElement>(null);
     const profileRef = useRef<HTMLDivElement>(null);
 
+    // Sorting: Newest first based on ISO timestamp
+    const sortedNotifications = [...notifications].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
     const unreadCount = notifications.filter(n => !n.read).length;
 
     // Click outside to close
@@ -43,6 +49,21 @@ const Header: React.FC = () => {
 
     const currentAppUser = users.find(u => u.email === currentUser?.email);
     const isAdmin = currentAppUser?.isAdmin || false;
+
+    // Format Date Helper
+    const formatTime = (isoString: string) => {
+        try {
+            const date = new Date(isoString);
+            return new Intl.DateTimeFormat('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                day: '2-digit',
+                month: '2-digit'
+            }).format(date);
+        } catch (e) {
+            return isoString;
+        }
+    };
 
     // Helper to handle notification click
     const handleNotificationClick = (notif: Notification) => {
@@ -76,6 +97,11 @@ const Header: React.FC = () => {
                 setShowNotifications(false);
                 setShowWishModal(true);
             }
+        } else {
+            // Generic Notification - Show Detail Modal
+            setSelectedNotification(notif);
+            setShowDetailModal(true);
+            setShowNotifications(false);
         }
     };
 
@@ -119,6 +145,66 @@ const Header: React.FC = () => {
 
     return (
         <>
+            {/* Notification Detail Modal */}
+            <AnimatePresence>
+                {showDetailModal && selectedNotification && (
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            className="bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6 relative overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-start gap-4 mb-4">
+                                <div className={clsx(
+                                    "p-3 rounded-xl shadow-lg shrink-0",
+                                    selectedNotification.type === 'alert' && "bg-red-500/20 text-red-500",
+                                    selectedNotification.type === 'success' && "bg-emerald-500/20 text-emerald-500",
+                                    selectedNotification.type === 'info' && "bg-blue-500/20 text-blue-500",
+                                    (!selectedNotification.type || selectedNotification.type === 'error') && "bg-slate-500/20 text-slate-400"
+                                )}>
+                                    {selectedNotification.type === 'alert' && <X size={24} />}
+                                    {selectedNotification.type === 'success' && <Check size={24} />}
+                                    {selectedNotification.type === 'info' && <Info size={24} />}
+                                    {(!selectedNotification.type || selectedNotification.type === 'error') && <Bell size={24} />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-lg font-bold text-white mb-1 leading-tight break-words">
+                                        {selectedNotification.title}
+                                    </h3>
+                                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                                        <Calendar size={12} />
+                                        <span>{formatTime(selectedNotification.time)}</span>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setShowDetailModal(false)}
+                                    className="text-slate-500 hover:text-white transition-colors"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <div className="bg-[#0f172a] rounded-xl p-4 border border-white/5 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-line">
+                                    {selectedNotification.message}
+                                </p>
+                            </div>
+
+                            <div className="mt-6 flex justify-end">
+                                <button
+                                    onClick={() => setShowDetailModal(false)}
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition-colors text-sm"
+                                >
+                                    Đóng
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
             {/* Wish Modal */}
             <AnimatePresence>
                 {showWishModal && (
@@ -265,7 +351,8 @@ const Header: React.FC = () => {
                                         <h3 className="font-bold text-white text-sm">
                                             {t.settings.notifications} ({unreadCount})
                                         </h3>
-                                        {notifications.length > 0 && (
+                                        {/* Only show Clear button if Admin */}
+                                        {notifications.length > 0 && isAdmin && (
                                             <button
                                                 onClick={clearNotifications}
                                                 className="text-[10px] text-slate-400 hover:text-red-400 flex items-center gap-1 transition-colors uppercase font-semibold tracking-wider"
@@ -282,7 +369,7 @@ const Header: React.FC = () => {
                                                 <p className="text-xs">{t.header.noNotifications}</p>
                                             </div>
                                         ) : (
-                                            notifications.map(notif => (
+                                            sortedNotifications.map(notif => (
                                                 <div
                                                     key={notif.id}
                                                     onClick={() => handleNotificationClick(notif)}
@@ -300,18 +387,22 @@ const Header: React.FC = () => {
                                                             "w-8 h-8 rounded-full flex items-center justify-center shrink-0 border",
                                                             notif.type === 'alert' && "bg-red-500/10 border-red-500/30 text-red-500",
                                                             notif.type === 'success' && "bg-emerald-500/10 border-emerald-500/30 text-emerald-500",
-                                                            notif.type === 'info' && "bg-blue-500/10 border-blue-500/30 text-blue-500"
+                                                            notif.type === 'info' && "bg-blue-500/10 border-blue-500/30 text-blue-500",
+                                                            (!notif.type || notif.type === 'error') && "bg-slate-500/10 border-slate-500/30 text-slate-500"
                                                         )}>
                                                             {notif.type === 'alert' && <X size={14} />}
                                                             {notif.type === 'success' && <Check size={14} />}
                                                             {notif.type === 'info' && <Bell size={14} />}
+                                                            {(!notif.type || notif.type === 'error') && <Bell size={14} />}
                                                         </div>
                                                         <div className="flex-1">
                                                             <h4 className={clsx("text-sm font-bold mb-0.5", notif.read ? "text-slate-400" : "text-white")}>
                                                                 {notif.title}
                                                             </h4>
                                                             <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed mb-1.5">{notif.message}</p>
-                                                            <span className="text-[10px] text-slate-600 font-mono uppercase tracking-wide">{notif.time}</span>
+                                                            <span className="text-[10px] text-slate-600 font-mono uppercase tracking-wide">
+                                                                {formatTime(notif.time)}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </div>
