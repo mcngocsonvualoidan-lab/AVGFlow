@@ -410,10 +410,10 @@ const ConclusionDocs = () => {
                         <FileText className="text-indigo-400" /> Văn bản kết luận
                         <button
                             onClick={() => setShowRules(true)}
-                            className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors ml-2"
-                            title="Xem quy định"
+                            className="ml-3 px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-white/10 text-indigo-400 hover:text-white transition-all text-xs font-bold flex items-center gap-2"
+                            title="Xem Quy định & Lịch trình"
                         >
-                            <Info size={18} />
+                            <Info size={14} /> Xem Quy định
                         </button>
                     </h1>
                     <p className="text-slate-400 text-sm">Kho lưu trữ và bình chọn văn bản nhân sự</p>
