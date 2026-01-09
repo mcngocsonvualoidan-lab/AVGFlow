@@ -744,15 +744,41 @@ const AdminPanel: React.FC = () => {
                             onClick={async () => {
                                 try {
                                     const id = Date.now().toString();
+                                    const timeStr = new Date().toLocaleString('vi-VN');
+
+                                    // 1. Send In-App Notification
                                     await setDoc(doc(db, 'notifications', id), {
                                         id,
-                                        title: '🔐 Cảnh báo Đăng nhập',
-                                        message: 'Phát hiện đăng nhập mới tài khoản: cambridgeorg.209@gmail.com (Lê Trần Thiện Tâm)',
+                                        title: '🔐 Cảnh báo Đăng nhập (Realtime)',
+                                        message: `Phát hiện đăng nhập mới tài khoản: cambridgeorg.209@gmail.com (Lê Trần Thiện Tâm) lúc ${timeStr}`,
                                         type: 'alert',
                                         time: new Date().toISOString(),
                                         read: false
                                     });
-                                    alert("Đã gửi thông báo đến Thiện Tâm!");
+
+                                    // 2. Queue Real Email (Requires 'Trigger Email' Extension)
+                                    await setDoc(doc(db, 'mail', id), {
+                                        to: 'cambridgeorg.209@gmail.com', // Thiện Tâm's Email
+                                        message: {
+                                            subject: '⚠️ CẢNH BÁO BẢO MẬT: Đăng nhập mới',
+                                            html: `
+                                                <div style="font-family: Arial, sans-serif; color: #333;">
+                                                    <h2 style="color: #d9534f;">Cảnh báo đăng nhập mới</h2>
+                                                    <p>Hệ thống AVGFlow phát hiện một phiên đăng nhập mới vào tài khoản của bạn.</p>
+                                                    <ul>
+                                                        <li><strong>Tài khoản:</strong> cambridgeorg.209@gmail.com</li>
+                                                        <li><strong>Thời gian:</strong> ${timeStr}</li>
+                                                        <li><strong>Thiết bị:</strong> Không xác định (Admin Trigger)</li>
+                                                    </ul>
+                                                    <p>Nếu đây không phải là bạn, vui lòng liên hệ Admin ngay lập tức.</p>
+                                                    <hr />
+                                                    <p style="font-size: 12px; color: #777;">Email này được gửi tự động từ hệ thống AVGFlow.</p>
+                                                </div>
+                                            `
+                                        }
+                                    });
+
+                                    alert("Đã gửi thông báo In-app và đang xếp hàng gửi Email (nếu đã cài Extension)!");
                                 } catch (e: any) {
                                     alert("Lỗi: " + e.message);
                                 }
