@@ -69,6 +69,7 @@ const ConclusionDocs = () => {
 
     // --- Time Logic for Countdown ---
     const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+    const [countdownColor, setCountdownColor] = useState('text-indigo-400');
 
     useEffect(() => {
         const calculateTimeAndPhase = () => {
@@ -86,17 +87,37 @@ const ConclusionDocs = () => {
             setCurrentPhase(phase);
             setPhaseLabel(phase === 'voting' ? 'Thời gian Bình chọn' : 'Thời gian Nộp văn bản');
 
-            // Determine Target Date for Countdown
+            // Determine Target Date and Start Date for Countdown
             let targetDate: Date;
+            let startDate: Date;
+
             if (phase === 'voting') {
-                // End of Day 3 of current month
+                // Voting: Start of Month -> End of Day 3
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
                 targetDate = new Date(now.getFullYear(), now.getMonth(), 3, 23, 59, 59);
             } else {
-                // End of current month
+                // Upload: Start of Day 4 -> End of Month
+                startDate = new Date(now.getFullYear(), now.getMonth(), 4, 0, 0, 0);
                 targetDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
             }
 
             const diff = targetDate.getTime() - now.getTime();
+            const totalDuration = targetDate.getTime() - startDate.getTime();
+
+            // Calculate Color based on Remaining Time Ratio
+            // > 66% Remaining -> Green
+            // 33% - 66% Remaining -> Yellow
+            // < 33% Remaining -> Red
+            if (totalDuration > 0) {
+                const ratio = diff / totalDuration;
+                if (ratio > 0.66) {
+                    setCountdownColor('text-emerald-400');
+                } else if (ratio > 0.33) {
+                    setCountdownColor('text-yellow-400');
+                } else {
+                    setCountdownColor('text-red-500');
+                }
+            }
 
             if (diff > 0) {
                 setTimeLeft({
@@ -107,6 +128,7 @@ const ConclusionDocs = () => {
                 });
             } else {
                 setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+                setCountdownColor('text-red-500'); // Expired
             }
         };
 
@@ -606,22 +628,22 @@ const ConclusionDocs = () => {
                     <h3 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-4">{phaseLabel.toUpperCase()} SAU</h3>
                     <div className="flex items-end gap-4 text-white">
                         <div>
-                            <span className="text-4xl font-mono font-bold text-indigo-400">{timeLeft.days}</span>
+                            <span className={clsx("text-4xl font-mono font-bold transition-colors duration-500", countdownColor)}>{timeLeft.days}</span>
                             <span className="text-xs text-slate-500 block">Ngày</span>
                         </div>
                         <div className="text-2xl font-bold pb-2">:</div>
                         <div>
-                            <span className="text-4xl font-mono font-bold text-indigo-400">{timeLeft.hours.toString().padStart(2, '0')}</span>
+                            <span className={clsx("text-4xl font-mono font-bold transition-colors duration-500", countdownColor)}>{timeLeft.hours.toString().padStart(2, '0')}</span>
                             <span className="text-xs text-slate-500 block">Giờ</span>
                         </div>
                         <div className="text-2xl font-bold pb-2">:</div>
                         <div>
-                            <span className="text-4xl font-mono font-bold text-indigo-400">{timeLeft.minutes.toString().padStart(2, '0')}</span>
+                            <span className={clsx("text-4xl font-mono font-bold transition-colors duration-500", countdownColor)}>{timeLeft.minutes.toString().padStart(2, '0')}</span>
                             <span className="text-xs text-slate-500 block">Phút</span>
                         </div>
                         <div className="text-2xl font-bold pb-2">:</div>
                         <div>
-                            <span className="text-4xl font-mono font-bold text-indigo-400">{timeLeft.seconds.toString().padStart(2, '0')}</span>
+                            <span className={clsx("text-4xl font-mono font-bold transition-colors duration-500", countdownColor)}>{timeLeft.seconds.toString().padStart(2, '0')}</span>
                             <span className="text-xs text-slate-500 block">Giây</span>
                         </div>
                     </div>
