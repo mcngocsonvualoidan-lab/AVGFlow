@@ -7,7 +7,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import {
     Loader2, Upload, FileText, BarChart2, Clock, Trophy,
     User as UserIcon, Search, Download, Award, Eye, X,
-    Edit2, Trash2, Save, Info
+    Edit2, Trash2, Save
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
@@ -62,9 +62,6 @@ const ConclusionDocs = () => {
     // Edit State
     const [editingDocId, setEditingDocId] = useState<string | null>(null);
     const [editingName, setEditingName] = useState('');
-
-    // Rules Modal State
-    const [showRules, setShowRules] = useState(false);
 
     // --- Phase Logic ---
     const [currentPhase, setCurrentPhase] = useState<'voting' | 'upload'>('upload');
@@ -408,13 +405,6 @@ const ConclusionDocs = () => {
                 <div>
                     <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
                         <FileText className="text-indigo-400" /> Văn bản kết luận
-                        <button
-                            onClick={() => setShowRules(true)}
-                            className="ml-3 px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 border border-white/10 text-indigo-400 hover:text-white transition-all text-xs font-bold flex items-center gap-2"
-                            title="Xem Quy định & Lịch trình"
-                        >
-                            <Info size={14} /> Xem Quy định
-                        </button>
                     </h1>
                     <p className="text-slate-400 text-sm">Kho lưu trữ và bình chọn văn bản nhân sự</p>
                 </div>
@@ -454,6 +444,54 @@ const ConclusionDocs = () => {
                             className="hidden"
                         />
                     </label>
+                </div>
+            </div>
+
+            {/* Rules & Guidelines Section */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Timeline */}
+                <div className="glass-panel p-4 rounded-2xl border-l-4 border-amber-500 bg-amber-500/5 relative overflow-hidden">
+                    <div className="absolute right-2 top-2 opacity-10"><Clock size={40} /></div>
+                    <h3 className="text-amber-500 font-bold mb-2 flex items-center gap-2 text-sm uppercase tracking-wider">
+                        Lịch trình
+                    </h3>
+                    <div className="space-y-2 text-sm text-slate-300">
+                        <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                            <span>01-03:</span> <span className="text-white font-bold bg-amber-500/20 px-2 py-0.5 rounded text-xs">Bình chọn</span>
+                        </div>
+                        <div className="flex justify-between items-center pt-1">
+                            <span>04-Cuối tháng:</span> <span className="text-white font-bold bg-indigo-500/20 px-2 py-0.5 rounded text-xs">Nộp văn bản</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Condition */}
+                <div className="glass-panel p-4 rounded-2xl border-l-4 border-indigo-500 bg-indigo-500/5 relative overflow-hidden">
+                    <div className="absolute right-2 top-2 opacity-10"><FileText size={40} /></div>
+                    <h3 className="text-indigo-400 font-bold mb-2 flex items-center gap-2 text-sm uppercase tracking-wider">
+                        Điều kiện file
+                    </h3>
+                    <p className="text-sm text-slate-300 leading-relaxed text-justify">
+                        Chỉ văn bản nộp từ <span className="text-white font-bold">ngày 04</span> tháng trước mới được tính vào danh sách bình chọn tháng này.
+                    </p>
+                </div>
+
+                {/* Reminder */}
+                <div className="glass-panel p-4 rounded-2xl border-l-4 border-emerald-500 bg-emerald-500/5 relative overflow-hidden">
+                    <div className="absolute right-2 top-2 opacity-10"><Award size={40} /></div>
+                    <h3 className="text-emerald-400 font-bold mb-2 flex items-center gap-2 text-sm uppercase tracking-wider">
+                        Nhắc nhở
+                    </h3>
+                    <div className="space-y-2 text-sm text-slate-300">
+                        <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            <span>Ngày 25: Nhắc nộp file</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            <span>Ngày 02 (8h): Nhắc bình chọn</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -785,98 +823,6 @@ const ConclusionDocs = () => {
                                     className="px-6 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl shadow-lg shadow-amber-500/20 font-bold text-sm transition-all"
                                 >
                                     Gửi bình chọn
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-
-            {/* RULES MODAL */}
-            <AnimatePresence>
-                {showRules && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-[#1e293b] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden"
-                        >
-                            <div className="p-6 border-b border-white/10 bg-gradient-to-r from-blue-900/20 to-indigo-900/20 flex justify-between items-center">
-                                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                                    <Info className="text-blue-400" /> Quy định & Lịch trình
-                                </h2>
-                                <button onClick={() => setShowRules(false)} className="text-slate-400 hover:text-white">
-                                    <X size={20} />
-                                </button>
-                            </div>
-
-                            <div className="p-6 space-y-6">
-                                {/* Timeline Visual */}
-                                <div className="space-y-4">
-                                    <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-widest">1. Lịch trình hàng tháng</h3>
-                                    <div className="flex flex-col gap-4">
-                                        <div className="flex items-start gap-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-                                            <div className="bg-amber-500/20 p-2 rounded-lg text-amber-400 font-bold text-xs shrink-0 w-12 text-center">
-                                                01 - 03
-                                            </div>
-                                            <div>
-                                                <div className="text-amber-400 font-bold mb-1">📅 Giai đoạn BÌNH CHỌN</div>
-                                                <p className="text-slate-300 text-xs text-justify">
-                                                    Toàn bộ nhân sự tham gia bình chọn cho các văn bản xuất sắc của <strong>tháng trước</strong>.
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-start gap-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
-                                            <div className="bg-indigo-500/20 p-2 rounded-lg text-indigo-400 font-bold text-xs shrink-0 w-12 text-center">
-                                                04 - 31
-                                            </div>
-                                            <div>
-                                                <div className="text-indigo-400 font-bold mb-1">📅 Giai đoạn NỘP VĂN BẢN</div>
-                                                <p className="text-slate-300 text-xs text-justify">
-                                                    Cổng upload mở. Nhân sự nộp các văn bản kết luận của <strong>tháng hiện tại</strong>.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Rules */}
-                                <div className="space-y-2">
-                                    <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-widest">2. Điều kiện bình chọn</h3>
-                                    <div className="text-sm text-slate-300 space-y-2 text-justify">
-                                        <p>
-                                            ⚠️ Chỉ những văn bản được upload từ <strong>ngày 04 đến hết tháng</strong> mới được hệ thống ghi nhận vào danh sách bình chọn của tháng đó.
-                                        </p>
-                                        <p className="text-slate-400 italic text-xs">
-                                            Ví dụ: Để được bình chọn vào đầu tháng 5, văn bản phải được nộp từ ngày 04/04 đến 30/04.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Notification */}
-                                <div className="space-y-2">
-                                    <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-widest">3. Nhắc nhở tự động</h3>
-                                    <ul className="text-sm text-slate-300 space-y-1 ml-4 list-disc">
-                                        <li><strong>Ngày 25:</strong> Hệ thống nhắc nhở hoàn thành nộp văn bản.</li>
-                                        <li><strong>08:00 sáng ngày 02:</strong> Hệ thống nhắc nhở tham gia bình chọn.</li>
-                                    </ul>
-                                </div>
-                            </div>
-
-                            <div className="p-4 border-t border-white/10 bg-black/20 text-center">
-                                <button
-                                    onClick={() => setShowRules(false)}
-                                    className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium text-sm transition-colors"
-                                >
-                                    Đã hiểu
                                 </button>
                             </div>
                         </motion.div>
