@@ -540,9 +540,9 @@ const ConclusionDocs = () => {
                                     {/* Base Line */}
                                     <div className="absolute top-1/2 left-0 right-0 h-1.5 bg-slate-700/30 rounded-full -translate-y-1/2 overflow-hidden">
                                         <div className="absolute top-0 left-0 h-full bg-slate-600 w-full" />
-                                        {/* Colored Segments */}
-                                        <div className="absolute top-0 left-0 w-[10%] h-full bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.6)]" />
-                                        <div className="absolute top-0 left-[10%] right-0 h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.4)]" />
+                                        {/* Colored Segments with Gradient (Green -> Yellow -> Red) */}
+                                        <div className="absolute top-0 left-0 w-[10%] h-full bg-gradient-to-r from-emerald-500 via-yellow-500 to-red-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]" />
+                                        <div className="absolute top-0 left-[10%] right-0 h-full bg-gradient-to-r from-emerald-500 via-yellow-500 to-red-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]" />
                                     </div>
 
                                     {/* REAL-TIME Current Day Indicator */}
