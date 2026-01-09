@@ -449,15 +449,15 @@ const ConclusionDocs = () => {
 
             {/* Rules & Guidelines Section */}
             {/* Combined Rules & Guidelines Section */}
-            <div className="glass-panel p-6 rounded-2xl border-l-4 border-indigo-500 bg-gradient-to-r from-indigo-500/10 to-transparent relative overflow-hidden">
+            <div className="glass-panel p-6 rounded-2xl border-l-4 border-amber-400 bg-gradient-to-r from-yellow-500/10 via-amber-500/5 to-transparent relative overflow-hidden">
                 <div className="flex flex-col md:flex-row gap-6 md:divide-x divide-white/10">
 
                     {/* Header/Title Block - Optional or integrated */}
                     <div className="md:w-1/6 flex flex-col justify-center">
-                        <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-2">
-                            <Info className="text-indigo-400" /> QUY ĐỊNH
+                        <h3 className="text-xl font-bold text-amber-400 flex items-center gap-2 mb-2">
+                            <Info className="text-amber-400" /> QUY ĐỊNH
                         </h3>
-                        <p className="text-xs text-slate-400">Thông tin quan trọng về lịch trình và quy tắc bình chọn hàng tháng.</p>
+                        <p className="text-amber-100/60 text-xs">Thông tin quan trọng về lịch trình và quy tắc bình chọn hàng tháng.</p>
                     </div>
 
                     {/* Timeline */}
