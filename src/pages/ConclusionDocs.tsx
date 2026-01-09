@@ -255,7 +255,18 @@ const ConclusionDocs = () => {
         const isOwner = document.userId === u?.id;
         const isAdmin = u?.isAdmin;
 
-        if (!isOwner && !isAdmin) {
+        // Check 24h restriction
+        const hoursSinceUpload = (new Date().getTime() - new Date(document.uploadedAt).getTime()) / (1000 * 60 * 60);
+
+        if (isAdmin) {
+            // Admin can always delete
+        } else if (isOwner) {
+            if (hoursSinceUpload >= 24) {
+                alert("Bạn chỉ có thể xóa văn bản trong vòng 24h kể từ khi tải lên.\nVui lòng liên hệ Quản trị viên.");
+                return;
+            }
+        } else {
+            // Neither owner nor admin
             alert("Bạn không có quyền xóa tài liệu này.");
             return;
         }
@@ -751,6 +762,10 @@ const ConclusionDocs = () => {
                                             const isOwner = currentUserId === doc.userId;
                                             const canEdit = isOwner || isAdmin;
 
+                                            const hoursSinceUpload = (new Date().getTime() - new Date(doc.uploadedAt).getTime()) / (1000 * 60 * 60);
+                                            // Can delete if Admin OR (Owner AND < 24h)
+                                            const canDelete = isAdmin || (isOwner && hoursSinceUpload < 24);
+
                                             return (
                                                 <div
                                                     key={doc.id}
@@ -797,13 +812,15 @@ const ConclusionDocs = () => {
                                                                 >
                                                                     <Edit2 size={14} />
                                                                 </button>
-                                                                <button
-                                                                    onClick={() => handleDeleteDoc(doc)}
-                                                                    className="p-1.5 hover:bg-white/10 rounded-lg text-red-400 hover:text-white"
-                                                                    title="Xóa"
-                                                                >
-                                                                    <Trash2 size={14} />
-                                                                </button>
+                                                                {canDelete && (
+                                                                    <button
+                                                                        onClick={() => handleDeleteDoc(doc)}
+                                                                        className="p-1.5 hover:bg-white/10 rounded-lg text-red-400 hover:text-white"
+                                                                        title="Xóa"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                )}
                                                                 <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
                                                             </>
                                                         )}
