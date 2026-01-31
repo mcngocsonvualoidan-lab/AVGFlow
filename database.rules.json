@@ -1,0 +1,28 @@
+{
+    "rules": {
+        "chatRooms": {
+            "$roomId": {
+                ".read": "auth != null && data.child('participants').child(auth.uid).exists()",
+                ".write": "auth != null && (data.child('participants').child(auth.uid).exists() || !data.exists())",
+                "typingUsers": {
+                    ".write": "auth != null && root.child('chatRooms').child($roomId).child('participants').child(auth.uid).exists()"
+                }
+            }
+        },
+        "chatMessages": {
+            "$roomId": {
+                ".indexOn": [
+                    "timestamp"
+                ],
+                ".read": "auth != null && root.child('chatRooms').child($roomId).child('participants').child(auth.uid).exists()",
+                ".write": "auth != null && root.child('chatRooms').child($roomId).child('participants').child(auth.uid).exists()"
+            }
+        },
+        "userChats": {
+            "$userId": {
+                ".read": "auth != null && auth.uid == $userId",
+                ".write": "auth != null"
+            }
+        }
+    }
+}

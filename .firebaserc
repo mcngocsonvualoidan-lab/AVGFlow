@@ -6,7 +6,7 @@
   "etags": {
     "avgflow-dd822": {
       "extensionInstances": {
-        "firestore-send-email": "6544843a5f775f08260885579d51f3ec87c0eec5bd9f1f9b1b67afc3eb4ff0c9",
+        "firestore-send-email": "5a26199fec8a4098ea8a4ab36cdad16b784934a9f05fe6f5955b86aa6970497f",
         "firestore-send-email-ahzj": "0f64ab76f341a8346b12b530be01a3144d44e3148deffd412d0ad337a9da7327"
       }
     }

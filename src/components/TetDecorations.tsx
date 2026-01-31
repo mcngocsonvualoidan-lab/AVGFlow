@@ -173,7 +173,7 @@ const Fireworks: React.FC = () => {
 // --- TET BANNER ---
 const TetBanner: React.FC = () => {
     return (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[101] animate-bounce-slow">
+        <div className="hidden md:block fixed top-4 left-1/2 -translate-x-1/2 z-[101] animate-bounce-slow">
             <div className="bg-gradient-to-r from-red-600 via-red-500 to-red-600 px-8 py-3 rounded-full shadow-2xl shadow-red-500/30 border-2 border-yellow-400">
                 <div className="flex items-center gap-3">
                     <span className="text-2xl">🧧</span>
@@ -195,7 +195,7 @@ const CauDoi: React.FC = () => {
     const rightText = "LỘC";
 
     return (
-        <>
+        <div className="hidden md:block">
             {/* Left Couplet - Bottom Left */}
             <div className="fixed bottom-20 left-2 z-[50] opacity-80 hover:opacity-100 transition-opacity">
                 <div className="relative scale-75 origin-bottom-left">
@@ -255,7 +255,7 @@ const CauDoi: React.FC = () => {
                     </div>
                 </div>
             </div>
-        </>
+        </div>
     );
 };
 

@@ -1,6 +1,18 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    
+    // Existing Chat Uploads (Legacy or General)
+    match /chat_uploads/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Internal Chat Files
+    match /internal_chat/{chatId}/{fileName} {
+      allow read: if request.auth != null; // Ideally restrict to participants, but difficult in Storage rules without Custom Claims mirroring
+      allow write: if request.auth != null;
+    }
+
     match /{allPaths=**} {
       allow read, write: if request.auth != null;
     }

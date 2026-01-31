@@ -1,14 +1,17 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { db } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
-import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, orderBy, limit, where, getDocs } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
+import { backupDataToSupabase } from '../services/backupService';
+
 
 // --- INTERFACES ---
 
 export interface LeaveRecord {
     id: string;
-    type: 'leave' | 'absence';
+    type: 'leave' | 'absence' | 'online';
+    session?: 'full' | 'morning' | 'afternoon'; // Added session type
     start: string; // ISO
     end: string; // ISO
     reason: string;
@@ -35,6 +38,20 @@ export interface User {
     leaves?: LeaveRecord[];
     lastSeen?: string;
     customQrUrl?: string; // Manual Banking QR Override
+    permissions?: UserPermissions; // NEW: RBAC Permissions
+}
+
+export interface UserPermissions {
+    dashboard?: { view: boolean; edit: boolean };
+    tasks?: { view: boolean; edit: boolean };
+    workflow?: { view: boolean; edit: boolean };
+    reports?: { view: boolean; edit: boolean };
+    users?: { view: boolean; edit: boolean };
+    finance?: { view: boolean; edit: boolean };
+    schedule?: { view: boolean; edit: boolean };
+    documents?: { view: boolean; edit: boolean };
+    timekeep?: { view: boolean; edit: boolean }; // Adding timekeep just in case
+    ai_chat?: { view: boolean; edit: boolean };
 }
 
 export interface Task {
@@ -180,6 +197,13 @@ interface DataContextType {
     logs: OrderLog[];
     notifications: Notification[];
     toasts: Toast[];
+    setToasts: React.Dispatch<React.SetStateAction<Toast[]>>;
+    addNotification: (n: any) => Promise<void>;
+    markAsRead: (id: string) => Promise<void>;
+    markAllAsRead: () => Promise<void>;
+    clearNotifications: () => Promise<void>;
+    invitation: { title: string; body: string } | null;
+    setInvitation: React.Dispatch<React.SetStateAction<{ title: string; body: string } | null>>;
     birthdayWishes: BirthdayWish[];
     activeEvents: ActiveEvent[];
 
@@ -202,11 +226,8 @@ interface DataContextType {
     markTaskAsAccepted: (taskId: string) => void;
     addLog: (log: OrderLog) => void;
     updateLog: (log: OrderLog) => void;
-    addNotification: (notif: Notification) => void;
     addBirthdayWish: (wish: BirthdayWish) => void;
     markWishAsRead: (id: string) => void;
-    markAsRead: (id: string) => void;
-    clearNotifications: () => void;
     addActiveEvent: (event: ActiveEvent) => void; // New
     showTetDecor: boolean;
     toggleTetDecor: () => void;
@@ -232,7 +253,7 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '1996-12-09',
         startDate: '2024-10-01',
-        employeeCode: '24015',
+        employeeCode: 'NV012',
         contractNo: 'N2-010/2024/HĐLĐ-HJ'
     },
     {
@@ -249,6 +270,7 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '1998-06-30',
         startDate: '2024-12-01',
+        employeeCode: 'NV017',
         contractNo: 'N2-013/2024/HĐLĐ-HJ'
     },
     {
@@ -256,7 +278,7 @@ export const initialUsers: User[] = [
         name: 'Lê Trần Thiện Tâm',
         alias: 'TAM-OUT',
         role: 'Quản lý Đầu ra',
-        dept: 'Interwrite',
+        dept: 'InterData',
         email: 'cambridgeorg.209@gmail.com',
         phone: '0354126398',
         avatar: 'https://ui-avatars.com/api/?name=Thien+Tam&background=f59e0b&color=fff',
@@ -265,7 +287,7 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '2002-09-20',
         startDate: '2024-10-01',
-        employeeCode: '24014',
+        employeeCode: 'NV004',
         contractNo: 'N2-015/2024/HĐLĐ-HJ'
     },
     {
@@ -282,7 +304,7 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '1999-10-13',
         startDate: '2024-09-01',
-        employeeCode: '24005',
+        employeeCode: 'NV011',
         contractNo: 'N2-005/2024/HĐLĐ-HJ'
     },
     {
@@ -300,7 +322,7 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '1996-04-07',
         startDate: '2024-12-01',
-        employeeCode: '24010',
+        employeeCode: 'NV005',
         contractNo: 'N2-016/2024/HĐLĐ-HJ'
     },
     {
@@ -317,15 +339,24 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '2001-04-12',
         startDate: '2024-12-01',
-        employeeCode: '24011',
-        contractNo: 'N2-014/2024/HĐLĐ-HJ'
+        employeeCode: 'NV006',
+        contractNo: 'N2-014/2024/HĐLĐ-HJ',
+        leaves: [
+            {
+                id: 'l_doanh_1',
+                type: 'absence',
+                start: '2026-01-10',
+                end: '2026-01-10',
+                reason: 'Nghỉ không lương'
+            }
+        ]
     },
     {
         id: '7',
         name: 'Đinh Hoàng Ngọc Hân',
         alias: 'HAN-INFO',
         role: 'Thông tin Đầu ra',
-        dept: 'Interwrite',
+        dept: 'InterData',
         email: 'trolitct@gmail.com',
         phone: '0869413365',
         avatar: 'https://ui-avatars.com/api/?name=Ngoc+Han&background=f97316&color=fff',
@@ -334,7 +365,7 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '2002-10-28',
         startDate: '2024-09-01',
-        employeeCode: '24004',
+        employeeCode: 'NV014',
         contractNo: 'N2-004/2024/HĐLĐ-HJ'
     },
     {
@@ -351,7 +382,7 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '1988-02-17',
         startDate: '2024-09-01',
-        employeeCode: '24002',
+        employeeCode: 'NV002',
         contractNo: 'N2-001/2024/HĐLĐ-HJ'
     },
     {
@@ -368,8 +399,17 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '2001-01-06',
         startDate: '2024-09-01',
-        employeeCode: '24008',
-        contractNo: 'N2-006/2024/HĐLĐ-HJ'
+        employeeCode: 'NV009',
+        contractNo: 'N2-006/2024/HĐLĐ-HJ',
+        leaves: [
+            {
+                id: 'l_nga_1',
+                type: 'absence',
+                start: '2026-01-03',
+                end: '2026-01-03',
+                reason: 'Nghỉ không lương'
+            }
+        ]
     },
     {
         id: '10',
@@ -385,26 +425,26 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '2000-02-21',
         startDate: '2024-09-01',
-        employeeCode: '24006',
-        contractNo: 'N2-008/2024/HĐLĐ-HJ'
+        employeeCode: 'NV008',
+        contractNo: 'N2-008/2024/HĐLĐ-HJ',
+        leaves: [
+            {
+                id: 'l_hai_1',
+                type: 'absence',
+                start: '2026-01-03',
+                end: '2026-01-03',
+                reason: 'Nghỉ không lương'
+            },
+            {
+                id: 'l_hai_2',
+                type: 'absence',
+                start: '2026-01-19',
+                end: '2026-01-19',
+                reason: 'Nghỉ không lương'
+            }
+        ]
     },
-    {
-        id: '11',
-        name: 'Nguyễn Thị Hào',
-        alias: 'HAO-NGUYEN',
-        role: 'Chuyên viên',
-        dept: 'Tài chính - Kế toán',
-        email: 'nguyenhao.avg@gmail.com',
-        phone: '0966258174',
-        avatar: 'https://ui-avatars.com/api/?name=Thi+Hao&background=8b5cf6&color=fff',
-        bankAcc: '0580160288594',
-        bankName: 'MB',
-        verified: true,
-        dob: '1994-05-08',
-        startDate: '2024-10-01',
-        employeeCode: '24009',
-        contractNo: 'N2-009/2024/HĐLĐ-HJ'
-    }
+
 ];
 
 
@@ -601,10 +641,78 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [showTetDecor, setShowTetDecor] = useState(true);
+    const [activeInvitation, setActiveInvitation] = useState<{ title: string; body: string } | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
 
     // Using ref to prevent seeding multiple times in strict mode
     // const seedingRef = useRef(false);
+
+    // FCM Logic: Register SW, Get Token, Listen for Foreground
+    useEffect(() => {
+        let unsubscribeForeground: (() => void) | undefined;
+
+        const initFCM = async () => {
+            if (!currentUser) return;
+
+            // 1. Register SW & Get Token
+            import('../utils/pushManager').then(async ({ registerServiceWorker, askPermission, subscribeToPush, setupForegroundListener }) => {
+                const swReg = await registerServiceWorker();
+                if (swReg) {
+                    const permission = await askPermission();
+                    if (permission === 'granted') {
+                        const token = await subscribeToPush(swReg);
+                        if (token) {
+                            console.log('FCM Token:', token);
+                            // Verify if token is new before writing to avoid unnecessary writes
+                            // For now, just update (it's cheap enough for login event)
+                            // Save to correct App User Document
+                            if (users.length > 0) {
+                                const appUser = users.find(u => u.email === currentUser.email);
+                                if (appUser) {
+                                    const userRef = doc(db, 'users', appUser.id);
+                                    await updateDoc(userRef, { fcmToken: token }).catch(err => {
+                                        console.warn("Error saving FCM token:", err);
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Setup Foreground Listener
+                unsubscribeForeground = setupForegroundListener((payload) => {
+                    if (payload.notification) {
+                        const { title, body } = payload.notification;
+                        // Check if this is a Special Invitation
+                        const isInvitation = title?.toUpperCase().includes('MỜI') || title?.toUpperCase().includes('PARTY') || title?.toUpperCase().includes('TIỆC');
+
+                        if (isInvitation) {
+                            setActiveInvitation({ title: title || 'Lời mời', body: body || '' });
+                        } else {
+                            const toastId = `FCM-${Date.now()}`;
+                            setToasts(prev => [...prev, {
+                                id: toastId,
+                                title: title || 'Thông báo mới',
+                                message: body || '',
+                                type: 'info'
+                            }]);
+                            setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toastId)), 5000);
+                        }
+                    }
+                });
+            });
+        };
+
+
+
+        if (users.length > 0) {
+            initFCM();
+        }
+
+        return () => {
+            if (unsubscribeForeground) unsubscribeForeground();
+        };
+    }, [currentUser, users]);
 
     // AUTOMATED MEETING REMINDERS
     useEffect(() => {
@@ -706,11 +814,79 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             // FIREBASE COLLECTIONS
             unsubs.push(onSnapshot(collection(db, 'tasks'), s => setTasks(s.docs.map(d => d.data() as Task))));
 
-            unsubs.push(onSnapshot(collection(db, 'logs'), s => setLogs(s.docs.map(d => d.data() as OrderLog))));
-            unsubs.push(onSnapshot(collection(db, 'notifications'), s => setNotifications(s.docs.map(d => d.data() as Notification))));
+            // Optimized: Limit Logs and Notifications to prevent initial load bloat
+            // logs: limit 200 recent
+            unsubs.push(onSnapshot(
+                query(collection(db, 'logs'), orderBy('created', 'desc'), limit(200)),
+                s => setLogs(s.docs.map(d => d.data() as OrderLog))
+            ));
+
+            // notifications: limit 50 recent
+            unsubs.push(onSnapshot(
+                query(collection(db, 'notifications'), orderBy('time', 'desc'), limit(50)),
+                s => setNotifications(s.docs.map(d => d.data() as Notification))
+            ));
+
             unsubs.push(onSnapshot(collection(db, 'wishes'), s => setBirthdayWishes(s.docs.map(d => d.data() as BirthdayWish))));
             unsubs.push(onSnapshot(collection(db, 'events'), s => setActiveEvents(s.docs.map(d => d.data() as ActiveEvent))));
-            unsubs.push(onSnapshot(collection(db, 'payroll'), s => setPayrollRecords(s.docs.map(d => d.data() as PayrollRecord))));
+
+
+            // SUPABASE: Payroll (Realtime)
+            const mapPayrollRecord = (d: any): PayrollRecord => ({
+                id: d.id,
+                month: d.month,
+                userId: d.user_id || '',
+                employeeCode: d.employee_code || '',
+                fullName: d.full_name || '',
+                position: d.position || '',
+                department: d.department || '',
+                basicSalary: d.basic_salary || 0,
+                actualWorkDays: d.actual_work_days || 0,
+                allowanceMeal: d.allowance_meal || 0,
+                allowanceFuel: d.allowance_fuel || 0,
+                allowancePhone: d.allowance_phone || 0,
+                allowanceAttendance: d.allowance_attendance || 0,
+                totalAllowanceActual: d.total_allowance_actual || 0,
+                incomeMentalHealth: d.income_mental_health || 0,
+                incomeOvertime: d.income_overtime || 0,
+                incomeQuality: d.income_quality || 0,
+                incomeSpecial: d.income_special || 0,
+                incomeOfficer: d.income_officer || 0,
+                incomeKPI: d.income_kpi || 0,
+                totalAdditional: d.total_additional || 0,
+                totalActualIncome: d.total_actual_income || 0,
+                insuranceCompany: d.insurance_company || 0,
+                insuranceEmployee: d.insurance_employee || 0,
+                advancePayment: d.advance_payment || 0,
+                totalIncome: d.total_income || 0,
+                netPay: d.net_pay || 0
+            });
+
+            const payrollChannel = supabase
+                .channel('public:payroll')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll' }, (payload: any) => {
+                    if (payload.eventType === 'INSERT') {
+                        const newRecord = mapPayrollRecord(payload.new);
+                        setPayrollRecords(prev => [...prev, newRecord]);
+                    } else if (payload.eventType === 'UPDATE') {
+                        const updated = mapPayrollRecord(payload.new);
+                        setPayrollRecords(prev => prev.map(r => r.id === updated.id ? updated : r));
+                    } else if (payload.eventType === 'DELETE') {
+                        setPayrollRecords(prev => prev.filter(r => r.id !== payload.old.id));
+                    }
+                })
+                .subscribe();
+
+            const fetchPayroll = async () => {
+                const { data, error } = await supabase.from('payroll').select('*');
+                if (!error && data) {
+                    setPayrollRecords(data.map(mapPayrollRecord));
+                }
+            };
+
+            fetchPayroll(); // Initial Load
+            return () => { supabase.removeChannel(payrollChannel); };
+
             unsubs.push(onSnapshot(collection(db, 'meetings'), snap => {
                 if (snap.empty) {
                     const batch = writeBatch(db);
@@ -767,6 +943,154 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             alert('Đồng bộ thất bại. Kiểm tra Console.');
         }
     };
+
+    // CLEANUP: Remove Nguyen Thi Hao (Run once on client load)
+    useEffect(() => {
+        const cleanupDes = async () => {
+            console.log('Starting cleanup...');
+
+            // 1. Delete legacy 'NV013' / ID '11'
+            await deleteDoc(doc(db, 'users', '11')).catch(() => { });
+            await supabase.from('payroll').delete().eq('employee_code', 'NV013');
+
+            // 2. Delete 'Nguyễn Thị Hào' (Code 24009)
+            // Query Firestore to find ID if dynamic
+            const q = query(collection(db, 'users'), where('employeeCode', '==', '24009'));
+            const snap = await getDocs(q);
+
+            snap.forEach(async (d) => {
+                await deleteDoc(doc(db, 'users', d.id));
+                // Also delete from Supabase Users
+                await supabase.from('users').delete().eq('id', d.id);
+                console.log(`Deleted user ${d.id} (24009) from Firestore/Supabase`);
+            });
+
+            // Double check by Name
+            const qName = query(collection(db, 'users'), where('name', '==', 'Nguyễn Thị Hào'));
+            const snapName = await getDocs(qName);
+            snapName.forEach(async (d) => {
+                await deleteDoc(doc(db, 'users', d.id));
+                await supabase.from('users').delete().eq('id', d.id);
+                console.log(`Deleted user ${d.id} (Name Match) from Firestore/Supabase`);
+            });
+
+            // Delete from Payroll by Code 24009
+            await supabase.from('payroll').delete().eq('employee_code', '24009');
+            await supabase.from('payroll').delete().eq('full_name', 'Nguyễn Thị Hào');
+
+            console.log('Cleanup executed.');
+        };
+        cleanupDes();
+    }, []);
+
+    // MIGRATION: Fix Leave for Le Thi Anh Nguyet and Ha Ngoc Doanh (Jan 2026 updates)
+    useEffect(() => {
+        if (!users || users.length === 0) return;
+
+        const fixUserLeave = async () => {
+            // 1. Fix Nguyet (User 4)
+            const user4 = users.find(u => u.id === '4');
+            if (user4) {
+                // Expected leaves for Nguyet:
+                // Jan 27: Leave (P)
+                // Jan 28: Absence (x/2)
+
+                // Expected IDs
+                const targetIds = ['MIG-NGUYET-26', 'MIG-NGUYET-27-ABSENCE'];
+                const hasMigrated = targetIds.every(id => user4.leaves?.some(l => l.id === id));
+
+                // Cleanup bad attempts (e.g. 27-leave, 28-absence)
+                const badIds = ['FIX-NGUYET-27', 'MIG-NGUYET-27', 'MIG-NGUYET-28'];
+                const hasBad = user4.leaves?.some(l => badIds.includes(l.id));
+
+                if (!hasMigrated || hasBad) {
+                    console.log('Syncing Nguyet Data (Corrected)...');
+
+                    // Remove bad records AND existing records for 26/27 to prevent duplicates
+                    const cleanLeaves = (user4.leaves || []).filter(l =>
+                        !badIds.includes(l.id) &&
+                        l.start !== '2026-01-26' && l.start !== '2026-01-27' && l.start !== '2026-01-28'
+                    );
+
+                    const newLeaves: LeaveRecord[] = [
+                        ...cleanLeaves,
+                        { id: 'MIG-NGUYET-26', type: 'leave', start: '2026-01-26', end: '2026-01-26', reason: 'Nghỉ phép (Sync)', session: 'full' },
+                        { id: 'MIG-NGUYET-27-ABSENCE', type: 'absence', start: '2026-01-27', end: '2026-01-27', reason: 'Nghỉ không lương 1/2 (Sync)', session: 'morning' },
+                    ];
+
+                    await setDoc(doc(db, 'users', user4.id), sanitize({ ...user4, leaves: newLeaves }));
+                }
+            }
+
+            // 2. Fix Doanh (User 6) - Image: 12(ol), 13(x/2), 20(x/2), 22(x/2)
+            const user6 = users.find(u => u.id === '6');
+            if (user6) {
+                // Expected IDs
+                const shouldHaveIds = ['MIG-DOANH-12', 'MIG-DOANH-13', 'MIG-DOANH-20', 'MIG-DOANH-22'];
+                const hasMigrated = shouldHaveIds.every(id => user6.leaves?.some(l => l.id === id));
+
+                // Cleanup bad attempts (21, 23, and incorrectly added 09)
+                const idsToRemove = ['MIG-DOANH-21', 'MIG-DOANH-23', 'MIG-DOANH-09'];
+                const hasBadRecords = user6.leaves?.some(l => idsToRemove.includes(l.id));
+
+                if (!hasMigrated || hasBadRecords) {
+                    console.log('Syncing Doanh Data (Corrected 2)...');
+
+                    const cleanLeaves = (user6.leaves || []).filter(l => !idsToRemove.includes(l.id));
+
+                    const correctRecords: LeaveRecord[] = [
+                        // Jan 09 is X (Regular Work), so no record needed.
+                        { id: 'MIG-DOANH-12', type: 'online', start: '2026-01-12', end: '2026-01-12', reason: 'Work Online', session: 'full' },
+                        { id: 'MIG-DOANH-13', type: 'absence', start: '2026-01-13', end: '2026-01-13', reason: 'Half-day Unpaid', session: 'morning' },
+                        { id: 'MIG-DOANH-20', type: 'absence', start: '2026-01-20', end: '2026-01-20', reason: 'Half-day Unpaid', session: 'morning' },
+                        { id: 'MIG-DOANH-22', type: 'absence', start: '2026-01-22', end: '2026-01-22', reason: 'Half-day Unpaid', session: 'morning' },
+                    ];
+
+                    // Merge safely
+                    const finalLeaves = [...cleanLeaves];
+                    correctRecords.forEach(rec => {
+                        if (!finalLeaves.some(l => l.id === rec.id)) {
+                            finalLeaves.push(rec);
+                        }
+                    });
+
+                    await setDoc(doc(db, 'users', user6.id), sanitize({ ...user6, leaves: finalLeaves }));
+                }
+            }
+
+            // 3. Batch Update for Jan 02 (P) - Users: 1(Thanh), 3(Tam), 5(Son), 9(Q.Nga), 10(Hai)
+            const usersToUpdate = [
+                { id: '1', date: '2026-01-02', type: 'leave' },
+                { id: '3', date: '2026-01-02', type: 'leave' },
+                { id: '5', date: '2026-01-02', type: 'leave' },
+                { id: '9', date: '2026-01-02', type: 'leave' },
+                { id: '10', date: '2026-01-02', type: 'leave' },
+            ];
+
+            for (const update of usersToUpdate) {
+                const user = users.find(u => u.id === update.id);
+                if (user) {
+                    const leaveId = `TIER2-SYNC-${update.id}-${update.date}`;
+                    const hasRecord = user.leaves?.some(l => l.id === leaveId);
+
+                    if (!hasRecord) {
+                        const newLeaf: LeaveRecord = {
+                            id: leaveId,
+                            type: update.type as any,
+                            start: update.date,
+                            end: update.date,
+                            reason: 'Nghỉ phép năm (Sync)',
+                            session: 'full'
+                        };
+                        const updatedLeaves = [...(user.leaves || []), newLeaf];
+                        await setDoc(doc(db, 'users', user.id), sanitize({ ...user, leaves: updatedLeaves }));
+                    }
+                }
+            }
+        };
+
+        fixUserLeave();
+    }, [users]);
 
     // USERS (Primary Source: Firestore)
     const sanitize = (obj: any) => JSON.parse(JSON.stringify(obj));
@@ -899,27 +1223,40 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     // NOTIFICATIONS & TOASTS
     const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
 
-    const addNotification = (notification: Notification) => {
-        setDoc(doc(db, 'notifications', notification.id), notification);
+    const addNotification = async (n: any) => {
+        const newNotification: Notification = {
+            id: n.id || doc(collection(db, 'notifications')).id,
+            time: new Date().toISOString(),
+            read: false,
+            ...n
+        };
+        // Ensure id matches if passed or generated
+        await setDoc(doc(db, 'notifications', newNotification.id), newNotification);
 
         // Local Toast
         const toastId = `TOAST-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
         setToasts(prev => [...prev, {
             id: toastId,
-            title: notification.title,
-            message: notification.message,
-            type: notification.type || 'info'
+            title: newNotification.title,
+            message: newNotification.message,
+            type: newNotification.type || 'info'
         }]);
         setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toastId)), 5000);
     };
 
-    const markAsRead = (id: string) => updateDoc(doc(db, 'notifications', id), { read: true });
+    const markAsRead = async (id: string) => {
+        await updateDoc(doc(db, 'notifications', id), { read: true });
+    };
+
+    const markAllAsRead = async () => {
+        const batch = writeBatch(db);
+        notifications.filter(n => !n.read).forEach(n => {
+            batch.update(doc(db, 'notifications', n.id), { read: true });
+        });
+        await batch.commit();
+    };
 
     const clearNotifications = async () => {
-        // Warning: This deletes ALL notifications globally.
-        // For individual user clearing, we'd need a subcollection or 'deletedBy' array.
-        // Keeping empty for safety in this demo, or implementing 'soft' clear locally?
-        // Let's implement Batch Delete for now as requested "Store all data".
         const batch = writeBatch(db);
         notifications.forEach(n => batch.delete(doc(db, 'notifications', n.id)));
         await batch.commit();
@@ -933,9 +1270,51 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     const addActiveEvent = (event: ActiveEvent) => setDoc(doc(db, 'events', event.id), event);
 
     // PAYROLL
-    const addPayrollRecord = (record: PayrollRecord) => setDoc(doc(db, 'payroll', record.id), record);
-    const updatePayrollRecord = (record: PayrollRecord) => setDoc(doc(db, 'payroll', record.id), record);
-    const deletePayrollRecord = (id: string) => deleteDoc(doc(db, 'payroll', id));
+    // PAYROLL (Supabase)
+    const addPayrollRecord = async (record: PayrollRecord) => {
+        // Convert camelCase to snake_case
+        const payload = {
+            id: record.id,
+            month: record.month,
+            user_id: record.userId,
+            employee_code: record.employeeCode,
+            full_name: record.fullName,
+            position: record.position,
+            department: record.department,
+            basic_salary: record.basicSalary,
+            actual_work_days: record.actualWorkDays,
+            allowance_meal: record.allowanceMeal,
+            allowance_fuel: record.allowanceFuel,
+            allowance_phone: record.allowancePhone,
+            allowance_attendance: record.allowanceAttendance,
+            total_allowance_actual: record.totalAllowanceActual,
+            income_mental_health: record.incomeMentalHealth,
+            income_overtime: record.incomeOvertime,
+            income_quality: record.incomeQuality,
+            income_special: record.incomeSpecial,
+            income_officer: record.incomeOfficer,
+            income_kpi: record.incomeKPI,
+            total_additional: record.totalAdditional,
+            total_actual_income: record.totalActualIncome,
+            insurance_company: record.insuranceCompany,
+            insurance_employee: record.insuranceEmployee,
+            advance_payment: record.advancePayment,
+            total_income: record.totalIncome,
+            net_pay: record.netPay
+        };
+        const { error } = await supabase.from('payroll').upsert(payload);
+        if (error) console.error('Error adding payroll:', error);
+    };
+
+    const updatePayrollRecord = async (record: PayrollRecord) => {
+        // Same as add (upsert)
+        await addPayrollRecord(record);
+    };
+
+    const deletePayrollRecord = async (id: string) => {
+        const { error } = await supabase.from('payroll').delete().eq('id', id);
+        if (error) console.error('Error deleting payroll:', error);
+    };
 
     // MEETINGS
     const addMeeting = (meeting: Meeting) => setDoc(doc(db, 'meetings', meeting.id), meeting);
@@ -944,21 +1323,45 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
     const toggleTetDecor = () => setShowTetDecor(prev => !prev);
 
+    // Auto-backup to Supabase every 60 minutes
+    useEffect(() => {
+        const runBackup = async () => {
+            console.log('⏳ Triggering scheduled backup...');
+            await backupDataToSupabase();
+        };
+
+        // Schedule every 60 minutes (3600000 ms)
+        const intervalId = setInterval(runBackup, 3600000);
+
+        // Optional: Run one minute after mount to ensure data is likely loaded
+        const initialTimer = setTimeout(runBackup, 60000);
+
+        return () => {
+            clearInterval(intervalId);
+            clearTimeout(initialTimer);
+        };
+    }, []);
+
+    const value = {
+        users, tasks, logs, notifications, toasts, birthdayWishes, activeEvents, payrollRecords,
+        addUser, updateUser, deleteUser,
+        addTask, updateTask, deleteTask, markTaskAsAccepted,
+        addLog, updateLog,
+        markAsRead, markAllAsRead, clearNotifications,
+        addNotification, removeToast,
+        addBirthdayWish, markWishAsRead,
+        addActiveEvent,
+        addPayrollRecord, updatePayrollRecord, deletePayrollRecord,
+        meetings, addMeeting, updateMeeting, deleteMeeting,
+        showTetDecor, toggleTetDecor,
+        isLoaded, restoreDefaults,
+        invitation: activeInvitation,
+        setInvitation: setActiveInvitation,
+        setToasts
+    };
+
     return (
-        <DataContext.Provider value={{
-            users, tasks, logs, notifications, toasts, birthdayWishes, activeEvents, payrollRecords,
-            addUser, updateUser, deleteUser,
-            addTask, updateTask, deleteTask, markTaskAsAccepted,
-            addLog, updateLog,
-            markAsRead, clearNotifications,
-            addNotification, removeToast,
-            addBirthdayWish, markWishAsRead,
-            addActiveEvent,
-            addPayrollRecord, updatePayrollRecord, deletePayrollRecord,
-            meetings, addMeeting, updateMeeting, deleteMeeting,
-            showTetDecor, toggleTetDecor,
-            isLoaded, restoreDefaults
-        }}>
+        <DataContext.Provider value={value}>
             {children}
         </DataContext.Provider>
     );

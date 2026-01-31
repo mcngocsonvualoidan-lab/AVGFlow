@@ -1,13 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bell, Settings, Check, Trash2, X, LogOut, ChevronDown, Shield, Gift, Send, Info, Calendar } from 'lucide-react';
+import { Bell, Settings, Check, Trash2, X, LogOut, ChevronDown, Shield, Gift, Send, Info, Calendar, Menu } from 'lucide-react';
 import { useData, Notification } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const Header: React.FC = () => {
+interface HeaderProps {
+    onMenuClick?: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     const { notifications, markAsRead, clearNotifications, users, addNotification, addBirthdayWish } = useData();
+    // ... (rest of hook calls)
     const { t } = useLanguage();
     const { currentUser, logout } = useAuth();
     const [showNotifications, setShowNotifications] = useState(false);
@@ -27,7 +32,11 @@ const Header: React.FC = () => {
     const profileRef = useRef<HTMLDivElement>(null);
 
     // Sorting: Newest first based on ISO timestamp
-    const sortedNotifications = [...notifications].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    const sortedNotifications = [...notifications].sort((a, b) => {
+        const timeA = a.time ? new Date(a.time).getTime() : 0;
+        const timeB = b.time ? new Date(b.time).getTime() : 0;
+        return timeB - timeA;
+    });
     const unreadCount = notifications.filter(n => !n.read).length;
 
     // Click outside to close
@@ -48,17 +57,32 @@ const Header: React.FC = () => {
     const userName = currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User';
 
     const currentAppUser = users.find(u => u.email === currentUser?.email);
-    const isAdmin = currentAppUser?.isAdmin || false;
+    const isAdmin = currentAppUser?.isAdmin || ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'].includes(currentUser?.email || '');
 
     // Format Date Helper
     const formatTime = (isoString: string) => {
         try {
             const date = new Date(isoString);
+            const now = new Date();
+            const diffMs = now.getTime() - date.getTime();
+            const diffSeconds = Math.floor(diffMs / 1000);
+            const diffMinutes = Math.floor(diffSeconds / 60);
+            const diffHours = Math.floor(diffMinutes / 60);
+            const diffDays = Math.floor(diffHours / 24);
+
+            if (diffDays < 3) {
+                if (diffSeconds < 60) return "Vừa xong";
+                if (diffMinutes < 60) return `${diffMinutes} phút trước`;
+                if (diffHours < 24) return `${diffHours} giờ trước`;
+                return `${diffDays} ngày trước`;
+            }
+
             return new Intl.DateTimeFormat('vi-VN', {
                 hour: '2-digit',
                 minute: '2-digit',
                 day: '2-digit',
-                month: '2-digit'
+                month: '2-digit',
+                year: 'numeric'
             }).format(date);
         } catch (e) {
             return isoString;
@@ -153,7 +177,7 @@ const Header: React.FC = () => {
                             initial={{ opacity: 0, scale: 0.95, y: 20 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                            className="bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6 relative overflow-hidden"
+                            className="bg-bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6 relative overflow-hidden"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="flex items-start gap-4 mb-4">
@@ -162,7 +186,7 @@ const Header: React.FC = () => {
                                     selectedNotification.type === 'alert' && "bg-red-500/20 text-red-500",
                                     selectedNotification.type === 'success' && "bg-emerald-500/20 text-emerald-500",
                                     selectedNotification.type === 'info' && "bg-blue-500/20 text-blue-500",
-                                    (!selectedNotification.type || selectedNotification.type === 'error') && "bg-slate-500/20 text-slate-400"
+                                    (!selectedNotification.type || selectedNotification.type === 'error') && "bg-bg-elevated text-text-muted"
                                 )}>
                                     {selectedNotification.type === 'alert' && <X size={24} />}
                                     {selectedNotification.type === 'success' && <Check size={24} />}
@@ -170,24 +194,24 @@ const Header: React.FC = () => {
                                     {(!selectedNotification.type || selectedNotification.type === 'error') && <Bell size={24} />}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <h3 className="text-lg font-bold text-white mb-1 leading-tight break-words">
+                                    <h3 className="text-lg font-bold text-text-main mb-1 leading-tight break-words">
                                         {selectedNotification.title}
                                     </h3>
-                                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                                    <div className="flex items-center gap-2 text-xs text-text-muted">
                                         <Calendar size={12} />
                                         <span>{formatTime(selectedNotification.time)}</span>
                                     </div>
                                 </div>
                                 <button
                                     onClick={() => setShowDetailModal(false)}
-                                    className="text-slate-500 hover:text-white transition-colors"
+                                    className="text-text-muted hover:text-text-main transition-colors"
                                 >
                                     <X size={20} />
                                 </button>
                             </div>
 
-                            <div className="bg-[#0f172a] rounded-xl p-4 border border-white/5 max-h-[300px] overflow-y-auto custom-scrollbar">
-                                <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-line">
+                            <div className="bg-bg-main rounded-xl p-4 border border-border max-h-[300px] overflow-y-auto custom-scrollbar">
+                                <p className="text-text-secondary text-sm leading-relaxed whitespace-pre-line">
                                     {selectedNotification.message}
                                 </p>
                             </div>
@@ -213,7 +237,7 @@ const Header: React.FC = () => {
                             initial={{ opacity: 0, scale: 0.95, y: 20 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                            className="bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6 relative overflow-hidden"
+                            className="bg-bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6 relative overflow-hidden"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {/* Decorative background glow */}
@@ -233,26 +257,26 @@ const Header: React.FC = () => {
                                     <Gift size={24} />
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-bold text-white">
+                                    <h3 className="text-xl font-bold text-text-main">
                                         {wishType === 'birthday' ? 'Gửi lời chúc sinh nhật' :
                                             wishType === 'wedding' ? 'Gửi lời chúc mừng' : 'Gửi lời chia buồn'}
                                     </h3>
-                                    <p className="text-xs text-slate-400">Gửi lời nhắn đến đồng nghiệp</p>
+                                    <p className="text-xs text-text-muted">Gửi lời nhắn đến đồng nghiệp</p>
                                 </div>
                                 <button
                                     onClick={() => setShowWishModal(false)}
-                                    className="absolute top-0 right-0 p-2 text-slate-500 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                                    className="absolute top-0 right-0 p-2 text-text-muted hover:text-text-main rounded-lg hover:bg-bg-elevated transition-colors"
                                 >
                                     <X size={20} />
                                 </button>
                             </div>
 
                             <div className="mb-6">
-                                <label className="text-sm font-medium text-slate-300 mb-2 block">Lời nhắn của bạn</label>
+                                <label className="text-sm font-medium text-text-secondary mb-2 block">Lời nhắn của bạn</label>
                                 <div className="relative">
                                     <textarea
                                         className={clsx(
-                                            "w-full bg-[#0f172a] border border-white/10 rounded-xl p-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 min-h-[120px] resize-none leading-relaxed",
+                                            "w-full bg-bg-main border border-border rounded-xl p-4 text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 min-h-[120px] resize-none leading-relaxed",
                                             wishType === 'birthday' ? "focus:ring-pink-500/50" :
                                                 wishType === 'wedding' ? "focus:ring-yellow-500/50" : "focus:ring-slate-500/50"
                                         )}
@@ -290,7 +314,7 @@ const Header: React.FC = () => {
                             <div className="flex justify-end gap-3">
                                 <button
                                     onClick={() => setShowWishModal(false)}
-                                    className="px-4 py-2.5 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors font-medium text-sm"
+                                    className="px-4 py-2.5 text-text-muted hover:text-text-main hover:bg-bg-elevated rounded-xl transition-colors font-medium text-sm"
                                 >
                                     Hủy bỏ
                                 </button>
@@ -308,30 +332,37 @@ const Header: React.FC = () => {
                 )}
             </AnimatePresence>
 
-            <header className="h-16 border-b border-white/10 flex items-center justify-between px-8 bg-[#0f172a]/80 backdrop-blur-md sticky top-0 z-40">
+            <header className="h-16 border-b border-border flex items-center justify-between px-4 md:px-8 bg-bg-card/80 backdrop-blur-md sticky top-0 z-40">
                 {/* Search Bar Removed - Use Page Level Search */}
-                <div className="flex-1" />
+                <div className="flex-1 flex items-center">
+                    <button
+                        onClick={onMenuClick}
+                        className="mr-4 p-2 text-text-muted hover:text-text-main md:hidden hover:bg-bg-elevated rounded-lg transition-colors active:scale-95"
+                    >
+                        <Menu size={24} />
+                    </button>
+                </div>
 
                 {/* Right Actions */}
                 <div className="flex items-center gap-6">
                     {/* AI Status */}
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
                         <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_10px_#6366f1]" />
-                        <span className="text-xs font-bold text-indigo-300">{t.header.aiActive}</span>
+                        <span className="text-xs font-bold text-indigo-500 dark:text-indigo-300">{t.header.aiActive}</span>
                     </div>
 
                     {/* Icons */}
-                    <div className="flex items-center gap-4 border-l border-white/10 pl-6 relative" ref={notifRef}>
+                    <div className="flex items-center gap-4 border-l border-border pl-6 relative" ref={notifRef}>
                         <button
                             onClick={() => setShowNotifications(!showNotifications)}
                             className={clsx(
                                 "relative transition-colors p-2 rounded-lg",
-                                showNotifications ? "bg-white/10 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                                showNotifications ? "bg-bg-elevated text-text-main" : "text-text-muted hover:text-text-main hover:bg-bg-elevated"
                             )}
                         >
                             <Bell size={20} />
                             {unreadCount > 0 && (
-                                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-slate-900 flex items-center justify-center">
+                                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-bg-card flex items-center justify-center">
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                                 </span>
                             )}
@@ -345,26 +376,26 @@ const Header: React.FC = () => {
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                                     transition={{ duration: 0.2 }}
-                                    className="absolute top-full right-0 mt-4 w-96 bg-[#0f172a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 origin-top-right ring-1 ring-black/5"
+                                    className="absolute top-full right-[-4rem] sm:right-0 mt-4 w-[calc(100vw-2rem)] sm:w-96 bg-bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-50 origin-top-right ring-1 ring-black/5"
                                 >
-                                    <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-xl">
-                                        <h3 className="font-bold text-white text-sm">
+                                    <div className="p-4 border-b border-border flex justify-between items-center bg-bg-elevated/50 backdrop-blur-xl">
+                                        <h3 className="font-bold text-text-main text-sm">
                                             {t.settings.notifications} ({unreadCount})
                                         </h3>
                                         {/* Only show Clear button if Admin */}
                                         {notifications.length > 0 && isAdmin && (
                                             <button
                                                 onClick={clearNotifications}
-                                                className="text-[10px] text-slate-400 hover:text-red-400 flex items-center gap-1 transition-colors uppercase font-semibold tracking-wider"
+                                                className="text-[10px] text-text-muted hover:text-red-500 flex items-center gap-1 transition-colors uppercase font-semibold tracking-wider"
                                             >
                                                 <Trash2 size={12} /> {t.common.delete}
                                             </button>
                                         )}
                                     </div>
 
-                                    <div className="max-h-[400px] overflow-y-auto custom-scrollbar p-2 space-y-1">
+                                    <div className="max-h-[400px] overflow-y-auto custom-scrollbar p-2 space-y-1 bg-bg-card">
                                         {notifications.length === 0 ? (
-                                            <div className="py-12 flex flex-col items-center justify-center text-slate-500">
+                                            <div className="py-12 flex flex-col items-center justify-center text-text-muted">
                                                 <Bell size={32} className="mb-3 opacity-20" />
                                                 <p className="text-xs">{t.header.noNotifications}</p>
                                             </div>
@@ -376,7 +407,7 @@ const Header: React.FC = () => {
                                                     className={clsx(
                                                         "p-3 rounded-xl transition-all cursor-pointer border relative group",
                                                         notif.read
-                                                            ? "bg-transparent border-transparent opacity-60 hover:opacity-100 hover:bg-white/5"
+                                                            ? "bg-transparent border-transparent opacity-60 hover:opacity-100 hover:bg-bg-elevated"
                                                             : "bg-indigo-500/5 border-indigo-500/20 hover:bg-indigo-500/10"
                                                     )}
                                                 >
@@ -388,7 +419,7 @@ const Header: React.FC = () => {
                                                             notif.type === 'alert' && "bg-red-500/10 border-red-500/30 text-red-500",
                                                             notif.type === 'success' && "bg-emerald-500/10 border-emerald-500/30 text-emerald-500",
                                                             notif.type === 'info' && "bg-blue-500/10 border-blue-500/30 text-blue-500",
-                                                            (!notif.type || notif.type === 'error') && "bg-slate-500/10 border-slate-500/30 text-slate-500"
+                                                            (!notif.type || notif.type === 'error') && "bg-bg-elevated border-border text-text-muted"
                                                         )}>
                                                             {notif.type === 'alert' && <X size={14} />}
                                                             {notif.type === 'success' && <Check size={14} />}
@@ -396,11 +427,11 @@ const Header: React.FC = () => {
                                                             {(!notif.type || notif.type === 'error') && <Bell size={14} />}
                                                         </div>
                                                         <div className="flex-1">
-                                                            <h4 className={clsx("text-sm font-bold mb-0.5", notif.read ? "text-slate-400" : "text-white")}>
+                                                            <h4 className={clsx("text-sm font-bold mb-0.5", notif.read ? "text-text-muted" : "text-text-main")}>
                                                                 {notif.title}
                                                             </h4>
-                                                            <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed mb-1.5">{notif.message}</p>
-                                                            <span className="text-[10px] text-slate-600 font-mono uppercase tracking-wide">
+                                                            <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed mb-1.5">{notif.message}</p>
+                                                            <span className="text-[10px] text-text-muted font-mono uppercase tracking-wide">
                                                                 {formatTime(notif.time)}
                                                             </span>
                                                         </div>
@@ -421,25 +452,25 @@ const Header: React.FC = () => {
                             className="flex items-center gap-3 pl-2 cursor-pointer hover:opacity-80 transition-opacity"
                         >
                             <div className="text-right hidden md:block">
-                                <div className="text-sm font-bold text-white leading-tight flex items-center justify-end gap-1.5">
+                                <div className="text-sm font-bold text-text-main leading-tight flex items-center justify-end gap-1.5">
                                     {userName}
-                                    {isAdmin && <Shield size={14} className="text-indigo-400 fill-indigo-400/20" />}
+                                    {isAdmin && <Shield size={14} className="text-indigo-500 fill-indigo-500/20" />}
                                 </div>
-                                <div className="text-[10px] text-slate-400">
-                                    {isAdmin ? <span className="text-indigo-400 font-bold uppercase tracking-wider">Administrator</span> : 'Online'}
+                                <div className="text-[10px] text-text-muted">
+                                    {isAdmin ? <span className="text-indigo-500 dark:text-indigo-400 font-bold uppercase tracking-wider">Administrator</span> : 'Online'}
                                 </div>
                             </div>
                             <div className={clsx(
                                 "w-10 h-10 rounded-full p-0.5 relative transition-all",
-                                isAdmin ? "bg-gradient-to-tr from-indigo-500 via-purple-500 to-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]" : "bg-gradient-to-tr from-slate-700 to-slate-600"
+                                isAdmin ? "bg-gradient-to-tr from-indigo-500 via-purple-500 to-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]" : "bg-gradient-to-tr from-slate-400 to-slate-300 dark:from-slate-700 dark:to-slate-600"
                             )}>
-                                <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center overflow-hidden">
+                                <div className="w-full h-full rounded-full bg-bg-card flex items-center justify-center overflow-hidden">
                                     <img src={userAvatar} alt="Profile" className="w-full h-full object-cover" />
                                 </div>
                                 {/* Online Dot */}
-                                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-900 rounded-full"></div>
+                                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-bg-card rounded-full"></div>
                             </div>
-                            <ChevronDown size={14} className="text-slate-400" />
+                            <ChevronDown size={14} className="text-text-muted" />
                         </div>
 
                         {/* Profile Dropdown */}
@@ -450,15 +481,15 @@ const Header: React.FC = () => {
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                                     transition={{ duration: 0.1 }}
-                                    className="absolute top-full right-0 mt-2 w-48 bg-[#0f172a] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50 ring-1 ring-black/5 p-1"
+                                    className="absolute top-full right-0 mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl overflow-hidden z-50 ring-1 ring-black/5 p-1"
                                 >
-                                    <button className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2 transition-colors">
+                                    <button className="w-full text-left px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-elevated hover:text-text-main flex items-center gap-2 transition-colors">
                                         <Settings size={16} /> {t.settings.title}
                                     </button>
-                                    <div className="my-1 border-t border-white/5 mx-2"></div>
+                                    <div className="my-1 border-t border-border mx-2"></div>
                                     <button
                                         onClick={logout}
-                                        className="w-full text-left px-3 py-2 rounded-lg text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2 transition-colors"
+                                        className="w-full text-left px-3 py-2 rounded-lg text-sm text-red-500 hover:bg-red-500/10 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 flex items-center gap-2 transition-colors"
                                     >
                                         <LogOut size={16} /> {t.auth.logout}
                                     </button>

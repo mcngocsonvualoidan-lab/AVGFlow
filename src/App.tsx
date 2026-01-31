@@ -1,24 +1,38 @@
-import { useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import Workflow from './pages/Workflow';
-import TaskManager from './pages/TaskManager';
-import UserManagement from './pages/UserManagement';
-import Reports from './pages/Reports';
-import Income from './pages/Income';
-import MyBirthdayWishes from './pages/MyBirthdayWishes';
-import SettingsPage from './pages/Settings';
-import Login from './pages/Login';
-import MeetingSchedule from './pages/MeetingSchedule';
-import ConclusionDocs from './pages/ConclusionDocs';
-import AdminLogin from './pages/AdminLogin';
-import AdminPanel from './pages/AdminPanel';
+import Dashboard from './modules/dashboard/Dashboard';
+import Workflow from './modules/documents/Workflow';
+import TaskManager from './modules/tasks/TaskManager';
+import UserManagement from './modules/hr/UserManagement';
+import Reports from './modules/documents/Reports';
+import Income from './modules/finance/Income';
+import MyBirthdayWishes from './modules/hr/MyBirthdayWishes';
+import SettingsPage from './modules/settings/Settings';
+import Login from './modules/auth/Login';
+import MeetingSchedule from './modules/schedule/MeetingSchedule';
+import ConclusionDocs from './modules/documents/ConclusionDocs';
+import AdminLogin from './modules/auth/AdminLogin';
+import AIChat from './modules/communication/AIChat';
+import AdminPanel from './modules/admin/AdminPanel';
+import AppsPortal from './modules/apps/AppsPortal';
+import ExecutiveDirectives from './modules/documents/ExecutiveDirectives';
+import BusinessFund from './modules/finance/BusinessFund';
+import ErrorBoundary from './components/ErrorBoundary';
+import BiometricSetupPrompt from './components/BiometricSetupPrompt';
+import UpdateNotification from './components/UpdateNotification';
+import Timekeeping from './modules/timekeeping/TimekeepingLayout';
 
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { DataProvider, useData, initialUsers } from './context/DataContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { Loader2, ShieldAlert } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { isBiometricEnabled, isPlatformAuthenticatorAvailable, isWebAuthnSupported } from './utils/biometricAuth';
+
+// Constants for localStorage keys
+const FIRST_LOGIN_KEY = 'avgflow_first_login_done';
+const BIOMETRIC_PROMPT_KEY = 'avgflow_biometric_prompt_shown';
 
 const AccessDenied = () => {
   const { logout, currentUser } = useAuth();
@@ -37,9 +51,9 @@ const AccessDenied = () => {
       </div>
       <button
         onClick={logout}
-        className="px-6 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors text-sm font-bold border border-white/10"
+        className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-500/20 transition-all font-bold border border-indigo-500/50 flex items-center gap-2"
       >
-        {t.auth.logout}
+        Đăng nhập bằng tài khoản khác
       </button>
     </div>
   )
@@ -48,7 +62,47 @@ const AccessDenied = () => {
 const MainContent = () => {
   const { currentUser, loading } = useAuth();
   const { users, isLoaded } = useData();
-  const [activeTab, setActiveTab] = useState('dashboard');
+
+  // State for biometric setup prompt
+  const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
+
+  // Effect to check for first login and show biometric prompt
+  useEffect(() => {
+    const checkFirstLogin = async () => {
+      if (!currentUser) return;
+
+      const isFirstLogin = localStorage.getItem(FIRST_LOGIN_KEY) !== 'true';
+      const promptShown = localStorage.getItem(BIOMETRIC_PROMPT_KEY) === 'true';
+      const biometricAlreadyEnabled = isBiometricEnabled();
+
+      // Check if biometric is available
+      const supported = isWebAuthnSupported();
+      const available = await isPlatformAuthenticatorAvailable();
+
+      // If first login, mark it as done
+      if (isFirstLogin) {
+        localStorage.setItem(FIRST_LOGIN_KEY, 'true');
+      }
+
+      // Show biometric prompt if:
+      // 1. First login OR prompt never shown
+      // 2. Biometric is available but not enabled
+      // 3. Device supports biometric
+      if ((isFirstLogin || !promptShown) && !biometricAlreadyEnabled && supported && available) {
+        // Small delay to let the app load
+        setTimeout(() => {
+          setShowBiometricPrompt(true);
+        }, 1500);
+      }
+    };
+
+    checkFirstLogin();
+  }, [currentUser]);
+
+  const handleBiometricPromptClose = () => {
+    setShowBiometricPrompt(false);
+    localStorage.setItem(BIOMETRIC_PROMPT_KEY, 'true');
+  };
 
   if (loading || (currentUser && !isLoaded)) {
     return (
@@ -64,47 +118,71 @@ const MainContent = () => {
   }
 
   // Check if user exists in our system (Admin Control)
+  const isSuperAdminEmail = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'].includes((currentUser.email || '').toLowerCase());
+
   const authorizedUser = users.find(u => u.email.toLowerCase() === currentUser.email?.toLowerCase()) ||
-    initialUsers.find(u => u.email.toLowerCase() === currentUser.email?.toLowerCase());
+    initialUsers.find(u => u.email.toLowerCase() === currentUser.email?.toLowerCase()) || isSuperAdminEmail; // Allow if Super Admin
 
   if (!authorizedUser) {
     return <AccessDenied />;
   }
 
   return (
-    <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
-      {activeTab === 'dashboard' && <Dashboard />}
-      {activeTab === 'workflow' && <Workflow />}
-      {activeTab === 'tasks' && <TaskManager />}
-      {activeTab === 'schedule' && <MeetingSchedule />}
-      {activeTab === 'users' && <UserManagement />}
-      {activeTab === 'reports' && <Reports />}
-      {activeTab === 'conclusion-docs' && <ConclusionDocs />}
-      {activeTab === 'income' && <Income />}
-      {activeTab === 'settings' && <SettingsPage />}
-      {activeTab === 'my-wishes' && <MyBirthdayWishes />}
-    </Layout>
+    <>
+      {/* Biometric Setup Prompt */}
+      <BiometricSetupPrompt
+        isOpen={showBiometricPrompt}
+        onClose={handleBiometricPromptClose}
+        onSkip={handleBiometricPromptClose}
+      />
+
+      <Layout>
+        <Routes>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="workflow" element={<ErrorBoundary><Workflow /></ErrorBoundary>} />
+          <Route path="tasks" element={<ErrorBoundary><TaskManager /></ErrorBoundary>} />
+          <Route path="schedule" element={<MeetingSchedule />} />
+          <Route path="users" element={<UserManagement />} />
+          <Route path="timesheet" element={<Timekeeping />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="conclusion-docs" element={<ConclusionDocs />} />
+          <Route path="income" element={<Income />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="my-wishes" element={<MyBirthdayWishes />} />
+          <Route path="my-wishes" element={<MyBirthdayWishes />} />
+          <Route path="ai-chat" element={<AIChat />} />
+          <Route path="apps" element={<AppsPortal />} />
+          <Route path="executive-directives" element={<ExecutiveDirectives />} />
+          <Route path="business-fund" element={<BusinessFund />} />
+          <Route path="*" element={<Navigate to="dashboard" replace />} />
+        </Routes>
+      </Layout>
+    </>
   );
 };
 
 function App() {
   return (
-    <LanguageProvider>
-      <AuthProvider>
-        <DataProvider>
-          <BrowserRouter>
-            <Routes>
-              {/* Admin System Routes */}
-              <Route path="/admin-login" element={<AdminLogin />} />
-              <Route path="/admin-panel/:section?" element={<AdminPanel />} />
+    <ThemeProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <DataProvider>
+            <BrowserRouter>
+              <UpdateNotification />
+              <Routes>
+                {/* Admin System Routes */}
+                <Route path="/admin-login" element={<AdminLogin />} />
+                <Route path="/admin-panel/:section?" element={<AdminPanel />} />
 
-              {/* Main App Route - Catch All */}
-              <Route path="/*" element={<MainContent />} />
-            </Routes>
-          </BrowserRouter>
-        </DataProvider>
-      </AuthProvider>
-    </LanguageProvider>
+                {/* Main App Route - Catch All */}
+                <Route path="/*" element={<MainContent />} />
+              </Routes>
+            </BrowserRouter>
+          </DataProvider>
+        </AuthProvider>
+      </LanguageProvider>
+    </ThemeProvider>
   )
 }
 
