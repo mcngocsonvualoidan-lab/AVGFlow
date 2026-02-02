@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useMeetingSchedule, MEETING_ARCHIVES, CURRENT_MONTH_GID, MonthArchive } from '../../hooks/useMeetingSchedule';
-import { Calendar, RefreshCw, Clock, MapPin, Users, AlignLeft, User, Link as LinkIcon, Archive, ChevronDown } from 'lucide-react';
+import { Calendar, RefreshCw, Clock, MapPin, Users, AlignLeft, User, Link as LinkIcon, Archive, ChevronDown, Sparkles, Zap, Target, TrendingUp } from 'lucide-react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -40,6 +40,166 @@ const MeetingSchedule: React.FC = () => {
 
     return (
         <div className="p-4 flex flex-col gap-6 h-auto min-h-screen pb-24 bg-gradient-to-br from-indigo-50/50 via-white to-cyan-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/20">
+
+            {/* Hero Banner */}
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 dark:from-indigo-900 dark:via-violet-900 dark:to-purple-950 shadow-2xl shadow-indigo-500/30"
+            >
+                {/* Animated Background Elements */}
+                <div className="absolute inset-0 overflow-hidden">
+                    <div className="absolute -top-24 -right-24 w-96 h-96 bg-gradient-to-br from-cyan-400/30 to-transparent rounded-full blur-3xl animate-pulse" />
+                    <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-gradient-to-tr from-pink-500/20 to-transparent rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-radial from-white/5 to-transparent rounded-full" />
+
+                    {/* Floating particles */}
+                    <motion.div
+                        animate={{ y: [-10, 10, -10], rotate: [0, 180, 360] }}
+                        transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                        className="absolute top-10 right-20 w-3 h-3 bg-cyan-400/60 rounded-full"
+                    />
+                    <motion.div
+                        animate={{ y: [10, -10, 10], rotate: [360, 180, 0] }}
+                        transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+                        className="absolute bottom-16 right-40 w-2 h-2 bg-pink-400/60 rounded-full"
+                    />
+                    <motion.div
+                        animate={{ x: [-10, 10, -10] }}
+                        transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
+                        className="absolute top-20 left-1/3 w-2 h-2 bg-yellow-400/60 rounded-full"
+                    />
+                </div>
+
+                {/* Content */}
+                <div className="relative z-10 p-8 md:p-10">
+                    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                        {/* Left Content */}
+                        <div className="flex-1 max-w-2xl">
+                            <motion.div
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: 0.2 }}
+                                className="flex items-center gap-2 mb-4"
+                            >
+                                <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white/90 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                                    <Sparkles size={12} className="text-yellow-300" />
+                                    Tháng {currentArchive.month}/{currentArchive.year}
+                                </span>
+                                <span className="px-3 py-1 rounded-full bg-emerald-500/20 backdrop-blur-sm border border-emerald-400/30 text-emerald-300 text-xs font-bold flex items-center gap-1.5">
+                                    <Zap size={12} />
+                                    {displayMeetings.length} cuộc họp
+                                </span>
+                            </motion.div>
+
+                            <motion.h2
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.3 }}
+                                className="text-3xl md:text-4xl font-black text-white mb-3 leading-tight"
+                            >
+                                Lịch Trao Đổi & Họp Công Việc
+                            </motion.h2>
+
+                            <motion.p
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.4 }}
+                                className="text-white/70 text-sm md:text-base leading-relaxed mb-6"
+                            >
+                                Quản lý và theo dõi các cuộc họp, trao đổi công việc một cách hiệu quả.
+                                Đồng bộ tự động từ Google Sheets để cập nhật realtime.
+                            </motion.p>
+
+                            {/* Quick Stats */}
+                            <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.5 }}
+                                className="flex flex-wrap gap-3"
+                            >
+                                {[
+                                    {
+                                        icon: Target,
+                                        label: 'Đang diễn ra',
+                                        value: displayMeetings.filter(m => {
+                                            if (!m.date) return false;
+                                            const parts = m.date.split('/');
+                                            if (parts.length !== 3) return false;
+                                            const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+                                            const today = new Date();
+                                            return d.toDateString() === today.toDateString();
+                                        }).length,
+                                        color: 'from-emerald-400 to-green-500'
+                                    },
+                                    {
+                                        icon: TrendingUp,
+                                        label: 'Sắp tới',
+                                        value: displayMeetings.filter(m => {
+                                            if (!m.date) return false;
+                                            const parts = m.date.split('/');
+                                            if (parts.length !== 3) return false;
+                                            const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+                                            const today = new Date();
+                                            today.setHours(0, 0, 0, 0);
+                                            return d > today;
+                                        }).length,
+                                        color: 'from-amber-400 to-orange-500'
+                                    },
+                                    {
+                                        icon: Clock,
+                                        label: 'Hoàn thành',
+                                        value: displayMeetings.filter(m => {
+                                            if (!m.date) return false;
+                                            const parts = m.date.split('/');
+                                            if (parts.length !== 3) return false;
+                                            const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+                                            const today = new Date();
+                                            today.setHours(0, 0, 0, 0);
+                                            return d < today;
+                                        }).length,
+                                        color: 'from-slate-400 to-slate-500'
+                                    },
+                                ].map((stat, i) => (
+                                    <div key={i} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10 hover:bg-white/20 transition-colors cursor-default">
+                                        <div className={`p-1.5 rounded-lg bg-gradient-to-br ${stat.color}`}>
+                                            <stat.icon size={14} className="text-white" />
+                                        </div>
+                                        <div>
+                                            <div className="text-2xl font-black text-white">{stat.value}</div>
+                                            <div className="text-[10px] text-white/60 font-medium uppercase tracking-wider">{stat.label}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </motion.div>
+                        </div>
+
+                        {/* Right Decorative Element */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.6, type: "spring" }}
+                            className="hidden lg:flex items-center justify-center"
+                        >
+                            <div className="relative">
+                                <div className="w-40 h-40 rounded-3xl bg-gradient-to-br from-white/20 to-white/5 backdrop-blur-xl border border-white/20 flex items-center justify-center shadow-2xl">
+                                    <Calendar size={64} className="text-white/90" />
+                                </div>
+                                <div className="absolute -top-3 -right-3 w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shadow-lg animate-bounce">
+                                    <Sparkles size={20} className="text-white" />
+                                </div>
+                                <div className="absolute -bottom-2 -left-2 w-10 h-10 rounded-lg bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center shadow-lg" style={{ animationDelay: '0.5s' }}>
+                                    <Zap size={16} className="text-white" />
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                </div>
+
+                {/* Bottom Wave Effect */}
+                <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+            </motion.div>
+
             {/* Header Section */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0 relative z-10">
                 <div>
