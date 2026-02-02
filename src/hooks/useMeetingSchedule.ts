@@ -17,7 +17,23 @@ export interface Meeting {
     isHighlight?: boolean;
 }
 
-export const useMeetingSchedule = () => {
+export interface MonthArchive {
+    month: number;
+    year: number;
+    label: string;
+    gid: string;
+}
+
+// Archive list of available months
+export const MEETING_ARCHIVES: MonthArchive[] = [
+    { month: 2, year: 2026, label: 'Tháng 02/2026', gid: '896887169' },
+    { month: 1, year: 2026, label: 'Tháng 01/2026', gid: '0' },
+];
+
+// Default current month GID
+export const CURRENT_MONTH_GID = '896887169'; // February 2026
+
+export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID) => {
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -27,8 +43,7 @@ export const useMeetingSchedule = () => {
         setError(null);
         try {
             const SHEET_ID = '11p55tNRLRqVfgwEfrcTWJfxKA6dJQyDJq4CapgZ5o-M';
-            const GID = '0';
-            const GOOGLE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
+            const GOOGLE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
 
             let responseText: string | null = null;
 
@@ -134,7 +149,7 @@ export const useMeetingSchedule = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [gid]);
 
     useEffect(() => {
         fetchSheetData();

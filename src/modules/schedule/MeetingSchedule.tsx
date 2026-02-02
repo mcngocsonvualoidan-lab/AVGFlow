@@ -1,12 +1,20 @@
-import React, { useEffect } from 'react';
-import { useMeetingSchedule } from '../../hooks/useMeetingSchedule';
-import { Calendar, RefreshCw, Clock, MapPin, Users, AlignLeft, User, Link as LinkIcon } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useMeetingSchedule, MEETING_ARCHIVES, CURRENT_MONTH_GID, MonthArchive } from '../../hooks/useMeetingSchedule';
+import { Calendar, RefreshCw, Clock, MapPin, Users, AlignLeft, User, Link as LinkIcon, Archive, ChevronDown } from 'lucide-react';
 import { clsx } from 'clsx';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const MeetingSchedule: React.FC = () => {
+    // Archive state
+    const [selectedGid, setSelectedGid] = useState(CURRENT_MONTH_GID);
+    const [showArchiveDropdown, setShowArchiveDropdown] = useState(false);
+
+    // Get current selected archive info
+    const currentArchive = MEETING_ARCHIVES.find(a => a.gid === selectedGid) || MEETING_ARCHIVES[0];
+    const isViewingArchive = selectedGid !== CURRENT_MONTH_GID;
+
     // Info: Use the shared hook for data fetching
-    const { meetings: sheetData, loading: isSyncing, error: syncError, refresh: fetchSheetData } = useMeetingSchedule();
+    const { meetings: sheetData, loading: isSyncing, error: syncError, refresh: fetchSheetData } = useMeetingSchedule(selectedGid);
 
     // Auto-refresh interval is managed inside the hook if needed, 
     // but the hook currently just fetches once. We can add interval here if we want strictly 
@@ -20,6 +28,11 @@ const MeetingSchedule: React.FC = () => {
     }, [fetchSheetData]);
 
     const displayMeetings = sheetData;
+
+    const handleSelectArchive = (archive: MonthArchive) => {
+        setSelectedGid(archive.gid);
+        setShowArchiveDropdown(false);
+    };
 
     return (
         <div className="p-4 flex flex-col gap-6 h-auto min-h-screen pb-24 bg-gradient-to-br from-indigo-50/50 via-white to-cyan-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/20">
@@ -50,6 +63,58 @@ const MeetingSchedule: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Archive Dropdown */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowArchiveDropdown(!showArchiveDropdown)}
+                            className={clsx(
+                                "group relative px-4 py-2.5 rounded-xl border shadow-sm transition-all overflow-hidden flex items-center gap-2 font-semibold text-sm",
+                                isViewingArchive
+                                    ? "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/30 hover:bg-amber-100"
+                                    : "bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10"
+                            )}
+                        >
+                            <Archive size={18} className={isViewingArchive ? "text-amber-600" : ""} />
+                            <span>{currentArchive.label}</span>
+                            <ChevronDown size={16} className={clsx("transition-transform", showArchiveDropdown && "rotate-180")} />
+                        </button>
+
+                        <AnimatePresence>
+                            {showArchiveDropdown && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-white/10 shadow-xl z-50 overflow-hidden"
+                                >
+                                    <div className="p-2">
+                                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-2 py-1.5">
+                                            Lịch sử các tháng
+                                        </div>
+                                        {MEETING_ARCHIVES.map((archive) => (
+                                            <button
+                                                key={archive.gid}
+                                                onClick={() => handleSelectArchive(archive)}
+                                                className={clsx(
+                                                    "w-full px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-all flex items-center gap-2",
+                                                    selectedGid === archive.gid
+                                                        ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300"
+                                                        : "hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300"
+                                                )}
+                                            >
+                                                <Calendar size={14} />
+                                                {archive.label}
+                                                {archive.gid === CURRENT_MONTH_GID && (
+                                                    <span className="ml-auto text-[10px] bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">Hiện tại</span>
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
                     <button
                         onClick={fetchSheetData}
                         disabled={isSyncing}
@@ -64,6 +129,31 @@ const MeetingSchedule: React.FC = () => {
                     <div className="h-10 w-px bg-slate-200 dark:bg-white/10 mx-2 hidden md:block"></div>
                 </div>
             </div>
+
+            {/* Archive Banner */}
+            <AnimatePresence>
+                {isViewingArchive && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                    >
+                        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
+                            <Archive size={18} className="text-amber-600 dark:text-amber-400" />
+                            <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                                Bạn đang xem <strong>{currentArchive.label}</strong> (Lịch sử lưu trữ)
+                            </span>
+                            <button
+                                onClick={() => setSelectedGid(CURRENT_MONTH_GID)}
+                                className="ml-auto text-xs font-bold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 underline"
+                            >
+                                Quay lại tháng hiện tại →
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Legend Bubbles */}
             <motion.div
