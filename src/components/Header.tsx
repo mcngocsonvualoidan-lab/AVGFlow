@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bell, Settings, Check, Trash2, X, LogOut, ChevronDown, Shield, Gift, Send, Info, Calendar, Menu } from 'lucide-react';
+import { Bell, Settings, Check, Trash2, X, LogOut, ChevronDown, Shield, Gift, Send, Info, Calendar, Menu, Sun, Moon, RefreshCw } from 'lucide-react';
 import { useData, Notification } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -15,8 +16,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     // ... (rest of hook calls)
     const { t } = useLanguage();
     const { currentUser, logout } = useAuth();
+    const { theme, toggleTheme } = useTheme();
     const [showNotifications, setShowNotifications] = useState(false);
     const [showProfileMenu, setShowProfileMenu] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Birthday Wish Modal State
     const [showWishModal, setShowWishModal] = useState(false);
@@ -350,6 +353,63 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                         <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_10px_#6366f1]" />
                         <span className="text-xs font-bold text-indigo-500 dark:text-indigo-300">{t.header.aiActive}</span>
                     </div>
+
+                    {/* Theme Toggle Switch */}
+                    <button
+                        onClick={toggleTheme}
+                        className={clsx(
+                            "relative w-14 h-7 rounded-full p-0.5 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500",
+                            theme === 'dark'
+                                ? "bg-gradient-to-r from-indigo-600 to-purple-600"
+                                : "bg-gradient-to-r from-amber-400 to-orange-400"
+                        )}
+                        title={theme === 'dark' ? 'Chuyển sang Light Mode' : 'Chuyển sang Dark Mode'}
+                    >
+                        {/* Sliding Knob */}
+                        <motion.div
+                            layout
+                            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                            className={clsx(
+                                "w-6 h-6 rounded-full shadow-lg flex items-center justify-center",
+                                theme === 'dark'
+                                    ? "bg-slate-800 ml-auto"
+                                    : "bg-white ml-0"
+                            )}
+                        >
+                            {theme === 'dark' ? (
+                                <Moon size={14} className="text-indigo-300" />
+                            ) : (
+                                <Sun size={14} className="text-amber-500" />
+                            )}
+                        </motion.div>
+                    </button>
+
+                    {/* Refresh Button */}
+                    <button
+                        onClick={() => {
+                            setIsRefreshing(true);
+                            // Reload after animation starts
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 300);
+                        }}
+                        disabled={isRefreshing}
+                        className={clsx(
+                            "p-2 rounded-lg transition-all duration-200",
+                            isRefreshing
+                                ? "text-indigo-500 bg-indigo-500/10"
+                                : "text-text-muted hover:text-text-main hover:bg-bg-elevated"
+                        )}
+                        title="Làm mới trang (F5)"
+                    >
+                        <RefreshCw
+                            size={18}
+                            className={clsx(
+                                "transition-transform",
+                                isRefreshing && "animate-spin"
+                            )}
+                        />
+                    </button>
 
                     {/* Icons */}
                     <div className="flex items-center gap-4 border-l border-border pl-6 relative" ref={notifRef}>
