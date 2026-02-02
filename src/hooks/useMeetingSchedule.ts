@@ -30,10 +30,10 @@ export const MEETING_ARCHIVES: MonthArchive[] = [
     { month: 1, year: 2026, label: 'Tháng 01/2026', gid: '0' },
 ];
 
-// Default current month GID
+// Default current month
 export const CURRENT_MONTH_GID = '896887169'; // February 2026
 
-export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID) => {
+export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID, filterMonth?: number, filterYear?: number) => {
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -120,7 +120,7 @@ export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID) => {
                 rows.push(currentRow);
             }
 
-            const mappedData: Meeting[] = rows
+            let mappedData: Meeting[] = rows
                 .filter(r => r.length > 5 && !r[0].includes('google.visualization') && (r[2] || r[8]))
                 .slice(1) // Skip likely header
                 .map((r, idx) => {
@@ -142,6 +142,19 @@ export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID) => {
                     };
                 });
 
+            // Filter by month/year if specified
+            if (filterMonth !== undefined && filterYear !== undefined) {
+                mappedData = mappedData.filter(meeting => {
+                    if (!meeting.date) return false;
+                    // Date format: DD/MM/YYYY
+                    const dateParts = meeting.date.split('/');
+                    if (dateParts.length !== 3) return false;
+                    const meetingMonth = parseInt(dateParts[1], 10);
+                    const meetingYear = parseInt(dateParts[2], 10);
+                    return meetingMonth === filterMonth && meetingYear === filterYear;
+                });
+            }
+
             setMeetings(mappedData);
         } catch (err: any) {
             console.error("Sync error:", err);
@@ -149,7 +162,7 @@ export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID) => {
         } finally {
             setLoading(false);
         }
-    }, [gid]);
+    }, [gid, filterMonth, filterYear]);
 
     useEffect(() => {
         fetchSheetData();

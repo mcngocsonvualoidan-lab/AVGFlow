@@ -13,8 +13,12 @@ const MeetingSchedule: React.FC = () => {
     const currentArchive = MEETING_ARCHIVES.find(a => a.gid === selectedGid) || MEETING_ARCHIVES[0];
     const isViewingArchive = selectedGid !== CURRENT_MONTH_GID;
 
-    // Info: Use the shared hook for data fetching
-    const { meetings: sheetData, loading: isSyncing, error: syncError, refresh: fetchSheetData } = useMeetingSchedule(selectedGid);
+    // Info: Use the shared hook for data fetching with month/year filter
+    const { meetings: sheetData, loading: isSyncing, error: syncError, refresh: fetchSheetData } = useMeetingSchedule(
+        selectedGid,
+        currentArchive.month,
+        currentArchive.year
+    );
 
     // Auto-refresh interval is managed inside the hook if needed, 
     // but the hook currently just fetches once. We can add interval here if we want strictly 
