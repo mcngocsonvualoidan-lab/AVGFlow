@@ -356,11 +356,17 @@ const TimekeepingLayout = () => {
                                     "px-4 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95",
                                     "bg-white text-amber-600 hover:bg-amber-50"
                                 )}
-                                title={hasQuotaInViewMonth ? "Đăng ký nghỉ phép" : "Đã hết phép tháng này"}
+                                title={hasQuotaInViewMonth ? `Đăng ký nghỉ phép (Còn ${1 - usedLeaveInViewMonth} ngày)` : "Đã hết phép tháng này"}
                             >
                                 <Calendar size={18} />
-                                {hasQuotaInViewMonth ? "Nghỉ phép" : "Xin nghỉ"}
-                                {!hasQuotaInViewMonth && <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">Hết</span>}
+                                Nghỉ phép
+                                {hasQuotaInViewMonth ? (
+                                    <span className="text-[10px] bg-emerald-500 text-white px-1.5 py-0.5 rounded-full font-bold">
+                                        {1 - usedLeaveInViewMonth}
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">Hết</span>
+                                )}
                             </button>
                             <button
                                 onClick={() => handleOpenLeaveModal('absence')}
