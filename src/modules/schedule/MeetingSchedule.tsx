@@ -72,49 +72,133 @@ const MeetingSchedule: React.FC = () => {
                         <button
                             onClick={() => setShowArchiveDropdown(!showArchiveDropdown)}
                             className={clsx(
-                                "group relative px-4 py-2.5 rounded-xl border shadow-sm transition-all overflow-hidden flex items-center gap-2 font-semibold text-sm",
+                                "group relative px-4 py-2.5 rounded-xl border shadow-lg transition-all duration-300 overflow-hidden flex items-center gap-3 font-semibold text-sm backdrop-blur-sm",
                                 isViewingArchive
-                                    ? "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/30 hover:bg-amber-100"
-                                    : "bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10"
+                                    ? "bg-gradient-to-r from-amber-500/10 to-orange-500/10 text-amber-700 dark:text-amber-300 border-amber-300/50 dark:border-amber-500/30 hover:shadow-amber-500/20"
+                                    : "bg-gradient-to-r from-indigo-500/5 to-cyan-500/5 hover:from-indigo-500/10 hover:to-cyan-500/10 text-slate-700 dark:text-slate-200 border-indigo-200/50 dark:border-indigo-500/20 hover:shadow-indigo-500/20"
                             )}
                         >
-                            <Archive size={18} className={isViewingArchive ? "text-amber-600" : ""} />
-                            <span>{currentArchive.label}</span>
-                            <ChevronDown size={16} className={clsx("transition-transform", showArchiveDropdown && "rotate-180")} />
+                            <div className={clsx(
+                                "p-1.5 rounded-lg transition-colors",
+                                isViewingArchive
+                                    ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                                    : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                            )}>
+                                <Calendar size={16} />
+                            </div>
+                            <span className="font-bold">{currentArchive.label}</span>
+                            <motion.div
+                                animate={{ rotate: showArchiveDropdown ? 180 : 0 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                <ChevronDown size={16} className="text-slate-400" />
+                            </motion.div>
                         </button>
 
                         <AnimatePresence>
                             {showArchiveDropdown && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                                    className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-white/10 shadow-xl z-50 overflow-hidden"
-                                >
-                                    <div className="p-2">
-                                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-2 py-1.5">
-                                            Lịch sử các tháng
+                                <>
+                                    {/* Backdrop */}
+                                    <motion.div
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        className="fixed inset-0 z-40"
+                                        onClick={() => setShowArchiveDropdown(false)}
+                                    />
+
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                        transition={{ type: "spring", damping: 20, stiffness: 300 }}
+                                        className="absolute right-0 mt-3 w-72 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-2xl shadow-slate-900/10 dark:shadow-black/30 z-50 overflow-hidden"
+                                    >
+                                        {/* Header */}
+                                        <div className="px-4 py-3 border-b border-slate-100 dark:border-white/5 bg-gradient-to-r from-indigo-500/5 to-cyan-500/5">
+                                            <div className="flex items-center gap-2">
+                                                <Archive size={14} className="text-indigo-500" />
+                                                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                    Lịch sử các tháng
+                                                </span>
+                                            </div>
                                         </div>
-                                        {MEETING_ARCHIVES.map((archive) => (
-                                            <button
-                                                key={archive.gid}
-                                                onClick={() => handleSelectArchive(archive)}
-                                                className={clsx(
-                                                    "w-full px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-all flex items-center gap-2",
-                                                    selectedGid === archive.gid
-                                                        ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300"
-                                                        : "hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300"
-                                                )}
-                                            >
-                                                <Calendar size={14} />
-                                                {archive.label}
-                                                {archive.gid === CURRENT_MONTH_GID && (
-                                                    <span className="ml-auto text-[10px] bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">Hiện tại</span>
-                                                )}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </motion.div>
+
+                                        {/* Options */}
+                                        <div className="p-2 space-y-1">
+                                            {MEETING_ARCHIVES.map((archive, index) => {
+                                                const isSelected = selectedGid === archive.gid;
+                                                const isCurrent = archive.gid === CURRENT_MONTH_GID;
+
+                                                return (
+                                                    <motion.button
+                                                        key={archive.gid}
+                                                        initial={{ opacity: 0, x: -10 }}
+                                                        animate={{ opacity: 1, x: 0 }}
+                                                        transition={{ delay: index * 0.05 }}
+                                                        onClick={() => handleSelectArchive(archive)}
+                                                        className={clsx(
+                                                            "w-full px-3 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 flex items-center gap-3 group/item",
+                                                            isSelected
+                                                                ? "bg-gradient-to-r from-indigo-500 to-cyan-500 text-white shadow-lg shadow-indigo-500/30"
+                                                                : "hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300"
+                                                        )}
+                                                    >
+                                                        <div className={clsx(
+                                                            "p-2 rounded-lg transition-colors",
+                                                            isSelected
+                                                                ? "bg-white/20"
+                                                                : "bg-slate-100 dark:bg-white/5 group-hover/item:bg-indigo-100 dark:group-hover/item:bg-indigo-500/20"
+                                                        )}>
+                                                            <Calendar size={16} className={isSelected ? "text-white" : "text-indigo-500"} />
+                                                        </div>
+
+                                                        <div className="flex-1">
+                                                            <div className={clsx(
+                                                                "font-bold",
+                                                                isSelected ? "text-white" : ""
+                                                            )}>
+                                                                {archive.label}
+                                                            </div>
+                                                            <div className={clsx(
+                                                                "text-xs mt-0.5",
+                                                                isSelected ? "text-white/70" : "text-slate-400"
+                                                            )}>
+                                                                {isCurrent ? "Tháng hiện tại" : "Lịch sử lưu trữ"}
+                                                            </div>
+                                                        </div>
+
+                                                        {isCurrent && (
+                                                            <span className={clsx(
+                                                                "text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide",
+                                                                isSelected
+                                                                    ? "bg-white/20 text-white"
+                                                                    : "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm"
+                                                            )}>
+                                                                Live
+                                                            </span>
+                                                        )}
+
+                                                        {isSelected && (
+                                                            <motion.div
+                                                                initial={{ scale: 0 }}
+                                                                animate={{ scale: 1 }}
+                                                                className="w-2 h-2 rounded-full bg-white shadow-lg"
+                                                            />
+                                                        )}
+                                                    </motion.button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Footer hint */}
+                                        <div className="px-4 py-2.5 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/5">
+                                            <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">
+                                                Chọn tháng để xem lịch trao đổi tương ứng
+                                            </p>
+                                        </div>
+                                    </motion.div>
+                                </>
                             )}
                         </AnimatePresence>
                     </div>
