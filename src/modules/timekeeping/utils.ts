@@ -2,15 +2,15 @@ import { getLunarDate } from '@dqcai/vn-lunar';
 
 export const HOLIDAYS_2026 = [
     { date: '2026-01-01', name: 'Tết Dương lịch' },
-    { date: '2026-02-14', name: 'Nghỉ Tết' }, // 27 Tet
-    { date: '2026-02-15', name: 'Nghỉ Tết' }, // 28 Tet
-    { date: '2026-02-16', name: 'Nghỉ Tết' }, // 29 Tet
-    { date: '2026-02-17', name: 'Giao thừa (Âm lịch)' },
-    { date: '2026-02-18', name: 'Mùng 1 Tết' },
-    { date: '2026-02-19', name: 'Mùng 2 Tết' },
-    { date: '2026-02-20', name: 'Mùng 3 Tết' },
-    { date: '2026-02-21', name: 'Mùng 4 Tết' },
-    { date: '2026-02-22', name: 'Mùng 5 Tết' },
+    { date: '2026-02-14', name: 'Nghỉ Tết (27/12 ÂL)' }, // Sat - 27 Tet
+    // 2026-02-15 is Sunday - regular weekend, not holiday (28/12 ÂL)
+    { date: '2026-02-16', name: 'Giao thừa (29/12 ÂL)' }, // Mon - New Year's Eve (no 30th this year!)
+    { date: '2026-02-17', name: 'Mùng 1 Tết (1/1 ÂL)' }, // Tue - Lunar New Year Day 1
+    { date: '2026-02-18', name: 'Mùng 2 Tết (2/1 ÂL)' }, // Wed - Day 2
+    { date: '2026-02-19', name: 'Mùng 3 Tết (3/1 ÂL)' }, // Thu - Day 3
+    { date: '2026-02-20', name: 'Mùng 4 Tết (4/1 ÂL)' }, // Fri - Day 4
+    { date: '2026-02-21', name: 'Mùng 5 Tết (5/1 ÂL)' }, // Sat - Day 5
+    // 2026-02-22 is Sunday - regular weekend, not holiday (6/1 ÂL)
     { date: '2026-04-27', name: 'Giỗ Tổ Hùng Vương (10/3 ÂL)' },
     { date: '2026-04-30', name: 'Giải phóng miền Nam' },
     { date: '2026-05-01', name: 'Quốc tế Lao động' },

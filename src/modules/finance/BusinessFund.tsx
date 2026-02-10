@@ -4,8 +4,9 @@ import {
     ResponsiveContainer, Tooltip,
     ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid
 } from 'recharts';
-import { ArrowUpCircle, ArrowDownCircle, Wallet, Calendar, Copy, Download, ExternalLink, Maximize2, X, Check } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Wallet, Calendar, Copy, Download, ExternalLink, Maximize2, X, Check, Sparkles, Calculator } from 'lucide-react';
 import { clsx } from 'clsx';
+import HeroBanner from '../../components/HeroBanner';
 
 // Types
 interface FundTransaction {
@@ -35,18 +36,106 @@ const BusinessFund = () => {
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
+
+            // DATA INJECTION FOR JAN 2026 (User Request)
+            if (selectedMonth === '2026-01') {
+                if (activeTab === 'WELFARE') {
+                    const DATA_WELFARE_JAN_2026: FundTransaction[] = [
+                        { id: 'wel_jan_26_00', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 20764964, note: 'Chuyển từ T12/2025' },
+                        { id: 'wel_jan_26_01', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-14', content: 'Thành nộp quỹ PL', amount_in: 68000, amount_out: 0, balance: 20832964 },
+                        { id: 'wel_jan_26_02', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-15', content: 'Tâm nộp quỹ PL', amount_in: 85000, amount_out: 0, balance: 20917964 },
+                        { id: 'wel_jan_26_03', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Lưu nộp quỹ PL', amount_in: 62000, amount_out: 0, balance: 20979964 },
+                        { id: 'wel_jan_26_04', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Sơn nộp quỹ PL', amount_in: 25000, amount_out: 0, balance: 21004964 },
+                        { id: 'wel_jan_26_05', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Nguyệt nộp quỹ PL', amount_in: 147000, amount_out: 0, balance: 21151964 },
+                        { id: 'wel_jan_26_06', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Sơn nộp quỹ PL (Lần 2)', amount_in: 25000, amount_out: 0, balance: 21176964 },
+                        { id: 'wel_jan_26_07', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Hân nộp quỹ PL', amount_in: 177000, amount_out: 0, balance: 21353964 },
+                        { id: 'wel_jan_26_08', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Doanh nộp quỹ PL', amount_in: 74000, amount_out: 0, balance: 21427964 },
+                        { id: 'wel_jan_26_09', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Tâm nộp quỹ PL (Lần 2)', amount_in: 25000, amount_out: 0, balance: 21452964 },
+                        { id: 'wel_jan_26_10', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Nga nộp quỹ PL', amount_in: 211000, amount_out: 0, balance: 21663964 },
+                        { id: 'wel_jan_26_11', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-18', content: 'Lãi Tiền gửi', amount_in: 162, amount_out: 0, balance: 21664126 },
+                        { id: 'wel_jan_26_12', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-19', content: 'Lưu nộp quỹ PL (Lần 2)', amount_in: 25000, amount_out: 0, balance: 21689126 }
+                    ];
+                    setTransactions(DATA_WELFARE_JAN_2026);
+                    setLoading(false);
+                    return;
+                }
+
+                if (activeTab === 'INVESTMENT') {
+                    const DATA_INVESTMENT_JAN_2026: FundTransaction[] = [
+                        { id: 'inv_jan_26_00', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 202744, note: 'Chuyển từ T12/2025' },
+                        { id: 'inv_jan_26_01', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-15', content: 'Thu nhập Hào', amount_in: 10000000, amount_out: 0, balance: 10202744 },
+                        { id: 'inv_jan_26_02', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Nguyệt', amount_in: 0, amount_out: 500000, balance: 9702744 },
+                        { id: 'inv_jan_26_03', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Doanh', amount_in: 0, amount_out: 500000, balance: 9202744 },
+                        { id: 'inv_jan_26_04', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Sơn', amount_in: 0, amount_out: 500000, balance: 8702744 },
+                        { id: 'inv_jan_26_05', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Thành', amount_in: 0, amount_out: 500000, balance: 8202744 },
+                        { id: 'inv_jan_26_06', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Tâm', amount_in: 0, amount_out: 500000, balance: 7702744 },
+                        { id: 'inv_jan_26_07', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Nga', amount_in: 0, amount_out: 500000, balance: 7202744 },
+                        { id: 'inv_jan_26_08', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Lưu', amount_in: 0, amount_out: 500000, balance: 6702744 },
+                        { id: 'inv_jan_26_09', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Hân', amount_in: 0, amount_out: 500000, balance: 6202744 },
+                        { id: 'inv_jan_26_10', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Hỗ trợ nghiệp vụ Hào - Thành', amount_in: 0, amount_out: 500000, balance: 5702744 },
+                        { id: 'inv_jan_26_11', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Hỗ trợ nghiệp vụ Hào - Nguyệt', amount_in: 0, amount_out: 500000, balance: 5202744 }
+                    ];
+                    setTransactions(DATA_INVESTMENT_JAN_2026);
+                    setLoading(false);
+                    return;
+                }
+            }
+
             try {
-                const { data, error } = await supabase
+                // 1. Fetch current month's transactions
+                const { data: currentData, error: currentError } = await supabase
                     .from('fund_transactions')
                     .select('*')
                     .eq('fund_type', activeTab)
                     .eq('month', selectedMonth)
-                    .order('date', { ascending: true });
+                    .order('date', { ascending: true })
+                    .order('created_at', { ascending: true });
 
-                if (error) throw error;
-                setTransactions(data || []);
+                if (currentError) throw currentError;
+
+                // 2. If data exists, just use it
+                if (currentData && currentData.length > 0) {
+                    setTransactions(currentData);
+                } else {
+                    // 3. Automation: If selected month has NO data, try to fetch Closing Balance of Previous Month
+                    // to generate an 'Opening Balance' entry automatically.
+                    const [year, month] = selectedMonth.split('-').map(Number);
+                    let prevMonthStr = '';
+                    if (month === 1) {
+                        prevMonthStr = `${year - 1}-12`;
+                    } else {
+                        prevMonthStr = `${year}-${String(month - 1).padStart(2, '0')}`;
+                    }
+
+                    const { data: prevData } = await supabase
+                        .from('fund_transactions')
+                        .select('balance')
+                        .eq('fund_type', activeTab)
+                        .eq('month', prevMonthStr)
+                        .order('date', { ascending: false })
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+
+                    if (prevData && prevData.length > 0) {
+                        const closingBalance = prevData[0].balance;
+                        setTransactions([{
+                            id: `opening-${selectedMonth}`,
+                            fund_type: activeTab,
+                            month: selectedMonth,
+                            date: `${selectedMonth}-01`,
+                            content: 'Số dư đầu kỳ (Tự động chuyển từ tháng trước)',
+                            amount_in: 0,
+                            amount_out: 0,
+                            balance: closingBalance,
+                            note: 'Hệ thống tự động đồng bộ'
+                        }]);
+                    } else {
+                        setTransactions([]);
+                    }
+                }
             } catch (err) {
                 console.error('Error fetching fund data:', err);
+                setTransactions([]);
             } finally {
                 setLoading(false);
             }
@@ -69,10 +158,50 @@ const BusinessFund = () => {
                 if (error) throw error;
 
                 if (data) {
+                    let finalData = [...data];
+
+                    // INJECT HISTORY DATA FOR JAN 2026 IF MISSING FROM DB
+                    if (!data.some((t: any) => t.month === '2026-01')) {
+                        if (activeTab === 'WELFARE') {
+                            const DATA_WELFARE_JAN_2026: any[] = [
+                                { id: 'wel_jan_26_00', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 20764964 }, // Opening
+                                { id: 'wel_jan_26_01', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-14', content: 'Thành nộp quỹ PL', amount_in: 68000, amount_out: 0, balance: 20832964 },
+                                { id: 'wel_jan_26_02', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-15', content: 'Tâm nộp quỹ PL', amount_in: 85000, amount_out: 0, balance: 20917964 },
+                                { id: 'wel_jan_26_03', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Lưu nộp quỹ PL', amount_in: 62000, amount_out: 0, balance: 20979964 },
+                                { id: 'wel_jan_26_04', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Sơn nộp quỹ PL', amount_in: 25000, amount_out: 0, balance: 21004964 },
+                                { id: 'wel_jan_26_05', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Nguyệt nộp quỹ PL', amount_in: 147000, amount_out: 0, balance: 21151964 },
+                                { id: 'wel_jan_26_06', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Sơn nộp quỹ PL (Lần 2)', amount_in: 25000, amount_out: 0, balance: 21176964 },
+                                { id: 'wel_jan_26_07', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Hân nộp quỹ PL', amount_in: 177000, amount_out: 0, balance: 21353964 },
+                                { id: 'wel_jan_26_08', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Doanh nộp quỹ PL', amount_in: 74000, amount_out: 0, balance: 21427964 },
+                                { id: 'wel_jan_26_09', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Tâm nộp quỹ PL (Lần 2)', amount_in: 25000, amount_out: 0, balance: 21452964 },
+                                { id: 'wel_jan_26_10', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Nga nộp quỹ PL', amount_in: 211000, amount_out: 0, balance: 21663964 },
+                                { id: 'wel_jan_26_11', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-18', content: 'Lãi Tiền gửi', amount_in: 162, amount_out: 0, balance: 21664126 },
+                                { id: 'wel_jan_26_12', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-19', content: 'Lưu nộp quỹ PL (Lần 2)', amount_in: 25000, amount_out: 0, balance: 21689126 }
+                            ];
+                            finalData = [...finalData, ...DATA_WELFARE_JAN_2026];
+                        } else if (activeTab === 'INVESTMENT') {
+                            const DATA_INVESTMENT_JAN_2026: any[] = [
+                                { id: 'inv_jan_26_00', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 202744 },
+                                { id: 'inv_jan_26_01', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-15', content: 'Thu nhập Hào', amount_in: 10000000, amount_out: 0, balance: 10202744 },
+                                { id: 'inv_jan_26_02', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Nguyệt', amount_in: 0, amount_out: 500000, balance: 9702744 },
+                                { id: 'inv_jan_26_03', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Doanh', amount_in: 0, amount_out: 500000, balance: 9202744 },
+                                { id: 'inv_jan_26_04', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Sơn', amount_in: 0, amount_out: 500000, balance: 8702744 },
+                                { id: 'inv_jan_26_05', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Thành', amount_in: 0, amount_out: 500000, balance: 8202744 },
+                                { id: 'inv_jan_26_06', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Tâm', amount_in: 0, amount_out: 500000, balance: 7702744 },
+                                { id: 'inv_jan_26_07', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Nga', amount_in: 0, amount_out: 500000, balance: 7202744 },
+                                { id: 'inv_jan_26_08', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Lưu', amount_in: 0, amount_out: 500000, balance: 6702744 },
+                                { id: 'inv_jan_26_09', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Hân', amount_in: 0, amount_out: 500000, balance: 6202744 },
+                                { id: 'inv_jan_26_10', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Hỗ trợ nghiệp vụ Hào - Thành', amount_in: 0, amount_out: 500000, balance: 5702744 },
+                                { id: 'inv_jan_26_11', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Hỗ trợ nghiệp vụ Hào - Nguyệt', amount_in: 0, amount_out: 500000, balance: 5202744 }
+                            ];
+                            finalData = [...finalData, ...DATA_INVESTMENT_JAN_2026];
+                        }
+                    }
+
                     // Aggregate by Month
                     const monthlyMap = new Map<string, { month: string, in: number, out: number, balance: number }>();
 
-                    data.forEach(t => {
+                    finalData.forEach(t => {
                         const m = t.month;
                         if (!monthlyMap.has(m)) {
                             monthlyMap.set(m, { month: m, in: 0, out: 0, balance: 0 });
@@ -80,9 +209,7 @@ const BusinessFund = () => {
                         const entry = monthlyMap.get(m)!;
                         entry.in += Number(t.amount_in) || 0;
                         entry.out += Number(t.amount_out) || 0;
-                        // For balance, we want the balance of the LAST transaction in that month
-                        // Since data is ordered by date, we can just keep overwriting it
-                        entry.balance = t.balance;
+                        entry.balance = t.balance; // Last transaction's balance wins
                     });
 
                     // Convert to Array and Sort
@@ -147,71 +274,67 @@ const BusinessFund = () => {
     return (
         <div className="p-4 md:p-6 h-full overflow-y-auto custom-scrollbar flex flex-col gap-8 bg-white/50 dark:bg-slate-800/50 backdrop-blur-3xl rounded-[3rem] shadow-2xl border border-white/20 ring-1 ring-white/20">
             {/* HERO BANNER - BUSINESS FUND */}
-            <div className="relative rounded-3xl overflow-hidden mb-8 shadow-2xl shrink-0 group">
-                <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600">
-                    <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 mix-blend-overlay"></div>
-                    <div className="absolute bottom-0 left-0 w-64 h-64 bg-pink-500/20 rounded-full blur-3xl -ml-10 -mb-10 mix-blend-overlay"></div>
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay"></div>
+            {/* 1. Hero Banner */}
+            <HeroBanner
+                icon={Wallet}
+                title="Quỹ Doanh Nghiệp"
+                subtitle="Finance & Assets"
+                description="Quản lý dòng tiền đầu tư, quỹ phúc lợi, tài sản công ty và theo dõi biến động tài chính."
+                badge="Financial Management"
+                badgeIcon={Sparkles}
+                secondBadge={`Tháng ${selectedMonth.split('-')[1]}/${selectedMonth.split('-')[0]}`}
+                stats={[
+                    { icon: ArrowUpCircle, label: 'Tổng thu', value: new Intl.NumberFormat('en-US', { notation: "compact" }).format(summary.totalIn), color: 'from-blue-400 to-indigo-500' },
+                    { icon: ArrowDownCircle, label: 'Tổng chi', value: new Intl.NumberFormat('en-US', { notation: "compact" }).format(summary.totalOut), color: 'from-red-400 to-orange-500' },
+                    { icon: Calculator, label: 'Tồn quỹ', value: new Intl.NumberFormat('en-US', { notation: "compact" }).format(summary.finalBalance), color: 'from-emerald-400 to-teal-500' },
+                ]}
+                gradientFrom="from-indigo-600"
+                gradientVia="via-violet-600"
+                gradientTo="to-purple-600"
+                accentColor="indigo"
+            />
+
+            {/* 2. Action Toolbar */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm mb-6">
+                {/* Tabs Switcher */}
+                <div className="flex bg-slate-100 dark:bg-black/20 p-1.5 rounded-xl border border-slate-200 dark:border-white/10 w-full md:w-auto">
+                    <button
+                        onClick={() => setActiveTab('INVESTMENT')}
+                        className={clsx(
+                            "px-4 py-2 rounded-lg text-sm font-bold transition-all flex-1 md:flex-none text-center",
+                            activeTab === 'INVESTMENT' ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm" : "text-slate-500 dark:text-indigo-200 hover:text-indigo-600 dark:hover:text-white"
+                        )}
+                    >
+                        Quỹ Đầu tư
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('WELFARE')}
+                        className={clsx(
+                            "px-4 py-2 rounded-lg text-sm font-bold transition-all flex-1 md:flex-none text-center",
+                            activeTab === 'WELFARE' ? "bg-white dark:bg-slate-700 text-pink-600 dark:text-white shadow-sm" : "text-slate-500 dark:text-indigo-200 hover:text-pink-600 dark:hover:text-white"
+                        )}
+                    >
+                        Quỹ Phúc lợi
+                    </button>
                 </div>
 
-                <div className="relative z-10 p-6 md:p-8 text-white">
-                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6">
-                        <div>
-                            <div className="flex items-center gap-2 mb-2">
-                                <span className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-bold uppercase tracking-widest border border-white/10 shadow-sm">
-                                    Finance & Assets
-                                </span>
-                            </div>
-                            <h1 className="text-3xl md:text-5xl font-black tracking-tight mb-2 drop-shadow-sm flex items-center gap-3">
-                                Quỹ Doanh Nghiệp
-                            </h1>
-                            <p className="text-indigo-100 font-medium max-w-xl text-lg opacity-90 leading-relaxed">
-                                Quản lý dòng tiền đầu tư, quỹ phúc lợi và tài sản công ty
-                            </p>
-                        </div>
-
-                        {/* Actions Control Panel */}
-                        <div className="flex flex-col gap-3 w-full md:w-auto">
-                            {/* Tabs Switcher */}
-                            <div className="flex p-1 bg-black/20 backdrop-blur-md rounded-xl border border-white/10">
-                                <button
-                                    onClick={() => setActiveTab('INVESTMENT')}
-                                    className={clsx(
-                                        "px-4 py-2 rounded-lg text-sm font-bold transition-all flex-1 md:flex-none text-center",
-                                        activeTab === 'INVESTMENT' ? "bg-white text-indigo-900 shadow-md" : "text-indigo-100 hover:bg-white/10 hover:text-white"
-                                    )}
-                                >
-                                    Quỹ Đầu tư
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('WELFARE')}
-                                    className={clsx(
-                                        "px-4 py-2 rounded-lg text-sm font-bold transition-all flex-1 md:flex-none text-center",
-                                        activeTab === 'WELFARE' ? "bg-white text-pink-700 shadow-md" : "text-indigo-100 hover:bg-white/10 hover:text-white"
-                                    )}
-                                >
-                                    Quỹ Phúc lợi
-                                </button>
-                            </div>
-
-                            {/* Month Selector */}
-                            <div className="flex gap-2 p-1 bg-black/20 backdrop-blur-md rounded-xl border border-white/10 justify-end">
-                                {['2025-11', '2025-12'].map(month => (
-                                    <button
-                                        key={month}
-                                        onClick={() => setSelectedMonth(month)}
-                                        className={clsx(
-                                            "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
-                                            selectedMonth === month ? "bg-white/20 text-white shadow-inner border border-white/20" : "text-indigo-200 hover:bg-white/10 hover:text-white"
-                                        )}
-                                    >
-                                        <Calendar size={14} />
-                                        T{month.split('-')[1]}/{month.split('-')[0]}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                {/* Month Selector */}
+                <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                    {['2025-11', '2025-12', '2026-01'].map(month => (
+                        <button
+                            key={month}
+                            onClick={() => setSelectedMonth(month)}
+                            className={clsx(
+                                "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border shrink-0",
+                                selectedMonth === month
+                                    ? "bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-500/20"
+                                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+                            )}
+                        >
+                            <Calendar size={14} />
+                            T{month.split('-')[1]}/{month.split('-')[0]}
+                        </button>
+                    ))}
                 </div>
             </div>
 
@@ -383,7 +506,7 @@ const BusinessFund = () => {
                                         <Bar yAxisId="left" dataKey="out" fill="url(#colorOut)" barSize={20} radius={[4, 4, 0, 0]} animationDuration={1000} />
                                         <Line
                                             yAxisId="right"
-                                            type="monotone"
+                                            type="linear"
                                             dataKey="balance"
                                             stroke="#10b981"
                                             strokeWidth={3}
@@ -413,11 +536,11 @@ const BusinessFund = () => {
                         <table className="w-full text-sm text-left">
                             <thead className="bg-slate-100 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 uppercase text-xs sticky top-0 z-10 shadow-sm backdrop-blur-md">
                                 <tr>
-                                    <th className="p-3 w-28">Thời gian</th>
+                                    <th className="p-3 w-32 whitespace-nowrap">Thời gian</th>
                                     <th className="p-3">Nội dung</th>
-                                    <th className="p-3 text-right text-blue-600 dark:text-blue-400">Thu (Vào)</th> {/* Blue */}
-                                    <th className="p-3 text-right text-red-600 dark:text-red-400">Chi (Ra)</th>   {/* Red */}
-                                    <th className="p-3 text-right text-emerald-600 dark:text-emerald-400">Tồn (Dư)</th> {/* Green */}
+                                    <th className="p-3 w-36 text-right text-blue-600 dark:text-blue-400 whitespace-nowrap">Thu (Vào)</th> {/* Blue */}
+                                    <th className="p-3 w-36 text-right text-red-600 dark:text-red-400 whitespace-nowrap">Chi (Ra)</th>   {/* Red */}
+                                    <th className="p-3 w-36 text-right text-emerald-600 dark:text-emerald-400 whitespace-nowrap">Tồn (Dư)</th> {/* Green */}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-white/5">

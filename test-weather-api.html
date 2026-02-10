@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Weather API Direct Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #0f0;
+        }
+
+        .log {
+            padding: 10px;
+            margin: 5px 0;
+            background: #222;
+            border-left: 3px solid #0f0;
+        }
+
+        .error {
+            border-left-color: #f00;
+            color: #f00;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🧪 Weather API Direct Test</h1>
+    <button onclick="testFull()">RUN FULL TEST</button>
+    <button onclick="clear()">CLEAR</button>
+    <div id="output"></div>
+
+    <script>
+        const output = document.getElementById('output');
+
+        function log(msg, isError = false) {
+            const div = document.createElement('div');
+            div.className = isError ? 'log error' : 'log';
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            output.appendChild(div);
+            console.log(msg);
+        }
+
+        function clear() {
+            output.innerHTML = '';
+        }
+
+        async function testFull() {
+            clear();
+            log('=== STARTING FULL TEST ===');
+
+            // Step 1: Test Geolocation
+            log('\n1️⃣ Testing Geolocation API...');
+            try {
+                if (!navigator.geolocation) {
+                    throw new Error('Geolocation NOT supported');
+                }
+                log('✅ Geolocation API available');
+
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(
+                        resolve,
+                        (error) => {
+                            let msg = 'Geolocation error: ';
+                            switch (error.code) {
+                                case 1: msg += 'PERMISSION_DENIED'; break;
+                                case 2: msg += 'POSITION_UNAVAILABLE'; break;
+                                case 3: msg += 'TIMEOUT'; break;
+                            }
+                            reject(new Error(msg + ' - ' + error.message));
+                        },
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                    );
+                });
+
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                log(`✅ Location: ${lat}, ${lon}`);
+                log(`   Accuracy: ${position.coords.accuracy}m`);
+
+                // Step 2: Test Geocoding
+                log('\n2️⃣ Testing Geocoding API...');
+                const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${lat}&longitude=${lon}&count=1`;
+                log(`   URL: ${geocodeUrl}`);
+
+                const geocodeRes = await fetch(geocodeUrl);
+                log(`   Status: ${geocodeRes.status} ${geocodeRes.statusText}`);
+
+                if (!geocodeRes.ok) {
+                    throw new Error(`Geocode failed: ${geocodeRes.status}`);
+                }
+
+                const geocodeData = await geocodeRes.json();
+                log(`✅ Geocode response: ${JSON.stringify(geocodeData, null, 2)}`);
+
+                const city = geocodeData.results?.[0]?.name || 'Unknown';
+                const country = geocodeData.results?.[0]?.country_code || 'XX';
+                log(`   City: ${city}, ${country}`);
+
+                // Step 3: Test Weather API
+                log('\n3️⃣ Testing Weather API...');
+                const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,surface_pressure&timezone=auto`;
+                log(`   URL: ${weatherUrl}`);
+
+                const weatherRes = await fetch(weatherUrl);
+                log(`   Status: ${weatherRes.status} ${weatherRes.statusText}`);
+
+                if (!weatherRes.ok) {
+                    throw new Error(`Weather API failed: ${weatherRes.status}`);
+                }
+
+                const weatherData = await weatherRes.json();
+                log(`✅ Weather response: ${JSON.stringify(weatherData, null, 2)}`);
+
+                const current = weatherData.current;
+                if (!current) {
+                    throw new Error('No current weather data');
+                }
+
+                // Step 4: Final Data
+                log('\n4️⃣ Final Weather Data...');
+                const final = {
+                    location: { city, country, lat, lon },
+                    current: {
+                        temp: Math.round(current.temperature_2m ?? 0),
+                        feelsLike: Math.round(current.apparent_temperature ?? 0),
+                        humidity: current.relative_humidity_2m ?? 0,
+                        windSpeed: Math.round(current.wind_speed_10m ?? 0),
+                        pressure: Math.round(current.surface_pressure ?? 0),
+                        weatherCode: current.weather_code ?? 0
+                    }
+                };
+
+                log(`✅ FINAL DATA:\n${JSON.stringify(final, null, 2)}`);
+                log('\n✅✅✅ ALL TESTS PASSED! ✅✅✅');
+
+            } catch (error) {
+                log(`\n❌ ERROR: ${error.message}`, true);
+                log(`   Stack: ${error.stack}`, true);
+                log('\n❌❌❌ TEST FAILED! ❌❌❌', true);
+            }
+        }
+
+        // Auto-run on load
+        log('Ready! Click "RUN FULL TEST" to start.');
+    </script>
+</body>
+
+</html>

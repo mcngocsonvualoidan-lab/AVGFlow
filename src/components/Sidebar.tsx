@@ -21,7 +21,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
 
     // ... logic unchanged
     const { currentUser } = useAuth();
-    const { users, birthdayWishes, showTetDecor, toggleTetDecor, activeEvents } = useData();
+    const { users, birthdayWishes, showTetDecor, toggleTetDecor } = useData();
 
     // Define appUser here to be accessible by all hooks
     const appUser = useMemo(() => {
@@ -29,36 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
         return users.find(u => u.email === currentUser.email);
     }, [currentUser, users]);
 
-    // Check if user has birthday or special event active
-    const showSpecialBox = useMemo(() => {
-        if (!appUser) return false;
 
-        // 1. Birthday Check
-        let isBirthday = false;
-        if (appUser.dob) {
-            const dob = new Date(appUser.dob);
-            const today = new Date();
-            const currentYear = today.getFullYear();
-            const thisYearBirthday = new Date(currentYear, dob.getMonth(), dob.getDate());
-
-            const diffTime = today.getTime() - thisYearBirthday.getTime();
-            const diffDays = diffTime / (1000 * 3600 * 24);
-            isBirthday = diffDays >= 0 && diffDays < 4;
-        }
-
-        // 2. Event Check
-        const hasActiveEvent = activeEvents && activeEvents.some(e => {
-            if (e.userId !== appUser.id) return false;
-            const eventDate = new Date(e.date);
-            const today = new Date();
-            const diffTime = today.getTime() - eventDate.getTime();
-            const diffDays = diffTime / (1000 * 3600 * 24);
-            return diffDays >= -1 && diffDays <= 3;
-        });
-
-        return isBirthday || hasActiveEvent;
-
-    }, [currentUser, users, activeEvents]);
 
     const unreadWishesCount = useMemo(() => {
         if (!currentUser) return 0;
@@ -96,11 +67,10 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
         ]
     ];
 
-    if (showSpecialBox) {
-        menuGroups.push([
-            { id: 'my-wishes', icon: Gift, label: 'Hộp thư yêu thương' }
-        ]);
-    }
+    // Always show Love Message Box
+    menuGroups.push([
+        { id: 'my-wishes', icon: Gift, label: 'Thông điệp yêu thương' }
+    ]);
 
     // Filter Menu based on Permissions (RBAC)
     const filteredMenuGroups = useMemo(() => {

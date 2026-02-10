@@ -6,12 +6,14 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 interface HeaderProps {
     onMenuClick?: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
+    const navigate = useNavigate();
     const { notifications, markAsRead, clearNotifications, users, addNotification, addBirthdayWish } = useData();
     // ... (rest of hook calls)
     const { t } = useLanguage();
@@ -412,7 +414,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                     </button>
 
                     {/* Icons */}
-                    <div className="flex items-center gap-4 border-l border-border pl-6 relative" ref={notifRef}>
+                    <div className="hidden flex items-center gap-4 border-l border-border pl-6 relative" ref={notifRef}>
                         <button
                             onClick={() => setShowNotifications(!showNotifications)}
                             className={clsx(
@@ -543,7 +545,13 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                                     transition={{ duration: 0.1 }}
                                     className="absolute top-full right-0 mt-2 w-48 bg-bg-card border border-border rounded-xl shadow-xl overflow-hidden z-50 ring-1 ring-black/5 p-1"
                                 >
-                                    <button className="w-full text-left px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-elevated hover:text-text-main flex items-center gap-2 transition-colors">
+                                    <button
+                                        onClick={() => {
+                                            navigate('/settings');
+                                            setShowProfileMenu(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-elevated hover:text-text-main flex items-center gap-2 transition-colors"
+                                    >
                                         <Settings size={16} /> {t.settings.title}
                                     </button>
                                     <div className="my-1 border-t border-border mx-2"></div>

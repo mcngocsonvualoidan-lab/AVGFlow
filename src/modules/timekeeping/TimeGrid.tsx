@@ -64,9 +64,28 @@ const TimeGrid: React.FC<TimeGridProps> = ({ month, year, users: propUsers }) =>
                         }
                         return { code: 'KP', color: 'bg-purple-200 dark:bg-purple-500/20 text-purple-900 dark:text-purple-500 font-black', title: 'Nghỉ không phép' };
                     }
-                    if (leave.type === 'online') {
-                        return { code: 'ol', color: 'bg-blue-200 dark:bg-blue-500/20 text-blue-900 dark:text-blue-300 font-black', title: 'Làm việc Online' };
+                    // ONLINE LOGIC UPDATE: CHECK 18:00
+                    const now = new Date();
+                    const y = now.getFullYear();
+                    const m = String(now.getMonth() + 1).padStart(2, '0');
+                    const dd = String(now.getDate()).padStart(2, '0');
+                    const todayStr = `${y}-${m}-${dd}`;
+
+                    if (dateStr > todayStr) {
+                        // Future: Show as not yet recorded (Empty)
+                        // We break or continue? Since this is inside a loop and we found a match, 
+                        // we should return the "Future" style explicitly here, or fall through?
+                        // If we don't return here, it might find another leave? Unlikely overlap.
+                        // If we return empty, it looks like "Chưa ghi nhận" which is correct.
+                        return { code: '', color: '', title: 'Đăng ký Online (Chưa đến giờ)' };
+                    } else if (dateStr === todayStr) {
+                        // Today: Check time
+                        if (now.getHours() < 18) {
+                            return { code: '', color: '', title: 'Đang làm việc Online...' };
+                        }
                     }
+
+                    return { code: 'ol', color: 'bg-blue-200 dark:bg-blue-500/20 text-blue-900 dark:text-blue-300 font-black', title: 'Làm việc Online' };
                 }
             }
         }
@@ -110,30 +129,33 @@ const TimeGrid: React.FC<TimeGridProps> = ({ month, year, users: propUsers }) =>
                     </div>
                 </div>
                 <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-xs border-collapse">
+                    <table className="w-full min-w-[1500px] text-xs border-collapse" style={{ tableLayout: 'fixed' }}>
                         <thead>
                             <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-white/10">
-                                <th className="sticky left-0 z-20 bg-slate-50 dark:bg-slate-900 p-3 text-left font-bold text-slate-900 dark:text-white min-w-[200px] border-r border-slate-200 dark:border-white/10">
+                                <th
+                                    className="sticky left-0 z-30 p-2 text-left font-bold text-slate-900 dark:text-white border-r border-slate-200 dark:border-white/10 shadow-[5px_0_15px_-5px_rgba(0,0,0,0.3)] dark:shadow-[5px_0_15px_-5px_rgba(0,0,0,0.7)]"
+                                    style={{ width: '180px', backgroundColor: '#f8fafc' }}
+                                >
                                     Nhân sự
                                 </th>
                                 {days.map(d => (
                                     <th key={d.day} className={clsx(
-                                        "p-2 min-w-[32px] text-center border-r border-slate-100 dark:border-white/5 transition-colors",
+                                        "w-10 min-w-[40px] p-0.5 text-center border-r border-slate-100 dark:border-white/5 transition-colors",
                                         d.isWeekend ? "bg-slate-200 dark:bg-slate-700/80 text-slate-700 dark:text-slate-400 font-bold" : "text-slate-700 dark:text-slate-400 font-bold",
                                         d.holiday && "bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-500 font-bold"
                                     )}>
                                         <div className="flex flex-col gap-0.5">
-                                            <span>{d.day}</span>
-                                            <span className="text-[9px] opacity-70">
+                                            <span className="text-[10px]">{d.day}</span>
+                                            <span className="text-[7px] opacity-70">
                                                 {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][d.weekday]}
                                             </span>
-                                            <span className="text-[8px] opacity-70 text-indigo-600 dark:text-indigo-400 font-bold">
+                                            <span className="text-[7px] opacity-70 text-indigo-600 dark:text-indigo-400 font-bold">
                                                 {d.lunarDay}/{d.lunarMonth}
                                             </span>
                                         </div>
                                     </th>
                                 ))}
-                                <th className="sticky right-0 z-20 bg-emerald-200 dark:bg-emerald-900/50 p-2 text-center font-bold text-emerald-900 dark:text-emerald-400 min-w-[50px] border-l border-emerald-300 dark:border-white/10 shadow-[-5px_0_10px_-5px_rgba(0,0,0,0.1)]">
+                                <th className="sticky right-0 z-20 bg-emerald-200 dark:bg-emerald-900/50 p-1 text-center font-bold text-emerald-900 dark:text-emerald-400 border-l border-emerald-300 dark:border-white/10 shadow-[-5px_0_10px_-5px_rgba(0,0,0,0.1)]" style={{ width: '50px' }}>
                                     Tổng
                                 </th>
                             </tr>
@@ -141,13 +163,18 @@ const TimeGrid: React.FC<TimeGridProps> = ({ month, year, users: propUsers }) =>
                         <tbody>
                             {sortedUsers.map((user, idx) => (
                                 <tr key={user.id} className={clsx("group hover:bg-slate-100 dark:hover:bg-white/5 transition-colors border-b border-slate-200 dark:border-white/5", idx % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-slate-50 dark:bg-slate-900/50")}>
-                                    <td className={clsx(
-                                        "sticky left-0 z-30 p-3 border-r border-slate-200 dark:border-white/10 font-medium text-slate-900 dark:text-white whitespace-nowrap group-hover:text-indigo-500 transition-colors shadow-[5px_0_10px_-5px_rgba(0,0,0,0.1)] dark:shadow-[5px_0_10px_-5px_rgba(0,0,0,0.3)]",
-                                        idx % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-slate-50 dark:bg-slate-900"
-                                    )}>
+                                    <td
+                                        className={clsx(
+                                            "sticky left-0 z-40 p-2 border-r border-slate-200 dark:border-white/10 font-medium text-slate-900 dark:text-white whitespace-nowrap group-hover:text-indigo-500 transition-colors",
+                                            "shadow-[5px_0_15px_-5px_rgba(0,0,0,0.3)] dark:shadow-[5px_0_15px_-5px_rgba(0,0,0,0.7)]"
+                                        )}
+                                        style={{
+                                            backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc',
+                                        }}
+                                    >
                                         <div className="flex items-center gap-2">
                                             <img src={user.avatar} className="w-5 h-5 rounded-full object-cover" />
-                                            <span>{user.name}</span>
+                                            <span className="text-[11px]">{user.name}</span>
                                         </div>
                                     </td>
                                     {days.map(d => {
@@ -165,7 +192,7 @@ const TimeGrid: React.FC<TimeGridProps> = ({ month, year, users: propUsers }) =>
                                             <td
                                                 key={`${user.id}-${d.day}`}
                                                 className={clsx(
-                                                    "p-1 text-center border-r border-slate-100 dark:border-white/5 cursor-default relative text-[10px] font-bold select-none",
+                                                    "p-0.5 text-center border-r border-slate-100 dark:border-white/5 cursor-default relative text-[8px] font-bold select-none",
                                                     cellClass,
                                                     status.code === 'X' && "group-hover:text-emerald-600 dark:group-hover:text-emerald-500 transition-colors"
                                                 )}
@@ -177,14 +204,21 @@ const TimeGrid: React.FC<TimeGridProps> = ({ month, year, users: propUsers }) =>
                                     })}
                                     {/* TOTAL COLUMN */}
                                     <td className={clsx(
-                                        "sticky right-0 z-10 border-l border-emerald-200 dark:border-white/10 p-2 text-center font-black text-emerald-900 dark:text-emerald-400 min-w-[50px] shadow-[-5px_0_10px_-5px_rgba(0,0,0,0.1)]",
+                                        "sticky right-0 z-10 border-l border-emerald-200 dark:border-white/10 p-1 text-center font-black text-emerald-900 dark:text-emerald-400 shadow-[-5px_0_10px_-5px_rgba(0,0,0,0.1)] text-[11px]",
                                         "bg-emerald-100 dark:bg-emerald-900/20"
                                     )}>
                                         {(() => {
                                             let total = 0;
+                                            const now = new Date();
+                                            const y = now.getFullYear();
+                                            const m = String(now.getMonth() + 1).padStart(2, '0');
+                                            const dd = String(now.getDate()).padStart(2, '0');
+                                            const todayStr = `${y}-${m}-${dd}`;
+                                            const currentHour = now.getHours();
+
                                             days.forEach(d => {
                                                 const status = getStatus(user, d.date, d.isWeekend, d.holiday);
-                                                // Logic for counting "Công" (Paid Days)
+                                                // logic for counting "Công" (Paid Days)
                                                 switch (status.code) {
                                                     case 'X':
                                                     case 'ol':
@@ -194,7 +228,12 @@ const TimeGrid: React.FC<TimeGridProps> = ({ month, year, users: propUsers }) =>
                                                         total += 1;
                                                         break;
                                                     case 'P/2':
-                                                        total += 1; // 0.5 Leave + 0.5 Work = 1.0 Paid
+                                                        // If today/future, only count guaranteed leave (0.5). If past, count full (1.0) assuming work done.
+                                                        if (d.date > todayStr || (d.date === todayStr && currentHour < 18)) {
+                                                            total += 0.5;
+                                                        } else {
+                                                            total += 1;
+                                                        }
                                                         break;
                                                     case 'x/2':
                                                         total += 0.5; // 0.5 Unpaid + 0.5 Work = 0.5 Paid

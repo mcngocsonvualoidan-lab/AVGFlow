@@ -11,6 +11,7 @@ import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useData, Task } from '../../context/DataContext';
 import { useLanguage } from '../../context/LanguageContext';
+import HeroBanner from '../../components/HeroBanner';
 
 import { DEPARTMENTS } from '../../constants/common';
 const departments = ['All', ...DEPARTMENTS];
@@ -32,20 +33,52 @@ const formatDate = (date: Date | string, type: 'time-h' | 'time-m' | 'date' | 'f
 
 const GlassDatePicker = ({ selected, onSelect, onClose }: { selected?: Date, onSelect: (date: Date) => void, onClose: () => void }) => {
     const { t } = useLanguage();
-    const [viewDate, setViewDate] = useState(selected || new Date());
+
+    // Calculate minimum deadline: current time + 15 minutes
+    const getMinimumDeadline = () => {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() + 15);
+        return now;
+    };
+
+    const minDeadline = getMinimumDeadline();
+    const initialDate = selected && selected > minDeadline ? selected : minDeadline;
+
+    const [viewDate, setViewDate] = useState(initialDate);
     const [time, setTime] = useState({
-        h: selected ? formatDate(selected, 'time-h') : '09',
-        m: selected ? formatDate(selected, 'time-m') : '00'
+        h: formatDate(initialDate, 'time-h'),
+        m: formatDate(initialDate, 'time-m')
     });
+    const [selectingHour, setSelectingHour] = useState(true);
+    // Default to analog clock on all devices
+    const [showAnalogClock, setShowAnalogClock] = useState(true);
+    const [errorMessage, setErrorMessage] = useState('');
 
     const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
     const startDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay();
-    const offset = startDay === 0 ? 6 : startDay - 1; // Adjust for Monday start (0=Sun, 1=Mon...) - User wants Mon start? English default is usually Sun (0). Checked existing code: offset logic implies Monday start (Sun=0 -> offset=6. Mon=1 -> offset=0). Correct.
+    const offset = startDay === 0 ? 6 : startDay - 1;
+
+    // Validate if selected datetime is at least 15 minutes from now
+    const validateDeadline = (date: Date): boolean => {
+        const now = new Date();
+        const fifteenMinutesFromNow = new Date(now.getTime() + 15 * 60 * 1000);
+
+        if (date < fifteenMinutesFromNow) {
+            setErrorMessage('Deadline phải ít nhất 15 phút kể từ bây giờ');
+            setTimeout(() => setErrorMessage(''), 3000);
+            return false;
+        }
+        setErrorMessage('');
+        return true;
+    };
 
     const handleDateClick = (day: number) => {
         const newDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
         newDate.setHours(parseInt(time.h), parseInt(time.m));
-        onSelect(newDate);
+
+        if (validateDeadline(newDate)) {
+            onSelect(newDate);
+        }
     };
 
     const handleTimeChange = (type: 'h' | 'm', val: string) => {
@@ -62,13 +95,24 @@ const GlassDatePicker = ({ selected, onSelect, onClose }: { selected?: Date, onS
         }
 
         const cleanVal = numVal.toString().padStart(2, '0');
-
         const newTime = { ...time, [type]: cleanVal };
         setTime(newTime);
-        if (selected) {
-            const newDate = new Date(selected);
-            newDate.setHours(parseInt(newTime.h), parseInt(newTime.m));
-            onSelect(newDate);
+
+        // Validate when time changes
+        const testDate = new Date(viewDate);
+        testDate.setHours(parseInt(newTime.h), parseInt(newTime.m));
+
+        if (validateDeadline(testDate)) {
+            onSelect(testDate);
+        }
+    };
+
+    const handleClockClick = (value: number) => {
+        if (selectingHour) {
+            handleTimeChange('h', value.toString());
+            setSelectingHour(false);
+        } else {
+            handleTimeChange('m', value.toString());
         }
     };
 
@@ -76,112 +120,263 @@ const GlassDatePicker = ({ selected, onSelect, onClose }: { selected?: Date, onS
         setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + delta, 1));
     };
 
+    // Calculate hand positions for analog clock
+    const hourAngle = selectingHour
+        ? (parseInt(time.h) % 12) * 30 - 90
+        : (parseInt(time.m) / 60) * 360 - 90;
+
+    // Generate clock numbers
+    const clockNumbers = selectingHour
+        ? Array.from({ length: 24 }, (_, i) => i) // 0-23 for hours
+        : [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]; // Minutes in 5-min intervals
+
     return (
-        <div className="p-6 rounded-2xl border-2 border-indigo-500/20 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] bg-slate-950 w-[320px] animate-in zoom-in-95 duration-200 relative z-[60]">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-5">
-                <span className="font-black text-xl text-white tracking-tight uppercase shadow-black drop-shadow-md">
-                    {t.common.datePicker.months[viewDate.getMonth()]}, {viewDate.getFullYear()}
-                </span>
-                <div className="flex gap-1 text-slate-400">
-                    <button onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} className="p-2 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><ChevronDown className="rotate-90" size={18} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); changeMonth(1); }} className="p-2 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><ChevronDown className="-rotate-90" size={18} /></button>
+        <div className="p-3 md:p-5 rounded-3xl border border-slate-200/80 dark:border-indigo-500/20 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] bg-white/95 dark:bg-slate-950 backdrop-blur-2xl animate-in zoom-in-95 duration-200 relative z-[110]">
+            {/* Error Message */}
+            {errorMessage && (
+                <div className="mb-4 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded-xl">
+                    <p className="text-sm font-semibold text-red-600 dark:text-red-400 text-center">
+                        ⚠️ {errorMessage}
+                    </p>
                 </div>
-            </div>
+            )}
 
-            {/* Grid */}
-            <div className="mb-6">
-                <div className="grid grid-cols-7 text-center mb-2">
-                    {t.common.datePicker.weekdays.map(d => <span key={d} className="text-[10px] font-bold text-slate-500 uppercase">{d}</span>)}
-                </div>
-                <div className="grid grid-cols-7 gap-1">
-                    {[...Array(offset)].map((_, i) => <div key={`empty-${i}`} />)}
-                    {[...Array(daysInMonth)].map((_, i) => {
-                        const d = i + 1;
-                        const isSelected = selected &&
-                            selected.getDate() === d &&
-                            selected.getMonth() === viewDate.getMonth() &&
-                            selected.getFullYear() === viewDate.getFullYear();
-
-                        return (
-                            <button
-                                key={d}
-                                onClick={(e) => { e.stopPropagation(); handleDateClick(d); }}
-                                className={clsx(
-                                    "w-9 h-9 text-sm font-bold rounded-xl flex items-center justify-center transition-all duration-200 hover:scale-105",
-                                    isSelected
-                                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/50 scale-105 ring-2 ring-indigo-400/30"
-                                        : "text-slate-300 hover:bg-white/10 hover:text-white"
-                                )}
-                            >
-                                {d}
+            <div className="flex flex-col md:flex-row gap-2 md:gap-5 pb-4 max-h-[85vh] md:max-h-none overflow-y-auto">
+                {/* LEFT: Calendar */}
+                <div className="w-full md:w-[280px]">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-4">
+                        <span className="font-bold text-lg text-slate-800 dark:text-white tracking-tight">
+                            {t.common.datePicker.months[viewDate.getMonth()]}, {viewDate.getFullYear()}
+                        </span>
+                        <div className="flex gap-1">
+                            <button onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg transition-colors">
+                                <ChevronDown className="rotate-90" size={18} />
                             </button>
-                        )
-                    })}
-                </div>
-            </div>
+                            <button onClick={(e) => { e.stopPropagation(); changeMonth(1); }} className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg transition-colors">
+                                <ChevronDown className="-rotate-90" size={18} />
+                            </button>
+                        </div>
+                    </div>
 
-            {/* Time */}
-            <div className="flex items-center justify-between gap-4 mb-6 bg-slate-900/50 p-3 rounded-xl border border-white/5">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t.common.datePicker.time}</span>
-                <div className="flex items-center gap-2">
-                    {/* Hours */}
-                    <div className="flex flex-col items-center gap-1">
+
+                    {/* Calendar Grid */}
+                    <div>
+                        <div className="grid grid-cols-7 text-center mb-2">
+                            {t.common.datePicker.weekdays.map(d => <span key={d} className="text-[9px] md:text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">{d}</span>)}
+                        </div>
+                        <div className="grid grid-cols-7 gap-0.5 md:gap-1">
+                            {[...Array(offset)].map((_, i) => <div key={`empty-${i}`} />)}
+                            {[...Array(daysInMonth)].map((_, i) => {
+                                const d = i + 1;
+                                const dateToCheck = new Date(viewDate.getFullYear(), viewDate.getMonth(), d);
+                                dateToCheck.setHours(23, 59, 59, 999); // End of day
+
+                                const isSelected = selected &&
+                                    selected.getDate() === d &&
+                                    selected.getMonth() === viewDate.getMonth() &&
+                                    selected.getFullYear() === viewDate.getFullYear();
+                                const isToday = new Date().getDate() === d &&
+                                    new Date().getMonth() === viewDate.getMonth() &&
+                                    new Date().getFullYear() === viewDate.getFullYear();
+                                const isPast = dateToCheck < minDeadline;
+
+                                return (
+                                    <button
+                                        key={d}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (!isPast) handleDateClick(d);
+                                        }}
+                                        disabled={isPast}
+                                        className={clsx(
+                                            "w-8 h-8 md:w-9 md:h-9 text-sm font-semibold rounded-xl flex items-center justify-center transition-all duration-200",
+                                            isPast
+                                                ? "text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-50"
+                                                : isSelected
+                                                    ? "bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/40 scale-105"
+                                                    : isToday
+                                                        ? "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 ring-1 ring-indigo-300 dark:ring-indigo-500/30 hover:scale-105"
+                                                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 hover:scale-105"
+                                        )}
+                                    >
+                                        {d}
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Divider */}
+                <div className="hidden md:block w-px bg-slate-200 dark:bg-white/10" />
+                <div className="md:hidden w-full h-px bg-slate-200 dark:bg-white/10" />
+
+                {/* RIGHT: Time Picker */}
+                <div className="w-full md:w-[260px] flex flex-col min-h-0 md:min-h-[380px] overflow-visible">
+                    <div className="flex items-center justify-between mb-1 md:mb-3">
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t.common.datePicker.time}</span>
                         <button
-                            onClick={(e) => { e.stopPropagation(); handleTimeChange('h', (parseInt(time.h) + 1).toString()); }}
-                            className="text-slate-500 hover:text-white transition-colors"
+                            onClick={(e) => { e.stopPropagation(); setShowAnalogClock(!showAnalogClock); }}
+                            className="text-xs font-medium text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                         >
-                            <ChevronDown className="rotate-180" size={14} />
-                        </button>
-                        <input
-                            type="text"
-                            value={time.h}
-                            onChange={(e) => handleTimeChange('h', e.target.value)}
-                            onBlur={() => setTime(prev => ({ ...prev, h: prev.h.padStart(2, '0') }))}
-                            className="w-12 h-10 bg-slate-800 rounded-lg text-center text-lg font-black text-white border border-white/10 focus:border-indigo-500 outline-none"
-                        />
-                        <button
-                            onClick={(e) => { e.stopPropagation(); handleTimeChange('h', (parseInt(time.h) - 1).toString()); }}
-                            className="text-slate-500 hover:text-white transition-colors"
-                        >
-                            <ChevronDown size={14} />
+                            {showAnalogClock ? 'Bàn phím' : 'Đồng hồ'}
                         </button>
                     </div>
 
-                    <span className="text-slate-500 font-black mb-4">:</span>
+                    {!showAnalogClock ? (
+                        /* Digital Time Input */
+                        <div className="flex-1 flex items-center justify-center">
+                            <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-6 border border-slate-200/80 dark:border-white/5">
+                                <div className="flex flex-col items-center gap-1">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleTimeChange('h', (parseInt(time.h) + 1).toString()); }}
+                                        className="text-slate-400 hover:text-indigo-500 transition-colors p-1"
+                                    >
+                                        <ChevronDown className="rotate-180" size={16} />
+                                    </button>
+                                    <input
+                                        type="text"
+                                        value={time.h}
+                                        onChange={(e) => handleTimeChange('h', e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="w-16 h-14 bg-white dark:bg-slate-800 rounded-xl text-center text-2xl font-bold text-slate-800 dark:text-white border border-slate-200 dark:border-white/10 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+                                    />
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleTimeChange('h', (parseInt(time.h) - 1).toString()); }}
+                                        className="text-slate-400 hover:text-indigo-500 transition-colors p-1"
+                                    >
+                                        <ChevronDown size={16} />
+                                    </button>
+                                </div>
 
-                    {/* Minutes */}
-                    <div className="flex flex-col items-center gap-1">
-                        <button
-                            onClick={(e) => { e.stopPropagation(); handleTimeChange('m', (parseInt(time.m) + 1).toString()); }}
-                            className="text-slate-500 hover:text-white transition-colors"
-                        >
-                            <ChevronDown className="rotate-180" size={14} />
-                        </button>
-                        <input
-                            type="text"
-                            value={time.m}
-                            onChange={(e) => handleTimeChange('m', e.target.value)}
-                            onBlur={() => setTime(prev => ({ ...prev, m: prev.m.padStart(2, '0') }))}
-                            className="w-12 h-10 bg-slate-800 rounded-lg text-center text-lg font-black text-white border border-white/10 focus:border-indigo-500 outline-none"
-                        />
-                        <button
-                            onClick={(e) => { e.stopPropagation(); handleTimeChange('m', (parseInt(time.m) - 1).toString()); }}
-                            className="text-slate-500 hover:text-white transition-colors"
-                        >
-                            <ChevronDown size={14} />
-                        </button>
-                    </div>
+                                <span className="text-3xl font-bold text-slate-400 dark:text-slate-500">:</span>
+
+                                <div className="flex flex-col items-center gap-1">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleTimeChange('m', (parseInt(time.m) + 1).toString()); }}
+                                        className="text-slate-400 hover:text-indigo-500 transition-colors p-1"
+                                    >
+                                        <ChevronDown className="rotate-180" size={16} />
+                                    </button>
+                                    <input
+                                        type="text"
+                                        value={time.m}
+                                        onChange={(e) => handleTimeChange('m', e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="w-16 h-14 bg-white dark:bg-slate-800 rounded-xl text-center text-2xl font-bold text-slate-800 dark:text-white border border-slate-200 dark:border-white/10 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+                                    />
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleTimeChange('m', (parseInt(time.m) - 1).toString()); }}
+                                        className="text-slate-400 hover:text-indigo-500 transition-colors p-1"
+                                    >
+                                        <ChevronDown size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        /* Analog Clock */
+                        <div className="flex flex-col items-center flex-1 justify-center pb-1 md:pb-6">
+                            {/* Time Display */}
+                            <div className="flex items-center justify-center gap-1 mb-1 md:mb-3">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setSelectingHour(true); }}
+                                    className={clsx(
+                                        "px-3 py-1.5 rounded-xl text-2xl font-bold transition-all",
+                                        selectingHour
+                                            ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400"
+                                            : "text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5"
+                                    )}
+                                >
+                                    {time.h}
+                                </button>
+                                <span className="text-2xl font-bold text-slate-300 dark:text-slate-600">:</span>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setSelectingHour(false); }}
+                                    className={clsx(
+                                        "px-3 py-1.5 rounded-xl text-2xl font-bold transition-all",
+                                        !selectingHour
+                                            ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400"
+                                            : "text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5"
+                                    )}
+                                >
+                                    {time.m}
+                                </button>
+                            </div>
+
+                            {/* Clock Face */}
+                            <div className="relative w-40 h-40 md:w-48 md:h-48 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 shadow-inner border border-slate-200/50 dark:border-white/10">
+                                {/* Clock center dot */}
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-indigo-500 rounded-full z-20 shadow-lg shadow-indigo-500/50" />
+
+                                {/* Clock hand */}
+                                <div
+                                    className="absolute top-1/2 left-1/2 origin-left h-1 bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full z-10 transition-transform duration-300"
+                                    style={{
+                                        width: selectingHour && parseInt(time.h) >= 12 ? (typeof window !== 'undefined' && window.innerWidth < 768 ? '36px' : '50px') : (typeof window !== 'undefined' && window.innerWidth < 768 ? '66px' : '78px'),
+                                        transform: `translateY(-50%) rotate(${hourAngle}deg)`
+                                    }}
+                                />
+
+                                {/* Clock numbers */}
+                                {clockNumbers.map((num, i) => {
+                                    const angle = selectingHour
+                                        ? (num < 12 ? num * 30 : (num - 12) * 30) - 90
+                                        : (i * 30) - 90;
+                                    const isInner = selectingHour && num >= 12;
+                                    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+                                    const center = isMobile ? 80 : 96;
+                                    const radius = isInner ? (isMobile ? 36 : 50) : (isMobile ? 66 : 78);
+                                    const x = Math.cos((angle * Math.PI) / 180) * radius + center;
+                                    const y = Math.sin((angle * Math.PI) / 180) * radius + center;
+                                    const isActive = selectingHour
+                                        ? parseInt(time.h) === num
+                                        : parseInt(time.m) === num;
+
+                                    return (
+                                        <button
+                                            key={num}
+                                            onClick={(e) => { e.stopPropagation(); handleClockClick(num); }}
+                                            className={clsx(
+                                                "absolute flex items-center justify-center rounded-full transition-all duration-200 font-semibold z-20",
+                                                isActive
+                                                    ? "w-7 h-7 md:w-8 md:h-8 -ml-3.5 md:-ml-4 -mt-3.5 md:-mt-4 bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/40 scale-110"
+                                                    : isInner
+                                                        ? "w-5 h-5 md:w-6 md:h-6 -ml-2.5 md:-ml-3 -mt-2.5 md:-mt-3 text-slate-400 dark:text-slate-500 text-[9px] md:text-[10px] hover:bg-slate-200 dark:hover:bg-white/10"
+                                                        : "w-6 h-6 md:w-7 md:h-7 -ml-3 md:-ml-3.5 -mt-3 md:-mt-3.5 text-slate-600 dark:text-slate-300 text-[11px] md:text-xs hover:bg-slate-200 dark:hover:bg-white/10"
+                                            )}
+                                            style={{ left: x, top: y }}
+                                        >
+                                            {num}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                                {selectingHour ? 'Chọn giờ' : 'Chọn phút'}
+                            </p>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* CTA */}
-            <button
-                onClick={(e) => { e.stopPropagation(); onClose(); }}
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-sm uppercase tracking-wider shadow-lg shadow-indigo-500/30 transition-all hover:scale-[1.02]"
-            >
-                {t.common.datePicker.done}
-            </button>
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-2 md:mt-5 pt-2 md:pt-4 border-t border-slate-200/80 dark:border-white/5">
+                <button
+                    onClick={(e) => { e.stopPropagation(); onClose(); }}
+                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-semibold text-sm transition-all"
+                >
+                    Huỷ
+                </button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); onClose(); }}
+                    className="flex-1 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-semibold text-sm shadow-lg shadow-indigo-500/30 transition-all hover:scale-[1.02]"
+                >
+                    {t.common.datePicker.done}
+                </button>
+            </div>
         </div>
     )
 }
@@ -277,7 +472,7 @@ const TaskManager: React.FC = () => {
     const appUser = users.find(u => (u.email || '').toLowerCase() === (currentUser?.email || '').toLowerCase());
     const canEdit = appUser?.isAdmin || (appUser?.permissions?.tasks?.edit !== false); // Default true if undefined
 
-    const [selectedDept, setSelectedDept] = useState('All');
+    const [selectedDept] = useState('All'); // setSelectedDept unused while filters are hidden
     const [subSelectedDept, setSubSelectedDept] = useState('Thiết kế'); // For New Task Form
     const [deadline, setDeadline] = useState<Date>(new Date());
     const [showDatePicker, setShowDatePicker] = useState(false);
@@ -592,37 +787,63 @@ const TaskManager: React.FC = () => {
     }, [filteredTasks]);
 
     return (
-        <div className="h-[calc(100vh-7rem)] flex flex-col gap-4 overflow-hidden relative">
-            <div className="flex-1 flex flex-col lg:flex-row gap-6 lg:overflow-hidden overflow-y-auto">
+        <div className="flex flex-col gap-4 relative pb-20 overflow-x-hidden">
+            <HeroBanner
+                icon={Layout}
+                title={t.sidebar.tasks}
+                subtitle="QUẢN LÝ DỰ ÁN"
+                description="Theo dõi tiến độ, phân công nhiệm vụ và quản lý hiệu suất làm việc của các phòng ban."
+                badge="AVG Flow AI Active"
+                stats={[
+                    { label: 'TỔNG SỐ', value: tasks.length.toString(), icon: Layout, color: 'from-indigo-400 to-blue-500' },
+                    { label: 'CHỜ XỬ LÝ', value: tasks.filter(t => t.status === 'pending').length.toString(), icon: Clock, color: 'from-purple-400 to-pink-500' },
+                    { label: 'ĐANG THỰC HIỆN', value: tasks.filter(t => t.status === 'active').length.toString(), icon: CheckCircle2, color: 'from-emerald-400 to-teal-500' },
+                    { label: 'HOÀN THÀNH', value: tasks.filter(t => t.status === 'completed').length.toString(), icon: Archive, color: 'from-blue-400 to-cyan-500' }
+                ]}
+                gradientFrom="from-violet-600"
+                gradientVia="via-purple-600"
+                gradientTo="to-fuchsia-600"
+            />
+
+            <div className="flex-1 flex flex-col gap-6">
                 {/* LEFT: New Task Form */}
                 {canEdit && (
-                    <div className="w-full lg:w-1/3 flex flex-col gap-4 lg:overflow-y-auto overflow-visible custom-scrollbar pr-2 shrink-0">
-                        <div className="bg-white dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-200 dark:border-indigo-500/30 shadow-xl dark:shadow-[0_0_20px_rgba(99,102,241,0.1)]">
-                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                                <Plus className="bg-indigo-600 text-white rounded-lg p-0.5" size={24} /> {t.common.add} {t.sidebar.tasks}
+                    <div className="w-full flex flex-col gap-4 pr-2 shrink-0">
+                        <div className="relative z-50 bg-white/70 dark:bg-slate-900/40 backdrop-blur-2xl p-6 rounded-3xl border border-white/50 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(99,102,241,0.1)] overflow-visible">
+
+                            <div className="absolute -top-20 -right-20 w-40 h-40 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 rounded-full blur-3xl pointer-events-none" />
+                            <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-full blur-3xl pointer-events-none" />
+
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-3 relative">
+                                <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-500/30">
+                                    <Plus className="text-white" size={20} />
+                                </div>
+                                <span className="bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                                    {t.common.add} Nhiệm vụ
+                                </span>
                             </h2>
 
-                            {/* Smart Filters Group */}
-                            <div className="space-y-4 mb-6 relative z-20">
-                                {/* 1. TIÊU ĐỀ (TITLE) */}
-                                <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-white/10 space-y-2">
-                                    <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block pl-1">
-                                        Tiêu đề
-                                    </label>
-                                    <input
-                                        type="text"
-                                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 transition-colors placeholder-slate-400 dark:placeholder-slate-500"
-                                        placeholder="Nhập tiêu đề công việc..."
-                                        value={title}
-                                        onChange={(e) => setTitle(e.target.value)}
-                                    />
-                                </div>
+                            {/* Smart Filters Group - 2 Column Layout */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 relative z-20 overflow-visible">
+                                {/* LEFT COLUMN: Title, Dept, Assignee */}
+                                <div className="flex flex-col gap-4">
+                                    {/* 1. TIÊU ĐỀ (TITLE) */}
+                                    <div className="bg-white/60 dark:bg-white/5 backdrop-blur-xl p-4 rounded-2xl border border-white/80 dark:border-white/10 shadow-sm space-y-2">
+                                        <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block pl-1 uppercase tracking-wider">
+                                            Tiêu đề
+                                        </label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-white/80 dark:bg-slate-900/50 backdrop-blur-sm border border-slate-200/80 dark:border-white/10 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder-slate-400 dark:placeholder-slate-500"
+                                            placeholder="Nhập tiêu đề công việc..."
+                                            value={title}
+                                            onChange={(e) => setTitle(e.target.value)}
+                                        />
+                                    </div>
 
-                                {/* Department & Assignee */}
-                                {/* Department & Assignee */}
-                                <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-white/10 space-y-4 relative z-50">
-                                    <div>
-                                        <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-2 pl-1">
+                                    {/* 2. DEPARTMENT */}
+                                    <div className="bg-white/60 dark:bg-white/5 backdrop-blur-xl p-4 rounded-2xl border border-white/80 dark:border-white/10 shadow-sm">
+                                        <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-3 pl-1 uppercase tracking-wider">
                                             Bộ phận
                                         </label>
                                         <div className="grid grid-cols-2 gap-2">
@@ -631,10 +852,10 @@ const TaskManager: React.FC = () => {
                                                     key={d}
                                                     onClick={() => { setSubSelectedDept(d); setActiveUserId(''); }}
                                                     className={clsx(
-                                                        "py-2 rounded-lg text-xs font-bold border transition-all uppercase tracking-wider",
+                                                        "py-2.5 rounded-xl text-xs font-bold border-2 transition-all uppercase tracking-wider",
                                                         subSelectedDept === d
-                                                            ? "bg-indigo-600 text-white border-indigo-500 shadow-lg shadow-indigo-500/20"
-                                                            : "bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-transparent hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-white"
+                                                            ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-transparent shadow-lg shadow-indigo-500/30"
+                                                            : "bg-white/60 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-slate-200/50 dark:border-white/5 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-500/30"
                                                     )}
                                                 >
                                                     {d}
@@ -643,21 +864,17 @@ const TaskManager: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-2 pl-1">
+                                    {/* 3. ASSIGNEE */}
+                                    <div className="bg-white/60 dark:bg-white/5 backdrop-blur-xl p-4 rounded-2xl border border-white/80 dark:border-white/10 shadow-sm flex-1">
+                                        <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-3 pl-1 uppercase tracking-wider">
                                             Đầu mối xử lý
                                         </label>
-
-                                        <div className="grid grid-cols-1 gap-3">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
                                             {availableUsers.map(user => {
                                                 const isSelected = activeUserId === user.id;
-
-                                                // Status Logic
                                                 const getUserStatusInfo = (u: any) => {
                                                     const now = new Date();
                                                     const nowIso = now.toISOString();
-
-                                                    // 1. Check Leaves (Red)
                                                     if (u.leaves) {
                                                         for (const leave of u.leaves) {
                                                             if (leave.type === 'leave') {
@@ -672,21 +889,15 @@ const TaskManager: React.FC = () => {
                                                             }
                                                         }
                                                     }
-
-                                                    // 2. Check Online (Green)
                                                     if (u.lastSeen) {
                                                         const diff = now.getTime() - new Date(u.lastSeen).getTime();
                                                         if (diff < 5 * 60 * 1000) {
                                                             return { color: "bg-emerald-500 shadow-[0_0_10px_#10b981]", label: "ONLINE", dotColor: "bg-emerald-500", textColor: "text-emerald-400", borderColor: "border-emerald-500/20", bgObj: "bg-emerald-500/10", animate: true };
                                                         }
                                                     }
-
-                                                    // 3. Default (Yellow/Amber - Offline/Away)
                                                     return { color: "bg-amber-400 shadow-[0_0_10px_#fbbf24] opacity-80", label: "OFFLINE", dotColor: "bg-amber-400", textColor: "text-amber-400", borderColor: "border-amber-500/20", bgObj: "bg-amber-500/10" };
                                                 };
-
                                                 const status = getUserStatusInfo(user);
-
                                                 return (
                                                     <div
                                                         key={user.id}
@@ -698,57 +909,35 @@ const TaskManager: React.FC = () => {
                                                                 : "bg-white dark:bg-slate-900/50 border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:border-indigo-200 dark:hover:border-white/10 grayscale opacity-90 dark:opacity-60 hover:grayscale-0 hover:opacity-100"
                                                         )}
                                                     >
-                                                        {/* Selected Indicator */}
                                                         {isSelected && (
                                                             <div className="absolute top-2 right-2 z-20">
-                                                                <div className="bg-indigo-500 rounded-full p-0.5 shadow-lg shadow-indigo-500/50">
+                                                                <div className={clsx(
+                                                                    "rounded-full p-0.5 shadow-lg",
+                                                                    status.label === 'ONLINE'
+                                                                        ? "bg-emerald-500 shadow-emerald-500/50"
+                                                                        : "bg-indigo-500 shadow-indigo-500/50"
+                                                                )}>
                                                                     <CheckCircle2 size={14} className="text-white" />
                                                                 </div>
                                                             </div>
                                                         )}
-
                                                         <div className="flex items-center gap-3">
                                                             <div className="relative shrink-0">
-                                                                <img
-                                                                    src={user.avatar}
-                                                                    className={clsx(
-                                                                        "w-12 h-12 rounded-lg object-cover shadow-lg transition-transform duration-500",
-                                                                        isSelected ? "border-2 border-indigo-400" : "border border-white/10"
-                                                                    )}
-                                                                />
-                                                                <div className={clsx(
-                                                                    "absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-slate-900 shadow-lg",
-                                                                    status.color,
-                                                                    status.animate && "animate-pulse"
-                                                                )} />
+                                                                <img src={user.avatar} className={clsx("w-12 h-12 rounded-lg object-cover shadow-lg transition-transform duration-500", isSelected ? "border-2 border-indigo-400" : "border border-white/10")} />
+                                                                <div className={clsx("absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-slate-900 shadow-lg", status.color, status.animate && "animate-pulse")} />
                                                             </div>
-
                                                             <div className="flex-1 min-w-0">
-                                                                <h4 className={clsx(
-                                                                    "font-bold text-sm leading-tight mb-0.5 transition-colors",
-                                                                    isSelected ? "text-indigo-700 dark:text-white" : "text-slate-700 dark:text-slate-300"
-                                                                )}>
-                                                                    {user.name}
-                                                                </h4>
+                                                                <h4 className={clsx("font-bold text-sm leading-tight mb-0.5 transition-colors", isSelected ? "text-indigo-700 dark:text-white" : "text-slate-700 dark:text-slate-300")}>{user.name}</h4>
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className="text-[10px] font-mono text-indigo-400 uppercase tracking-wider bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">
-                                                                        {user.alias || 'N/A'}
-                                                                    </span>
-                                                                    <div className={clsx(
-                                                                        "text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide flex items-center gap-1",
-                                                                        status.bgObj, status.textColor, status.borderColor
-                                                                    )}>
+                                                                    <span className="text-[10px] font-mono text-indigo-400 uppercase tracking-wider bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">{user.alias || 'N/A'}</span>
+                                                                    <div className={clsx("text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide flex items-center gap-1", status.bgObj, status.textColor, status.borderColor)}>
                                                                         <div className={clsx("w-1 h-1 rounded-full", status.dotColor)} />
                                                                         {status.label}
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                         </div>
-
-                                                        {/* Glow Effect for Selected */}
-                                                        {isSelected && (
-                                                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-[40px] rounded-full -mr-10 -mt-10 pointer-events-none" />
-                                                        )}
+                                                        {isSelected && (<div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-[40px] rounded-full -mr-10 -mt-10 pointer-events-none" />)}
                                                     </div>
                                                 );
                                             })}
@@ -756,222 +945,207 @@ const TaskManager: React.FC = () => {
                                     </div>
                                 </div>
 
-
-
-                                {/* B. GLASS DATE TIME PICKER */}
-                                <div className="mb-6 relative z-40">
-                                    <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-2 pl-1">Thời hạn (Deadline)</label>
-                                    <button
-                                        onClick={() => setShowDatePicker(!showDatePicker)}
-                                        className="w-full flex items-center justify-between bg-bg-elevated border border-border rounded-xl px-4 py-3 text-sm text-text-main hover:border-indigo-500 hover:shadow-[0_0_15px_rgba(99,102,241,0.2)] transition-all group"
-                                    >
-                                        <span className="flex items-center gap-3">
-                                            <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 group-hover:text-indigo-400 transition-colors">
-                                                <Calendar size={16} />
-                                            </div>
-                                            <span className="font-mono font-bold text-lg tracking-tight group-hover:text-indigo-500 transition-colors">
-                                                {formatDate(deadline, 'date')}
-                                            </span>
-                                        </span>
-                                        <span className="text-text-muted font-black text-xs bg-bg-card px-2 py-1 rounded border border-border group-hover:border-indigo-500/30 transition-colors">
-                                            {formatDate(deadline, 'time-h')}:{formatDate(deadline, 'time-m')}
-                                        </span>
-                                    </button>
-
-                                    <AnimatePresence>
-                                        {showDatePicker && (
-                                            <motion.div
-                                                initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                                                animate={{ opacity: 1, scale: 1, y: 0 }}
-                                                exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                                                className="absolute top-full left-0 right-0 mt-3 z-50"
-                                            >
-                                                <GlassDatePicker
-                                                    selected={deadline}
-                                                    onSelect={(d) => setDeadline(d)}
-                                                    onClose={() => setShowDatePicker(false)}
-                                                />
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-
-                                {/* C. RICH COMMAND EDITOR */}
-                                <div className="flex-1 flex flex-col mb-6 group relative">
-                                    <div className="flex justify-between items-end mb-2 px-1">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">NỘI DUNG</label>
-
-                                        {/* Priority Toggles */}
-                                        <div className="flex flex-col items-end gap-1">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Mức độ ưu tiên</label>
-                                            <div className="flex bg-slate-100 dark:bg-slate-900/50 rounded-lg p-1 border border-slate-200 dark:border-white/5">
-                                                {['urgent', 'high', 'normal'].map(p => {
-                                                    const label = p === 'urgent' ? 'KHẨN CẤP' : p === 'high' ? 'CAO' : 'BÌNH THƯỜNG';
-                                                    return (
-                                                        <button
-                                                            key={p}
-                                                            onClick={() => setPriority(p as any)}
-                                                            className={clsx(
-                                                                "px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all",
-                                                                priority === p
-                                                                    ? (p === 'urgent' ? "bg-red-500 text-white shadow-lg shadow-red-500/30" : p === 'high' ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-blue-500 text-white shadow-lg shadow-blue-500/30")
-                                                                    : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-300"
-                                                            )}
-                                                        >
-                                                            {label}
-                                                        </button>
-                                                    )
-                                                })}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {isExpanded && (
-                                        <div
-                                            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90]"
-                                            onClick={(e) => { e.stopPropagation(); setIsExpanded(false); }}
-                                        />
-                                    )}
-                                    <div className={clsx(
-                                        "flex flex-col transition-all duration-300 overflow-hidden",
-                                        isExpanded
-                                            ? "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[100] w-[90vw] h-[85vh] bg-[#0f172a] shadow-2xl rounded-2xl border border-indigo-500/50 p-6"
-                                            : "glass-panel bg-slate-950/30 rounded-2xl border border-white/10 group-focus-within:border-indigo-500/50 group-focus-within:shadow-[0_0_20px_rgba(99,102,241,0.1)]"
-                                    )}>
-                                        {/* Toolbar */}
-                                        <div className="flex items-center gap-1 p-2 bg-bg-elevated/50 border-b border-border">
-                                            <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('**', '**'); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="Bold"><Bold size={14} /></button>
-                                            <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('*', '*'); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="Italic"><Italic size={14} /></button>
-                                            <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('<u>', '</u>'); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="Underline"><Underline size={14} /></button>
-                                            <div className="w-[1px] h-4 bg-border mx-1" />
-                                            <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('## '); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="Heading"><Type size={14} /></button>
-                                            <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('- '); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="List"><List size={14} /></button>
-
-                                            <div className="flex-1" />
-
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsExpanded(!isExpanded)}
-                                                className="p-1.5 hover:bg-indigo-500/20 text-indigo-500 rounded-lg transition-colors flex items-center gap-2"
-                                            >
-                                                <span className="text-[10px] font-bold uppercase tracking-wider">{isExpanded ? "THU NHỎ" : "PHÓNG TO"}</span>
-                                                {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                                            </button>
-                                        </div>
-
-                                        <textarea
-                                            ref={inlineRef}
-                                            className={clsx(
-                                                "w-full bg-transparent border-none outline-none p-4 resize-none text-sm text-text-main placeholder-text-muted font-medium leading-relaxed custom-scrollbar",
-                                                isExpanded ? "flex-1 text-lg max-w-4xl mx-auto" : "min-h-[120px]"
-                                            )}
-                                            placeholder="Nhập nội dung chi tiết tại đây..."
-                                            value={description}
-                                            onChange={(e) => setDescription(e.target.value)}
-                                        ></textarea>
-
-                                        {/* 3. ATTACHMENT SYSTEM */}
-                                        <div className={clsx("px-4 pb-4", isExpanded && "max-w-4xl mx-auto w-full")}>
-                                            {/* Link Input Form */}
-                                            <AnimatePresence>
-                                                {showLinkInput && (
-                                                    <motion.div
-                                                        initial={{ height: 0, opacity: 0 }}
-                                                        animate={{ height: 'auto', opacity: 1 }}
-                                                        exit={{ height: 0, opacity: 0 }}
-                                                        className="overflow-hidden mb-3"
-                                                    >
-                                                        <div className="bg-bg-elevated rounded-xl p-3 border border-indigo-500/30 flex gap-2 items-center">
-                                                            <Link size={14} className="text-indigo-500 shrink-0" />
-                                                            <input
-                                                                type="text"
-                                                                placeholder="URL (https://...)"
-                                                                className="bg-transparent border-none outline-none text-xs text-text-main placeholder-text-muted flex-1 font-mono"
-                                                                value={linkUrl}
-                                                                onChange={e => setLinkUrl(e.target.value)}
-                                                                autoFocus
-                                                            />
-                                                            <div className="w-[1px] h-4 bg-border" />
-                                                            <input
-                                                                type="text"
-                                                                placeholder="Tên hiển thị (Tùy chọn)"
-                                                                className="bg-transparent border-none outline-none text-xs text-text-main placeholder-text-muted w-32"
-                                                                value={linkName}
-                                                                onChange={e => setLinkName(e.target.value)}
-                                                                onKeyDown={e => e.key === 'Enter' && handleAddLink()}
-                                                            />
-                                                            <button onClick={handleAddLink} className="text-[10px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded transition-colors whitespace-nowrap">THÊM</button>
-                                                            <button onClick={() => setShowLinkInput(false)} className="text-[10px] font-bold hover:bg-bg-elevated text-text-muted px-2 py-1 rounded transition-colors whitespace-nowrap"><X size={12} /></button>
-                                                        </div>
-                                                    </motion.div>
-                                                )}
-                                            </AnimatePresence>
-
-                                            {/* Attachment List */}
-                                            {attachments.length > 0 && (
-                                                <div className="flex flex-wrap gap-2 mb-3">
-                                                    {attachments.map((att, idx) => (
-                                                        <div key={idx} className="flex items-center gap-1.5 bg-bg-elevated border border-border px-2 py-1 rounded-md text-[10px] text-text-secondary group/att">
-                                                            {att.type === 'link' ? <Link size={10} className="text-blue-500" /> : <ImageIcon size={10} className="text-emerald-500" />}
-                                                            <span className="max-w-[150px] truncate">{att.name}</span>
-                                                            <button
-                                                                onClick={() => setAttachments(attachments.filter((_, i) => i !== idx))}
-                                                                className="hover:text-red-500 transition-colors opacity-50 group-hover/att:opacity-100"
-                                                            >
-                                                                <X size={10} />
-                                                            </button>
-                                                        </div>
-                                                    ))}
+                                {/* RIGHT COLUMN: Deadline, Priority, Content */}
+                                <div className="flex flex-col gap-4 overflow-visible">
+                                    {/* DEADLINE */}
+                                    <div className="bg-white/60 dark:bg-white/5 backdrop-blur-xl p-4 rounded-2xl border border-white/80 dark:border-white/10 shadow-sm relative z-40 overflow-visible">
+                                        <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-3 pl-1 uppercase tracking-wider">Thời hạn (Deadline)</label>
+                                        <button
+                                            onClick={() => setShowDatePicker(!showDatePicker)}
+                                            className="w-full flex items-center justify-between bg-white/80 dark:bg-slate-900/50 backdrop-blur-sm border border-slate-200/80 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white hover:border-indigo-400 hover:shadow-md hover:shadow-indigo-500/10 transition-all group"
+                                        >
+                                            <span className="flex items-center gap-3">
+                                                <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30">
+                                                    <Calendar size={16} />
                                                 </div>
-                                            )}
-
-                                            <div className="flex gap-2 mb-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={handleAttachFile}
-                                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-bg-elevated border border-border text-xs text-text-muted hover:text-indigo-400 hover:border-indigo-500/30 transition-all"
-                                                >
-                                                    <ImageIcon size={12} /> Đính kèm File
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        setShowLinkInput(!showLinkInput);
-                                                    }}
+                                                <span className="font-mono font-bold text-lg tracking-tight group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                                    {formatDate(deadline, 'date')}
+                                                </span>
+                                            </span>
+                                            <span className="text-slate-600 dark:text-slate-300 font-bold text-sm bg-slate-100/80 dark:bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-200/50 dark:border-white/10 group-hover:border-indigo-400/50 transition-colors">
+                                                {formatDate(deadline, 'time-h')}:{formatDate(deadline, 'time-m')}
+                                            </span>
+                                        </button>
+                                        <AnimatePresence>
+                                            {showDatePicker && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
                                                     className={clsx(
-                                                        "flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs transition-all",
-                                                        showLinkInput
-                                                            ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
-                                                            : "bg-bg-elevated text-text-muted border-border hover:text-indigo-400 hover:border-indigo-500/30"
+                                                        "fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm",
+                                                        "md:absolute md:inset-auto md:top-full md:right-0 md:translate-x-0 md:w-auto md:mt-3 md:z-[100] md:bg-transparent md:p-0 md:backdrop-blur-none"
                                                     )}
+                                                    onClick={() => {
+                                                        // Close on backdrop click (Desktop doesn't have backdrop here, but mobile does)
+                                                        if (window.innerWidth < 768) setShowDatePicker(false);
+                                                    }}
                                                 >
-                                                    <Link size={12} /> Thêm Link
+                                                    <div onClick={(e) => e.stopPropagation()}>
+                                                        <GlassDatePicker
+                                                            selected={deadline}
+                                                            onSelect={(d) => setDeadline(d)}
+                                                            onClose={() => setShowDatePicker(false)}
+                                                        />
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+
+                                    {/* PRIORITY */}
+                                    <div className="bg-white/60 dark:bg-white/5 backdrop-blur-xl p-4 rounded-2xl border border-white/80 dark:border-white/10 shadow-sm">
+                                        <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-3 pl-1 uppercase tracking-wider">Mức độ ưu tiên</label>
+                                        <div className="flex gap-2 bg-white/50 dark:bg-slate-900/30 rounded-xl p-1.5 border border-slate-200/50 dark:border-white/5">
+                                            {['normal', 'high', 'urgent'].map(p => {
+                                                const config = {
+                                                    normal: {
+                                                        label: 'BÌNH THƯỜNG',
+                                                        activeClasses: 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/30',
+                                                        inactiveClasses: 'bg-blue-50 dark:bg-blue-900/20 text-blue-400 dark:text-blue-300 border-blue-200/50 dark:border-blue-500/20 hover:bg-blue-100 dark:hover:bg-blue-900/30'
+                                                    },
+                                                    high: {
+                                                        label: 'CAO',
+                                                        activeClasses: 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30',
+                                                        inactiveClasses: 'bg-amber-50 dark:bg-amber-900/20 text-amber-500 dark:text-amber-300 border-amber-200/50 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-900/30'
+                                                    },
+                                                    urgent: {
+                                                        label: 'KHẨN CẤP',
+                                                        activeClasses: 'bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-lg shadow-red-500/30',
+                                                        inactiveClasses: 'bg-red-50 dark:bg-red-900/20 text-red-400 dark:text-red-300 border-red-200/50 dark:border-red-500/20 hover:bg-red-100 dark:hover:bg-red-900/30'
+                                                    }
+                                                }[p]!;
+                                                return (
+                                                    <button
+                                                        key={p}
+                                                        onClick={() => setPriority(p as any)}
+                                                        className={clsx(
+                                                            "flex-1 py-2.5 rounded-lg text-[10px] font-bold uppercase transition-all duration-300 border",
+                                                            priority === p
+                                                                ? config.activeClasses + " border-transparent"
+                                                                : config.inactiveClasses
+                                                        )}
+                                                    >
+                                                        {config.label}
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* CONTENT EDITOR */}
+                                    <div className="flex-1 flex flex-col group relative">
+                                        <div className="flex justify-between items-end mb-3 px-1">
+                                            <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">NỘI DUNG</label>
+                                        </div>
+                                        {isExpanded && (
+                                            <div
+                                                className="fixed inset-0 bg-slate-400/40 dark:bg-slate-950/70 backdrop-blur-md z-[90]"
+                                                onClick={(e) => { e.stopPropagation(); setIsExpanded(false); }}
+                                            />
+                                        )}
+                                        <div className={clsx(
+                                            "flex flex-col transition-all duration-300 overflow-hidden",
+                                            isExpanded
+                                                ? "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[100] w-[90vw] h-[85vh] bg-white/95 dark:bg-slate-800/80 backdrop-blur-2xl shadow-[0_8px_60px_rgba(0,0,0,0.2)] dark:shadow-[0_8px_60px_rgba(99,102,241,0.2)] rounded-3xl border border-white/80 dark:border-white/20 p-6 ring-1 ring-black/5 dark:ring-white/10"
+                                                : "bg-white/60 dark:bg-white/5 backdrop-blur-xl rounded-2xl border border-white/80 dark:border-white/10 shadow-sm group-focus-within:border-indigo-400 group-focus-within:shadow-md group-focus-within:shadow-indigo-500/10"
+                                        )}>
+                                            <div className="flex items-center gap-1 p-2 bg-bg-elevated/50 border-b border-border">
+                                                <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('**', '**'); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="Bold"><Bold size={14} /></button>
+                                                <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('*', '*'); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="Italic"><Italic size={14} /></button>
+                                                <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('<u>', '</u>'); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="Underline"><Underline size={14} /></button>
+                                                <div className="w-[1px] h-4 bg-border mx-1" />
+                                                <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('## '); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="Heading"><Type size={14} /></button>
+                                                <button type="button" onMouseDown={(e) => { e.preventDefault(); insertText('- '); }} className="p-1.5 hover:bg-bg-elevated rounded-lg text-text-muted hover:text-text-main transition-colors" title="List"><List size={14} /></button>
+                                                <div className="flex-1" />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsExpanded(!isExpanded)}
+                                                    className="p-1.5 hover:bg-indigo-500/20 text-indigo-500 rounded-lg transition-colors flex items-center gap-2"
+                                                >
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider">{isExpanded ? "THU NHỎ" : "PHÓNG TO"}</span>
+                                                    {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                                                 </button>
+                                            </div>
+                                            <textarea
+                                                ref={inlineRef}
+                                                className={clsx(
+                                                    "w-full bg-transparent border-none outline-none p-4 resize-none text-sm text-text-main placeholder-text-muted font-medium leading-relaxed custom-scrollbar",
+                                                    isExpanded ? "flex-1 text-lg max-w-4xl mx-auto" : "min-h-[120px]"
+                                                )}
+                                                placeholder="Nhập nội dung chi tiết tại đây..."
+                                                value={description}
+                                                onChange={(e) => setDescription(e.target.value)}
+                                            ></textarea>
+                                            <div className={clsx("px-4 pb-4", isExpanded && "max-w-4xl mx-auto w-full")}>
+                                                <AnimatePresence>
+                                                    {showLinkInput && (
+                                                        <motion.div
+                                                            initial={{ height: 0, opacity: 0 }}
+                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                            exit={{ height: 0, opacity: 0 }}
+                                                            className="overflow-hidden mb-3"
+                                                        >
+                                                            <div className="bg-bg-elevated rounded-xl p-3 border border-indigo-500/30 flex gap-2 items-center">
+                                                                <Link size={14} className="text-indigo-500 shrink-0" />
+                                                                <input type="text" placeholder="URL (https://...)" className="bg-transparent border-none outline-none text-xs text-text-main placeholder-text-muted flex-1 font-mono" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} autoFocus />
+                                                                <div className="w-[1px] h-4 bg-border" />
+                                                                <input type="text" placeholder="Tên hiển thị (Tùy chọn)" className="bg-transparent border-none outline-none text-xs text-text-main placeholder-text-muted w-32" value={linkName} onChange={e => setLinkName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddLink()} />
+                                                                <button onClick={handleAddLink} className="text-[10px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded transition-colors whitespace-nowrap">THÊM</button>
+                                                                <button onClick={() => setShowLinkInput(false)} className="text-[10px] font-bold hover:bg-bg-elevated text-text-muted px-2 py-1 rounded transition-colors whitespace-nowrap"><X size={12} /></button>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                                {attachments.length > 0 && (
+                                                    <div className="flex flex-wrap gap-2 mb-3">
+                                                        {attachments.map((att, idx) => (
+                                                            <div key={idx} className="flex items-center gap-1.5 bg-bg-elevated border border-border px-2 py-1 rounded-md text-[10px] text-text-secondary group/att">
+                                                                {att.type === 'link' ? <Link size={10} className="text-blue-500" /> : <ImageIcon size={10} className="text-emerald-500" />}
+                                                                <span className="max-w-[150px] truncate">{att.name}</span>
+                                                                <button onClick={() => setAttachments(attachments.filter((_, i) => i !== idx))} className="hover:text-red-500 transition-colors opacity-50 group-hover/att:opacity-100"><X size={10} /></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <div className="flex gap-2 mb-2">
+                                                    <button type="button" onClick={handleAttachFile} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-bg-elevated border border-border text-xs text-text-muted hover:text-indigo-400 hover:border-indigo-500/30 transition-all">
+                                                        <ImageIcon size={12} /> Đính kèm File
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => { e.preventDefault(); setShowLinkInput(!showLinkInput); }}
+                                                        className={clsx(
+                                                            "flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs transition-all",
+                                                            showLinkInput ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/30" : "bg-bg-elevated text-text-muted border-border hover:text-indigo-400 hover:border-indigo-500/30"
+                                                        )}
+                                                    >
+                                                        <Link size={12} /> Thêm Link
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-
-                                {/* 4. THE POWER BUTTON */}
-                                <button
-                                    onClick={handleCreateTask}
-                                    className="mt-auto w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-[0_10px_40px_-10px_rgba(79,70,229,0.5)] border border-indigo-400/20 transition-all hover:-translate-y-1 hover:shadow-indigo-500/40 relative group overflow-hidden"
-                                >
-                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12 translate-x-[-200%] group-hover:animate-shimmer" />
-                                    <span className="relative flex items-center justify-center gap-3">
-                                        <Plus size={18} strokeWidth={3} /> {t.tasks.panel.submit}
-                                    </span>
-                                </button>
                             </div>
+
+                            {/* SUBMIT BUTTON */}
+                            <button
+                                onClick={handleCreateTask}
+                                className="mt-6 w-full py-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 bg-[length:200%_100%] hover:bg-right text-white rounded-2xl font-bold text-sm uppercase tracking-widest shadow-[0_10px_40px_-10px_rgba(99,102,241,0.5)] border border-white/20 transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_20px_50px_-10px_rgba(99,102,241,0.4)] relative group overflow-hidden"
+                            >
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
+                                <span className="relative flex items-center justify-center gap-3">
+                                    <Plus size={18} strokeWidth={3} /> {t.tasks.panel.submit}
+                                </span>
+                            </button>
                         </div>
                     </div>
-                )}
-
-                {/* RIGHT: Running Tasks Grid */}
-                <div className={clsx("bg-bg-card rounded-2xl border border-border p-6 flex flex-col min-w-0", canEdit ? "w-full lg:flex-1" : "w-full")}>
+                )}        {/* RIGHT: Running Tasks Grid */}
+                <div className={clsx("bg-bg-card rounded-2xl border border-border p-3 md:p-6 flex flex-col min-w-0 overflow-x-hidden max-w-full", canEdit ? "w-full lg:flex-1" : "w-full")}>
                     <div className="flex flex-col gap-6 mb-6">
                         {/* HEADER BANNER */}
+                        {/* HIDDEN OLD HEADER
                         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 p-6 text-white shadow-xl isolate mb-6">
                             <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
                             <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-40 h-40 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
@@ -989,8 +1163,10 @@ const TaskManager: React.FC = () => {
                                 </div>
                             </div>
                         </div>
+                        */}
 
                         {/* STATS METRIC CARDS - VIBRANT */}
+                        {/* HIDDEN OLD STATS
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                             <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-4 rounded-2xl border border-slate-700/50 flex flex-col gap-2 relative overflow-hidden group shadow-lg">
                                 <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity rotate-12">
@@ -1024,6 +1200,7 @@ const TaskManager: React.FC = () => {
                                 <span className="text-3xl font-black text-white tracking-tight">{tasks.filter(t => t.status === 'completed').length}</span>
                             </div>
                         </div>
+                        */}
 
                         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
 
@@ -1052,6 +1229,7 @@ const TaskManager: React.FC = () => {
 
                                 <div className="flex gap-2 items-center w-full lg:w-auto">
                                     {/* Department Filters - Improved PILL Container */}
+                                    {/* HIDDEN OLD FILTERS
                                     <div className="flex-1 lg:flex-none flex gap-1.5 overflow-x-auto scrollbar-hide pb-0 mask-linear max-w-full lg:max-w-[400px] items-center">
                                         {departments.map(dept => (
                                             <button
@@ -1068,6 +1246,7 @@ const TaskManager: React.FC = () => {
                                             </button>
                                         ))}
                                     </div>
+                                    */}
                                     <div className="relative shrink-0">
                                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                                         <input
@@ -1084,9 +1263,9 @@ const TaskManager: React.FC = () => {
                     </div>
 
                     {/* Tasks Grid grouped by Date */}
-                    <div className="grid grid-cols-1 gap-8 overflow-y-auto custom-scrollbar pr-2 lg:h-[calc(100vh-14rem)] h-auto content-start pb-20">
+                    <div className="grid grid-cols-1 gap-8 overflow-x-hidden overflow-y-auto custom-scrollbar pr-2 lg:h-[calc(100vh-14rem)] h-auto content-start pb-20">
                         {Object.entries(groupedTasks).map(([date, groupTasks]) => (
-                            <div key={date} className="w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div key={date} className="w-full max-w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 {/* Date Header */}
                                 <div className="sticky top-0 z-20 bg-bg-card/95 backdrop-blur-sm py-3 mb-4 flex items-center gap-3 border-b border-border shadow-sm">
                                     <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_10px_#6366f1]" />
@@ -1095,7 +1274,7 @@ const TaskManager: React.FC = () => {
                                 </div>
 
                                 {/* Task Cards Grid for this Date */}
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {groupTasks.map(task => {
                                         const assigneeUser = users.find(u => u.id === task.assigneeId);
                                         const isOverdue = new Date(task.deadline).getTime() < new Date().getTime();
@@ -1112,7 +1291,7 @@ const TaskManager: React.FC = () => {
                                                 {/* Main Click Area */}
                                                 <div
                                                     onClick={() => toggleExpand(task.id)}
-                                                    className="p-5 cursor-pointer"
+                                                    className="p-3 md:p-5 cursor-pointer"
                                                 >
                                                     {/* Header */}
                                                     <div className="flex justify-between items-start mb-3">
@@ -1154,7 +1333,7 @@ const TaskManager: React.FC = () => {
                                                         </div>
                                                     </div>
 
-                                                    <h3 className={clsx("font-medium text-text-main mb-2 line-clamp-2", task.status === 'completed' && "line-through text-text-muted")}>
+                                                    <h3 className={clsx("font-medium text-text-main mb-2 line-clamp-2 break-words", task.status === 'completed' && "line-through text-text-muted")}>
                                                         {task.title}
                                                     </h3>
 
@@ -1208,13 +1387,13 @@ const TaskManager: React.FC = () => {
                                                             initial={{ height: 0, opacity: 0 }}
                                                             animate={{ height: 'auto', opacity: 1 }}
                                                             exit={{ height: 0, opacity: 0 }}
-                                                            className="px-5 pb-5 border-t border-white/5 bg-slate-900/30"
+                                                            className="px-2 md:px-5 pb-3 md:pb-5 border-t border-white/5 bg-slate-900/30 overflow-x-hidden"
                                                         >
                                                             <div className="pt-4 space-y-4">
                                                                 {/* Description */}
                                                                 <div>
                                                                     <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">NỘI DUNG CHI TIẾT</div>
-                                                                    <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-line bg-slate-950/50 p-4 rounded-xl border border-white/5 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                                                    <div className="text-xs md:text-sm text-slate-300 leading-relaxed whitespace-pre-line bg-slate-950/50 p-3 md:p-4 rounded-xl border border-white/5 max-h-[200px] md:max-h-[300px] overflow-y-auto overflow-x-hidden custom-scrollbar break-words">
                                                                         {task.description || <span className="text-slate-500 italic">Không có mô tả</span>}
                                                                     </div>
                                                                 </div>
@@ -1223,7 +1402,7 @@ const TaskManager: React.FC = () => {
                                                                 {task.attachments.length > 0 && (
                                                                     <div>
                                                                         <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">TÀI LIỆU ĐÍNH KÈM ({task.attachments.length})</div>
-                                                                        <div className="flex flex-wrap gap-2">
+                                                                        <div className="flex flex-wrap gap-2 max-w-full">
                                                                             {task.attachments.map((att, i) => (
                                                                                 <a
                                                                                     key={i}
@@ -1249,7 +1428,7 @@ const TaskManager: React.FC = () => {
                                                                                             <span className="text-[9px] bg-emerald-500/30 text-emerald-300 px-1 rounded font-bold">FILE</span>
                                                                                         </>
                                                                                     )}
-                                                                                    <span className="text-xs font-medium text-slate-200 group-hover/link:text-white">{att.name}</span>
+                                                                                    <span className="text-xs font-medium text-slate-200 group-hover/link:text-white truncate max-w-[120px] md:max-w-[200px] break-words">{att.name}</span>
                                                                                 </a>
                                                                             ))}
                                                                         </div>

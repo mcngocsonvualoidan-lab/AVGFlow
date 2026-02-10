@@ -3,8 +3,9 @@ import {
     Mail, FileText, Globe, Lightbulb,
     ArrowLeft, Send, Copy, Eraser, Sparkles,
     Calculator, MessageSquare, Check, X, Lock,
-    History, Trash2, Clock, Package, ExternalLink
+    History, Trash2, Clock, Package, ExternalLink, Layers
 } from 'lucide-react';
+import HeroBanner from '../../components/HeroBanner';
 import { clsx } from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import { getGeminiKey, initializeGemini } from '../../lib/gemini';
@@ -261,34 +262,43 @@ const AppsPortal: React.FC = () => {
     return (
         <div className="flex bg-white dark:bg-[#0f172a] text-slate-900 dark:text-slate-200 md:h-[calc(100vh-8rem)] min-h-[calc(100vh-8rem)] rounded-3xl md:overflow-hidden border border-slate-200 dark:border-white/5 shadow-2xl relative">
 
+
+            {/* --- MOBILE BACKDROP FOR HISTORY SIDEBAR --- */}
+            {showHistory && (
+                <div
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-in fade-in duration-200"
+                    onClick={() => setShowHistory(false)}
+                />
+            )}
+
             {/* --- HISTORY SIDEBAR OVERLAY --- */}
             <div className={clsx(
-                "absolute inset-y-0 right-0 w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-l border-slate-200 dark:border-white/10 transform transition-transform duration-300 z-50 flex flex-col shadow-2xl",
+                "absolute inset-y-0 right-0 w-[90%] sm:w-[80%] md:w-96 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-l border-slate-200 dark:border-white/10 transform transition-transform duration-300 z-50 flex flex-col shadow-2xl",
                 showHistory ? "translate-x-0" : "translate-x-full"
             )}>
-                <div className="p-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
-                    <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <History size={18} className="text-indigo-400" /> Lịch sử hoạt động
+                <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0">
+                    <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <History size={16} className="text-indigo-400" /> <span className="line-clamp-1">Lịch sử hoạt động</span>
                     </h3>
-                    <button onClick={() => setShowHistory(false)} className="p-1 hover:bg-white/10 rounded-full">
+                    <button onClick={() => setShowHistory(false)} className="p-1.5 hover:bg-white/10 rounded-full transition-colors">
                         <X size={18} />
                     </button>
                 </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-2 sm:p-3 space-y-2 sm:space-y-3">
                     {history.length === 0 && (
-                        <div className="text-center text-slate-500 text-xs mt-10">Chưa có lịch sử nào.</div>
+                        <div className="text-center text-slate-500 text-xs py-12 px-4">Chưa có lịch sử nào.</div>
                     )}
                     {history.map(item => {
                         const tool = TOOLS.find(t => t.id === item.toolId);
                         return (
-                            <div key={item.id} onClick={() => handleRestoreHistory(item)} className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer group transition-all text-xs">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className={clsx("font-bold", tool?.color?.split(' ')[0])}>{tool?.name}</span>
-                                    <button onClick={(e) => handleDeleteHistory(item.id, e)} className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity">
+                            <div key={item.id} onClick={() => handleRestoreHistory(item)} className="p-2.5 sm:p-3 bg-slate-50 dark:bg-white/5 rounded-lg sm:rounded-xl border border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer group transition-all">
+                                <div className="flex justify-between items-start gap-2 mb-2">
+                                    <span className={clsx("text-xs sm:text-sm font-bold line-clamp-1 flex-1", tool?.color?.split(' ')[0])}>{tool?.name}</span>
+                                    <button onClick={(e) => handleDeleteHistory(item.id, e)} className="opacity-50 sm:opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity shrink-0">
                                         <Trash2 size={14} />
                                     </button>
                                 </div>
-                                <div className="line-clamp-2 text-slate-400 mb-2 font-mono bg-black/20 p-1.5 rounded">"{item.input}"</div>
+                                <div className="line-clamp-2 text-slate-400 mb-1.5 text-[11px] sm:text-xs font-mono bg-black/10 dark:bg-black/20 p-1.5 rounded break-words">"{item.input}"</div>
                                 <div className="text-[10px] text-slate-600 flex items-center gap-1">
                                     <Clock size={10} />
                                     {item.timestamp?.seconds ? new Date(item.timestamp.seconds * 1000).toLocaleString('vi-VN') : 'Vừa xong'}
@@ -303,37 +313,35 @@ const AppsPortal: React.FC = () => {
             <div className="flex-1 flex flex-col min-w-0 transition-transform duration-300">
                 {/* HERO BANNER - APP STORE */}
                 {!selectedToolId && (
-                    <div className="relative rounded-3xl overflow-hidden m-6 mb-2 shadow-2xl shrink-0 group">
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600">
-                            <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 mix-blend-overlay"></div>
-                            <div className="absolute bottom-0 left-0 w-64 h-64 bg-cyan-400/20 rounded-full blur-3xl -ml-10 -mb-10 mix-blend-overlay"></div>
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay"></div>
-                        </div>
+                    <div className="px-6 pt-6">
+                        <HeroBanner
+                            icon={Layers}
+                            title="Kho Ứng Dụng AI"
+                            subtitle="AVG Intelligence Suite"
+                            description="Bộ công cụ AI chuyên dụng giúp tối ưu hóa hiệu suất công việc. Soạn email, dịch thuật, chỉnh văn bản và nhiều hơn nữa."
+                            badge="AI Powered"
+                            badgeIcon={Sparkles}
+                            secondBadge={`${TOOLS.length + EXTERNAL_APPS.length} công cụ`}
+                            stats={[
+                                { icon: Mail, label: 'Email Writer', value: '✓', color: 'from-blue-400 to-indigo-500' },
+                                { icon: Globe, label: 'Translator', value: '✓', color: 'from-indigo-400 to-violet-500' },
+                                { icon: Calculator, label: 'Excel Helper', value: '✓', color: 'from-green-400 to-emerald-500' },
+                            ]}
+                            gradientFrom="from-blue-600"
+                            gradientVia="via-indigo-600"
+                            gradientTo="to-violet-600"
+                            accentColor="cyan"
+                        />
 
-                        <div className="relative z-10 p-6 md:p-8 text-white">
-                            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-                                <div>
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-bold uppercase tracking-widest border border-white/10 shadow-sm">
-                                            AI Intelligence
-                                        </span>
-                                    </div>
-                                    <h1 className="text-3xl md:text-5xl font-black tracking-tight mb-2 drop-shadow-sm flex items-center gap-3">
-                                        Kho Ứng Dụng AI
-                                    </h1>
-                                    <p className="text-blue-100 font-medium max-w-xl text-lg opacity-90 leading-relaxed">
-                                        Bộ công cụ AI chuyên dụng giúp tối ưu hóa hiệu suất công việc
-                                    </p>
-                                </div>
-
-                                <button
-                                    onClick={() => setShowHistory(true)}
-                                    className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-2 shadow-lg hover:scale-105 active:scale-95 backdrop-blur-md"
-                                >
-                                    <History size={18} />
-                                    Lịch sử hoạt động
-                                </button>
-                            </div>
+                        {/* History Button */}
+                        <div className="flex justify-end mt-4">
+                            <button
+                                onClick={() => setShowHistory(true)}
+                                className="px-5 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-2 shadow-sm hover:shadow-md"
+                            >
+                                <History size={18} />
+                                Lịch sử hoạt động
+                            </button>
                         </div>
                     </div>
                 )}

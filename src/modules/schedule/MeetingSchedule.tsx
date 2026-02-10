@@ -1,6 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useMeetingSchedule, MEETING_ARCHIVES, CURRENT_MONTH_GID, MonthArchive } from '../../hooks/useMeetingSchedule';
-import { Calendar, RefreshCw, Clock, MapPin, Users, AlignLeft, User, Link as LinkIcon, Archive, ChevronDown, Sparkles, Zap, Target, TrendingUp } from 'lucide-react';
+import {
+    Calendar, RefreshCw, Clock, MapPin, Users,
+    Link as LinkIcon, ChevronDown, Sparkles, Zap,
+    UserCheck, FileText, MoreHorizontal, Archive
+} from 'lucide-react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -14,17 +18,11 @@ const MeetingSchedule: React.FC = () => {
     const isViewingArchive = selectedGid !== CURRENT_MONTH_GID;
 
     // Info: Use the shared hook for data fetching with month/year filter
-    const { meetings: sheetData, loading: isSyncing, error: syncError, refresh: fetchSheetData } = useMeetingSchedule(
+    const { meetings: sheetData, loading: isSyncing, refresh: fetchSheetData } = useMeetingSchedule(
         selectedGid,
         currentArchive.month,
         currentArchive.year
     );
-
-    // Auto-refresh interval is managed inside the hook if needed, 
-    // but the hook currently just fetches once. We can add interval here if we want strictly 
-    // live updates, but the hook default behavior is fine. 
-    // Let's keep the manual interval here for consistency with previous behavior if desirable, 
-    // or rely on manual refresh. The previous code had a generic setInterval.
 
     useEffect(() => {
         const interval = setInterval(fetchSheetData, 60000); // Auto refresh every minute
@@ -36,6 +34,64 @@ const MeetingSchedule: React.FC = () => {
     const handleSelectArchive = (archive: MonthArchive) => {
         setSelectedGid(archive.gid);
         setShowArchiveDropdown(false);
+    };
+
+    // Group meetings by date
+    const groupedMeetings = useMemo(() => {
+        const groups: { [key: string]: typeof displayMeetings } = {};
+        displayMeetings.forEach(meeting => {
+            if (!groups[meeting.date]) {
+                groups[meeting.date] = [];
+            }
+            groups[meeting.date].push(meeting);
+        });
+        return groups;
+    }, [displayMeetings]);
+
+    const getMeetingStatus = (meeting: any) => {
+        if (!meeting.date) return 'none';
+        const dateParts = meeting.date.split('/');
+        if (dateParts.length !== 3) return 'none';
+        const day = parseInt(dateParts[0], 10);
+        const month = parseInt(dateParts[1], 10) - 1;
+        const year = parseInt(dateParts[2], 10);
+        const mDate = new Date(year, month, day);
+        const now = new Date();
+        const todayFn = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        if (mDate < todayFn) return 'past';
+        if (mDate > todayFn) return 'planned';
+
+        if (!meeting.startTime) return 'upcoming';
+        const [h, m] = meeting.startTime.split(':').map(Number);
+        if (isNaN(h) || isNaN(m)) return 'upcoming';
+        const startMins = h * 60 + m;
+        const nowMins = now.getHours() * 60 + now.getMinutes();
+        let endMins = startMins + 60;
+        if (meeting.endTime) {
+            const [eh, em] = meeting.endTime.split(':').map(Number);
+            if (!isNaN(eh)) endMins = eh * 60 + em;
+        } else if (meeting.duration) {
+            const dur = parseInt(meeting.duration);
+            if (!isNaN(dur)) endMins = startMins + dur;
+        }
+
+        if (nowMins > endMins) return 'past';
+        if (nowMins >= startMins && nowMins <= endMins) return 'ongoing';
+        return 'upcoming';
+    };
+
+    const formatDateDisplay = (dateStr: string, dayStr: string) => {
+        const parts = dateStr.split('/');
+        if (parts.length !== 3) return { day: dayStr, date: dateStr, full: dateStr, dayNum: parts[0], month: parts[1], weekday: dayStr };
+
+        return {
+            day: dayStr,
+            date: dateStr,
+            dayNum: parts[0],
+            month: parts[1],
+            weekday: dayStr
+        };
     };
 
     return (
@@ -52,23 +108,6 @@ const MeetingSchedule: React.FC = () => {
                     <div className="absolute -top-24 -right-24 w-96 h-96 bg-gradient-to-br from-cyan-400/30 to-transparent rounded-full blur-3xl animate-pulse" />
                     <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-gradient-to-tr from-pink-500/20 to-transparent rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-radial from-white/5 to-transparent rounded-full" />
-
-                    {/* Floating particles */}
-                    <motion.div
-                        animate={{ y: [-10, 10, -10], rotate: [0, 180, 360] }}
-                        transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-                        className="absolute top-10 right-20 w-3 h-3 bg-cyan-400/60 rounded-full"
-                    />
-                    <motion.div
-                        animate={{ y: [10, -10, 10], rotate: [360, 180, 0] }}
-                        transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
-                        className="absolute bottom-16 right-40 w-2 h-2 bg-pink-400/60 rounded-full"
-                    />
-                    <motion.div
-                        animate={{ x: [-10, 10, -10] }}
-                        transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
-                        className="absolute top-20 left-1/3 w-2 h-2 bg-yellow-400/60 rounded-full"
-                    />
                 </div>
 
                 {/* Content */}
@@ -108,124 +147,38 @@ const MeetingSchedule: React.FC = () => {
                                 className="text-white/70 text-sm md:text-base leading-relaxed mb-6"
                             >
                                 Quản lý và theo dõi các cuộc họp, trao đổi công việc một cách hiệu quả.
-                                Đồng bộ tự động từ Google Sheets để cập nhật realtime.
+                                Đồng bộ tự động từ Google Sheets cập nhật realtime.
                             </motion.p>
-
-                            {/* Quick Stats */}
-                            <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.5 }}
-                                className="flex flex-wrap gap-3"
-                            >
-                                {[
-                                    {
-                                        icon: Target,
-                                        label: 'Đang diễn ra',
-                                        value: displayMeetings.filter(m => {
-                                            if (!m.date) return false;
-                                            const parts = m.date.split('/');
-                                            if (parts.length !== 3) return false;
-                                            const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-                                            const today = new Date();
-                                            return d.toDateString() === today.toDateString();
-                                        }).length,
-                                        color: 'from-emerald-400 to-green-500'
-                                    },
-                                    {
-                                        icon: TrendingUp,
-                                        label: 'Sắp tới',
-                                        value: displayMeetings.filter(m => {
-                                            if (!m.date) return false;
-                                            const parts = m.date.split('/');
-                                            if (parts.length !== 3) return false;
-                                            const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-                                            const today = new Date();
-                                            today.setHours(0, 0, 0, 0);
-                                            return d > today;
-                                        }).length,
-                                        color: 'from-amber-400 to-orange-500'
-                                    },
-                                    {
-                                        icon: Clock,
-                                        label: 'Hoàn thành',
-                                        value: displayMeetings.filter(m => {
-                                            if (!m.date) return false;
-                                            const parts = m.date.split('/');
-                                            if (parts.length !== 3) return false;
-                                            const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-                                            const today = new Date();
-                                            today.setHours(0, 0, 0, 0);
-                                            return d < today;
-                                        }).length,
-                                        color: 'from-slate-400 to-slate-500'
-                                    },
-                                ].map((stat, i) => (
-                                    <div key={i} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10 hover:bg-white/20 transition-colors cursor-default">
-                                        <div className={`p-1.5 rounded-lg bg-gradient-to-br ${stat.color}`}>
-                                            <stat.icon size={14} className="text-white" />
-                                        </div>
-                                        <div>
-                                            <div className="text-2xl font-black text-white">{stat.value}</div>
-                                            <div className="text-[10px] text-white/60 font-medium uppercase tracking-wider">{stat.label}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </motion.div>
                         </div>
 
-                        {/* Right Decorative Element */}
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ delay: 0.6, type: "spring" }}
-                            className="hidden lg:flex items-center justify-center"
-                        >
-                            <div className="relative">
-                                <div className="w-40 h-40 rounded-3xl bg-gradient-to-br from-white/20 to-white/5 backdrop-blur-xl border border-white/20 flex items-center justify-center shadow-2xl">
-                                    <Calendar size={64} className="text-white/90" />
-                                </div>
-                                <div className="absolute -top-3 -right-3 w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shadow-lg animate-bounce">
-                                    <Sparkles size={20} className="text-white" />
-                                </div>
-                                <div className="absolute -bottom-2 -left-2 w-10 h-10 rounded-lg bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center shadow-lg" style={{ animationDelay: '0.5s' }}>
-                                    <Zap size={16} className="text-white" />
-                                </div>
-                            </div>
-                        </motion.div>
+                        {/* Right Decorative Element / Stats */}
+                        <div className="hidden lg:flex gap-3">
+                            {[
+                                { label: 'Đang diễn ra', count: displayMeetings.filter(m => getMeetingStatus(m) === 'ongoing').length, color: 'bg-emerald-500' },
+                                { label: 'Sắp tới', count: displayMeetings.filter(m => ['upcoming', 'planned'].includes(getMeetingStatus(m))).length, color: 'bg-red-500' },
+                                { label: 'Hoàn thành', count: displayMeetings.filter(m => getMeetingStatus(m) === 'past').length, color: 'bg-blue-500' },
+                            ].map((stat, i) => (
+                                <motion.div
+                                    key={i}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.5 + (i * 0.1) }}
+                                    className="flex flex-col items-center justify-center w-28 h-24 rounded-2xl bg-white/10 backdrop-blur-md border border-white/10"
+                                >
+                                    <span className="text-3xl font-black text-white">{stat.count}</span>
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                        <span className={`w-2 h-2 rounded-full ${stat.color}`} />
+                                        <span className="text-[10px] text-white/70 uppercase font-bold">{stat.label}</span>
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
                     </div>
                 </div>
-
-                {/* Bottom Wave Effect */}
-                <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
             </motion.div>
 
-            {/* Header Section */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0 relative z-10">
-                <div>
-                    <motion.div
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="flex items-center gap-3"
-                    >
-                        <div className="p-3 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-2xl shadow-lg shadow-indigo-500/20">
-                            <Calendar className="text-white" size={28} />
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-cyan-600 dark:from-indigo-400 dark:to-cyan-400">
-                                Lịch Trao Đổi
-                            </h1>
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className="flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20">
-                                    <RefreshCw size={10} className={isSyncing ? "animate-spin" : ""} />
-                                    {isSyncing ? "Đang đồng bộ..." : "Đã cập nhật"}
-                                </span>
-                                {syncError && <span className="text-red-500 text-xs font-bold bg-red-50 px-2 py-0.5 rounded-full border border-red-100">{syncError}</span>}
-                            </div>
-                        </div>
-                    </motion.div>
-                </div>
-
+            {/* Controls Section - Restored Old Style Dropdown */}
+            <div className="flex flex-wrap justify-between items-center gap-4 sticky top-0 z-40 py-2 bg-transparent backdrop-blur-sm mask-image-gradient-b">
                 <div className="flex items-center gap-3">
                     {/* Archive Dropdown */}
                     <div className="relative">
@@ -272,12 +225,12 @@ const MeetingSchedule: React.FC = () => {
                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                         exit={{ opacity: 0, y: -10, scale: 0.95 }}
                                         transition={{ type: "spring", damping: 20, stiffness: 300 }}
-                                        className="absolute right-0 mt-3 w-72 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-2xl shadow-slate-900/10 dark:shadow-black/30 z-50 overflow-hidden"
+                                        className="absolute top-full left-0 mt-3 w-72 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-2xl shadow-slate-900/10 dark:shadow-black/30 z-50 overflow-hidden"
                                     >
                                         {/* Header */}
                                         <div className="px-4 py-3 border-b border-slate-100 dark:border-white/5 bg-gradient-to-r from-indigo-500/5 to-cyan-500/5">
                                             <div className="flex items-center gap-2">
-                                                <Archive size={14} className="text-indigo-500" />
+                                                <div className="text-indigo-500"><Archive size={14} /></div>
                                                 <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                                     Lịch sử các tháng
                                                 </span>
@@ -363,258 +316,183 @@ const MeetingSchedule: React.FC = () => {
                         </AnimatePresence>
                     </div>
 
-                    <button
-                        onClick={fetchSheetData}
-                        disabled={isSyncing}
-                        className="group relative px-5 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm transition-all overflow-hidden"
-                    >
-                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-cyan-500/10 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-500" />
-                        <span className="relative flex items-center gap-2 font-semibold text-sm">
-                            <RefreshCw size={18} className={clsx("transition-transform duration-700", isSyncing && "animate-spin")} />
-                            Làm mới
-                        </span>
-                    </button>
-                    <div className="h-10 w-px bg-slate-200 dark:bg-white/10 mx-2 hidden md:block"></div>
+                    {isViewingArchive && (
+                        <button
+                            onClick={() => setSelectedGid(CURRENT_MONTH_GID)}
+                            className="text-xs font-bold text-amber-600 hover:underline bg-amber-50 px-3 py-2 rounded-lg border border-amber-100"
+                        >
+                            Về tháng hiện tại
+                        </button>
+                    )}
                 </div>
+
+                <button
+                    onClick={fetchSheetData}
+                    disabled={isSyncing}
+                    className="hidden group px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl hover:bg-white text-slate-700 dark:text-slate-200 rounded-xl border border-white/40 dark:border-white/10 shadow-sm transition-all flex items-center gap-2 text-sm font-semibold"
+                >
+                    <RefreshCw size={16} className={clsx("transition-transform duration-700", isSyncing && "animate-spin")} />
+                    <span>Làm mới</span>
+                </button>
             </div>
 
-            {/* Archive Banner */}
-            <AnimatePresence>
-                {isViewingArchive && (
-                    <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="overflow-hidden"
-                    >
-                        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
-                            <Archive size={18} className="text-amber-600 dark:text-amber-400" />
-                            <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                                Bạn đang xem <strong>{currentArchive.label}</strong> (Lịch sử lưu trữ)
-                            </span>
-                            <button
-                                onClick={() => setSelectedGid(CURRENT_MONTH_GID)}
-                                className="ml-auto text-xs font-bold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 underline"
-                            >
-                                Quay lại tháng hiện tại →
-                            </button>
+            {/* Timeline View */}
+            <div className="relative max-w-5xl mx-auto w-full px-2 md:px-0">
+                {displayMeetings.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 bg-white/40 dark:bg-slate-800/40 backdrop-blur-xl rounded-3xl border border-white/50 dark:border-white/5">
+                        <div className="w-24 h-24 rounded-full bg-indigo-50 dark:bg-slate-700/50 flex items-center justify-center mb-4 text-indigo-300">
+                            <Calendar size={48} />
                         </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Legend Bubbles */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="flex flex-wrap gap-3"
-            >
-                {[
-                    { label: 'Đang diễn ra', color: 'bg-emerald-500', shadow: 'shadow-emerald-500/40', ring: 'ring-emerald-500/20' },
-                    { label: 'Sắp diễn ra', color: 'bg-red-500', shadow: 'shadow-red-500/40', ring: 'ring-red-500/20' },
-                    { label: 'Đã kết thúc', color: 'bg-slate-400', shadow: 'shadow-slate-400/40', ring: 'ring-slate-400/20' },
-                ].map((item, i) => (
-                    <div key={i} className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-white/5 shadow-sm">
-                        <span className={clsx("w-2.5 h-2.5 rounded-full shadow-lg ring-2", item.color, item.shadow, item.ring)} />
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{item.label}</span>
+                        <p className="text-slate-500 font-medium">Chưa có lịch họp nào trong tháng này.</p>
                     </div>
-                ))}
-            </motion.div>
+                ) : (
+                    <div className="flex flex-col gap-10">
+                        {Object.entries(groupedMeetings).map(([date, meetings], groupIndex) => {
+                            const dateInfo = formatDateDisplay(date, meetings[0].day);
 
-            {/* Main Table Card */}
-            <motion.div
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.2 }}
-                className="w-full relative rounded-2xl border border-white/50 dark:border-white/5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl shadow-2xl overflow-hidden"
-            >
-                {/* Decorative Elements */}
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-500 opacity-80" />
-                <div className="absolute -top-24 -right-24 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+                            return (
+                                <motion.div
+                                    key={date}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: groupIndex * 0.1 }}
+                                    className="flex flex-col md:flex-row gap-6 relative"
+                                >
+                                    {/* Timeline Line (Desktop) */}
+                                    <div className="absolute left-[130px] top-0 bottom-0 w-px bg-gradient-to-b from-indigo-500/20 via-indigo-500/10 to-transparent hidden md:block" />
 
-                <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
-                        <thead>
-                            <tr className="border-b border-indigo-100/50 dark:border-white/5 bg-slate-50/50 dark:bg-white/5">
-                                <th className="p-4 text-center w-14 font-extrabold text-slate-400 text-xs uppercase tracking-wider">#</th>
-                                <th className="p-4 text-left w-32 font-bold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                                    <div className="flex items-center gap-2"><MapPin size={14} className="text-indigo-500" /> Phạm vi</div>
-                                </th>
-                                <th className="p-4 text-center w-24 font-bold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                                    <div className="flex items-center justify-center gap-2"><Calendar size={14} className="text-cyan-500" /> Thời gian</div>
-                                </th>
-                                <th className="p-4 text-center w-32 font-bold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                                    <div className="flex items-center justify-center gap-2"><Clock size={14} className="text-emerald-500" /> Khung giờ</div>
-                                </th>
-                                <th className="p-4 w-[25%] font-bold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                                    <div className="flex items-center gap-2"><AlignLeft size={14} className="text-violet-500" /> Nội dung</div>
-                                </th>
-                                <th className="p-4 text-center w-24 font-bold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                                    <div className="flex items-center justify-center gap-2"><User size={14} className="text-amber-500" /> NĐH</div>
-                                </th>
-                                <th className="p-4 w-[15%] font-bold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">
-                                    <div className="flex items-center gap-2"><Users size={14} className="text-blue-500" /> Thành phần</div>
-                                </th>
-                                <th className="p-4 text-center w-20 font-bold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">Thư ký</th>
-                                <th className="p-4 w-[10%] font-bold text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider">Ghi chú</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-indigo-50/50 dark:divide-white/5">
-                            {(() => {
-                                let foundNearest = false;
-                                return displayMeetings.map((meeting, index) => {
-                                    // Status Logic
-                                    const getStatus = () => {
-                                        if (!meeting.date) return 'none';
-                                        const dateParts = meeting.date.split('/');
-                                        if (dateParts.length !== 3) return 'none';
-                                        const day = parseInt(dateParts[0], 10);
-                                        const month = parseInt(dateParts[1], 10) - 1;
-                                        const year = parseInt(dateParts[2], 10);
-                                        const mDate = new Date(year, month, day);
-                                        const now = new Date();
-                                        const todayFn = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-                                        if (mDate < todayFn) return 'past';
-                                        if (mDate > todayFn) return 'upcoming';
-
-                                        if (!meeting.startTime) return 'upcoming';
-                                        const [h, m] = meeting.startTime.split(':').map(Number);
-                                        if (isNaN(h) || isNaN(m)) return 'upcoming';
-                                        const startMins = h * 60 + m;
-                                        const nowMins = now.getHours() * 60 + now.getMinutes();
-                                        let endMins = startMins + 60;
-                                        if (meeting.endTime) {
-                                            const [eh, em] = meeting.endTime.split(':').map(Number);
-                                            if (!isNaN(eh)) endMins = eh * 60 + em;
-                                        } else if (meeting.duration) {
-                                            const dur = parseInt(meeting.duration);
-                                            if (!isNaN(dur)) endMins = startMins + dur;
-                                        }
-
-                                        if (nowMins > endMins) return 'past';
-                                        if (nowMins >= startMins && nowMins <= endMins) return 'ongoing';
-                                        return 'upcoming';
-                                    };
-
-                                    let status = getStatus();
-                                    if (status === 'upcoming' && !foundNearest) {
-                                        foundNearest = true;
-                                        status = 'urgent';
-                                    }
-
-                                    return (
-                                        <motion.tr
-                                            key={meeting.id}
-                                            initial={{ opacity: 0, x: -10 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            transition={{ delay: index * 0.05 }}
-                                            className={clsx(
-                                                "group transition-all duration-300 relative",
-                                                status === 'ongoing' ? "bg-emerald-50/80 dark:bg-emerald-500/10 hover:bg-emerald-100/80" :
-                                                    status === 'urgent' ? "bg-white dark:bg-white/5 hover:bg-red-50/50 dark:hover:bg-red-900/10" :
-                                                        status === 'past' ? "opacity-60 hover:opacity-100 bg-slate-50/50 dark:bg-white/5 grayscale hover:grayscale-0" :
-                                                            "bg-white/40 dark:bg-transparent hover:bg-indigo-50/50 dark:hover:bg-white/5"
-                                            )}
-                                        >
-                                            {/* Status Bar Indicator */}
-                                            <td className="relative p-0">
-                                                <div className={clsx(
-                                                    "absolute left-0 top-0 bottom-0 w-1 transition-all group-hover:w-1.5",
-                                                    status === 'ongoing' ? "bg-emerald-500 shadow-[0_0_10px_#10b981]" :
-                                                        status === 'urgent' ? "bg-red-500 shadow-[0_0_10px_#ef4444]" :
-                                                            "bg-transparent group-hover:bg-indigo-400"
-                                                )} />
-                                                <div className="flex items-center justify-center py-4 font-mono text-xs text-slate-400 font-bold group-hover:text-indigo-500">
-                                                    {index + 1}
-                                                </div>
-                                            </td>
-
-                                            <td className="p-4">
-                                                <div className="font-bold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 text-sm">
-                                                    {meeting.scope}
-                                                </div>
-                                            </td>
-
-                                            <td className="p-4 text-center">
-                                                <div className="flex flex-col items-center">
-                                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">{meeting.day}</span>
-                                                    <span className="text-sm font-mono font-bold text-slate-700 dark:text-white bg-white/50 dark:bg-white/10 px-2 py-0.5 rounded border border-slate-200 dark:border-white/10 mt-1 shadow-sm">
-                                                        {meeting.date}
-                                                    </span>
-                                                </div>
-                                            </td>
-
-                                            <td className="p-4 text-center">
-                                                <div className={clsx(
-                                                    "flex items-center justify-center gap-1.5 font-mono text-sm font-bold px-2 py-1 rounded-lg border",
-                                                    status === 'ongoing' ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
-                                                        status === 'urgent' ? "bg-red-50 text-red-600 border-red-100" :
-                                                            "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
-                                                )}>
-                                                    <span>{meeting.startTime}</span>
-                                                    <span className="text-slate-300 dark:text-slate-600 mx-0.5">|</span>
-                                                    <span className="text-slate-400 dark:text-slate-500 text-xs">{meeting.endTime}</span>
-                                                </div>
-                                            </td>
-
-                                            <td className="p-4">
-                                                <p className="font-medium text-slate-800 dark:text-slate-100 text-sm leading-relaxed whitespace-pre-wrap group-hover:text-indigo-900 dark:group-hover:text-white transition-colors">
-                                                    {meeting.content}
-                                                </p>
-                                                {meeting.link && (
-                                                    <a href={meeting.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 px-2 py-1 rounded mt-2 hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors">
-                                                        <LinkIcon size={12} /> Tài liệu đính kèm
-                                                    </a>
-                                                )}
-                                            </td>
-
-                                            <td className="p-4 text-center">
-                                                <span className="inline-block px-2 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-100 text-xs font-bold dark:bg-amber-500/10 dark:text-amber-500 dark:border-amber-500/20">
-                                                    {meeting.pic}
-                                                </span>
-                                            </td>
-
-                                            <td className="p-4">
-                                                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap">
-                                                    {meeting.participants}
-                                                </p>
-                                            </td>
-
-                                            <td className="p-4 text-center">
-                                                <div className="text-xs font-semibold text-pink-600 dark:text-pink-400 flex items-center justify-center gap-1">
-                                                    {meeting.secretary}
-                                                </div>
-                                            </td>
-
-                                            <td className="p-4">
-                                                <span className="text-xs text-slate-400 italic">
-                                                    {meeting.note}
-                                                </span>
-                                            </td>
-                                        </motion.tr>
-                                    );
-                                });
-                            })()}
-
-                            {displayMeetings.length === 0 && (
-                                <tr>
-                                    <td colSpan={12} className="p-20 text-center">
-                                        <div className="flex flex-col items-center justify-center gap-4 text-slate-300 dark:text-slate-600">
-                                            <div className="w-20 h-20 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
-                                                <Calendar size={40} />
-                                            </div>
-                                            <p className="font-medium">{isSyncing ? "Đang đồng bộ dữ liệu..." : "Chưa có lịch họp nào."}</p>
+                                    {/* Date Column */}
+                                    <div className="w-full md:w-[130px] md:text-right flex-shrink-0 flex md:flex-col flex-row items-center md:items-end justify-between md:justify-start gap-2 md:gap-0 sticky top-20 z-10 md:static">
+                                        <div className="flex flex-col items-center md:items-end bg-white/80 dark:bg-slate-800/60 backdrop-blur-md p-2 md:p-3 rounded-xl shadow-sm border border-indigo-100/50 dark:border-white/10 md:mr-6 transition-transform hover:scale-105 duration-300">
+                                            <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">{dateInfo.weekday}</span>
+                                            <span className="text-4xl font-black text-slate-800 dark:text-white leading-none my-1">{dateInfo.dayNum}</span>
+                                            <span className="text-sm font-medium text-slate-400">Tháng {dateInfo.month}</span>
                                         </div>
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </motion.div>
+
+                                        {/* Mobile Timeline Dot */}
+                                        <div className="md:hidden h-px flex-1 bg-indigo-200 mx-4"></div>
+                                    </div>
+
+                                    {/* Event Cards */}
+                                    <div className="flex-1 space-y-6">
+                                        {meetings.map((meeting: any, idx) => {
+                                            const status = getMeetingStatus(meeting);
+
+                                            return (
+                                                <div key={idx} className="relative pl-0 md:pl-8 group">
+                                                    {/* Timeline Dot (Desktop) */}
+                                                    <div className={clsx(
+                                                        "hidden md:block absolute left-[-5px] top-6 w-3 h-3 rounded-full border-2 z-20 transition-all duration-300",
+                                                        status === 'ongoing' ? "bg-emerald-500 border-white shadow-[0_0_0_4px_rgba(16,185,129,0.2)] scale-125" :
+                                                            status === 'upcoming' ? "bg-red-500 border-white animate-pulse" :
+                                                                status === 'past' ? "bg-blue-500 border-white" :
+                                                                    "bg-white border-slate-300" // planned
+                                                    )} />
+
+                                                    <div className={clsx(
+                                                        "relative overflow-hidden rounded-2xl border transition-all duration-300 hover:shadow-xl hover:-translate-y-1",
+                                                        status === 'ongoing' ? "bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200/60 dark:border-emerald-500/20 shadow-lg shadow-emerald-500/10" :
+                                                            status === 'upcoming' ? "bg-red-50/50 dark:bg-red-900/10 border-red-200/60 dark:border-red-500/20 shadow-lg shadow-red-500/10" :
+                                                                status === 'past' ? "bg-blue-50/30 dark:bg-blue-900/10 border-blue-200/40 dark:border-blue-500/10 opacity-90" :
+                                                                    "bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border-white/60 dark:border-white/10 shadow-sm hover:shadow-indigo-500/10"
+                                                    )}>
+
+                                                        {/* Card Header */}
+                                                        <div className="flex flex-wrap items-center gap-3 p-4 border-b border-black/5 dark:border-white/5 bg-white/30 dark:bg-white/5">
+                                                            <div className={clsx(
+                                                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm",
+                                                                status === 'ongoing' ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
+                                                                    "bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800/30"
+                                                            )}>
+                                                                <Clock size={14} className={status === 'ongoing' ? "text-emerald-600" : "text-blue-500"} />
+                                                                {meeting.startTime}
+                                                                {meeting.endTime && <span className="opacity-70"> - {meeting.endTime}</span>}
+                                                            </div>
+
+                                                            <span className="px-2.5 py-1 rounded-md bg-cyan-50 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 text-xs font-bold border border-cyan-100 dark:border-cyan-500/30 flex items-center gap-1.5">
+                                                                <MapPin size={12} />
+                                                                {meeting.scope}
+                                                            </span>
+
+                                                            <div className="ml-auto">
+                                                                {status === 'ongoing' && <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 animate-pulse"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Đang diễn ra</span>}
+                                                                {status === 'upcoming' && <span className="flex items-center gap-1.5 text-xs font-bold text-red-600"><span className="w-2 h-2 rounded-full bg-red-500 animate-ping" /> Sắp tới</span>}
+                                                                {status === 'past' && <span className="flex items-center gap-1.5 text-xs font-bold text-blue-500"><span className="w-2 h-2 rounded-full bg-blue-400" /> Đã diễn ra</span>}
+                                                                {status === 'planned' && <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400"><span className="w-2 h-2 rounded-full bg-white border border-slate-300" /> Đang chờ</span>}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Card Body */}
+                                                        <div className="p-5 grid gap-4">
+                                                            <div>
+                                                                <h3 className={clsx(
+                                                                    "text-lg font-bold leading-snug mb-2",
+                                                                    status === 'past' ? "text-slate-600 dark:text-slate-400" : "text-slate-800 dark:text-white"
+                                                                )}>
+                                                                    {meeting.content}
+                                                                </h3>
+
+                                                                {/* Optional Link */}
+                                                                {meeting.link && (
+                                                                    <a href={meeting.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors border border-blue-100">
+                                                                        <LinkIcon size={12} /> Tài liệu đính kèm
+                                                                    </a>
+                                                                )}
+                                                            </div>
+
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                {/* Participants */}
+                                                                <div className="space-y-1.5">
+                                                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                                                        <Users size={12} /> Thành phần
+                                                                    </div>
+                                                                    <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed bg-white/50 dark:bg-white/5 p-2.5 rounded-lg border border-slate-100 dark:border-white/5">
+                                                                        {meeting.participants || "Toàn bộ nhân sự"}
+                                                                    </p>
+                                                                </div>
+
+                                                                {/* PIC */}
+                                                                <div className="space-y-1.5">
+                                                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                                                        <UserCheck size={12} /> Người điều hành
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="h-8 min-w-8 px-3 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-xs font-bold shadow-md shadow-amber-500/20 whitespace-nowrap">
+                                                                            {meeting.pic || 'U'}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Footer: Secretary & Note */}
+                                                            {(meeting.secretary || meeting.note) && (
+                                                                <div className="flex flex-wrap items-start gap-4 pt-4 mt-2 border-t border-slate-100 dark:border-white/5">
+                                                                    {meeting.secretary && (
+                                                                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800/30 text-xs text-purple-700 dark:text-purple-300 font-medium">
+                                                                            <FileText size={12} className="text-purple-500" />
+                                                                            Thư ký: <span className="font-bold">{meeting.secretary}</span>
+                                                                        </div>
+                                                                    )}
+                                                                    {meeting.note && (
+                                                                        <div className="flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400 italic max-w-full">
+                                                                            <MoreHorizontal size={12} className="shrink-0 mt-0.5" />
+                                                                            <span>{meeting.note}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

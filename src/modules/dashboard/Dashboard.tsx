@@ -4,7 +4,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell
 } from 'recharts';
-import { Activity, CheckCircle2, AlertOctagon, TrendingUp, AlertTriangle, CloudSun, Sparkles, Zap, CalendarDays } from 'lucide-react';
+import { Activity, CheckCircle2, AlertOctagon, TrendingUp, AlertTriangle, CloudSun, Sparkles, Zap, CalendarDays, Clock, Video, MapPin, UserMinus, Laptop2 } from 'lucide-react';
 import { getLunarDate } from '@dqcai/vn-lunar';
 
 import { useData } from '../../context/DataContext';
@@ -13,13 +13,220 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import ActiveUsersWidget from '../../components/ActiveUsersWidget';
 import InternalNewsBoard from './components/InternalNewsBoard';
+import { useMeetingSchedule } from '../../hooks/useMeetingSchedule';
 
 const COLORS = ['#10b981', '#3b82f6', '#ef4444'];
 const COLORS_LIGHT = ['#059669', '#2563eb', '#dc2626']; // Darker shades for light mode legibility
 
+// --- Sub-component: Meeting Alerts ---
+const MeetingAlerts: React.FC = () => {
+    const { meetings } = useMeetingSchedule();
+    const [now, setNow] = useState(new Date());
+
+    React.useEffect(() => {
+        const timer = setInterval(() => setNow(new Date()), 60000); // Update every minute
+        return () => clearInterval(timer);
+    }, []);
+
+    const { ongoing, upcoming } = React.useMemo(() => {
+        const ongoingList: any[] = [];
+        const upcomingCandidates: any[] = [];
+
+        meetings.forEach(m => {
+            if (!m.date || !m.startTime) return;
+
+            // Parse Date: DD/MM/YYYY
+            const [day, month, year] = m.date.split('/').map(Number);
+            const [startH, startM] = m.startTime.split(':').map(Number);
+
+            // Validate
+            if (!day || !month || !year || isNaN(startH)) return;
+
+            const startObj = new Date(year, month - 1, day, startH, startM);
+            const endObj = new Date(startObj);
+
+            // Determine End Time
+            if (m.endTime) {
+                const [endH, endM] = m.endTime.split(':').map(Number);
+                endObj.setHours(endH, endM || 0);
+            } else {
+                endObj.setHours(startObj.getHours() + 1); // Default 1h
+            }
+
+            // Comparison
+            if (now >= startObj && now <= endObj) {
+                ongoingList.push({ ...m, startObj });
+            } else if (now < startObj) {
+                upcomingCandidates.push({ ...m, startObj });
+            }
+        });
+
+        // Sort upcoming by absolute time diff
+        upcomingCandidates.sort((a, b) => a.startObj.getTime() - b.startObj.getTime());
+
+        // Take only the nearest next meeting
+        const nextMeeting = upcomingCandidates.slice(0, 1);
+
+        return { ongoing: ongoingList, upcoming: nextMeeting };
+    }, [meetings, now]);
+
+    if (ongoing.length === 0 && upcoming.length === 0) return null;
+
+    const formatMeetingDate = (dateStr: string) => {
+        const [d, m, y] = dateStr.split('/').map(Number);
+        const dateObj = new Date(y, m - 1, d);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Check if today
+        if (dateObj.getDate() === today.getDate() && dateObj.getMonth() === today.getMonth() && dateObj.getFullYear() === today.getFullYear()) {
+            return "Hôm nay";
+        }
+
+        // Check if tomorrow
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        if (dateObj.getDate() === tomorrow.getDate() && dateObj.getMonth() === tomorrow.getMonth() && dateObj.getFullYear() === tomorrow.getFullYear()) {
+            return "Ngày mai";
+        }
+
+        return `${d}/${m}`;
+    };
+
+    return (
+        <div className="flex flex-col gap-4 mb-8 animate-in slide-in-from-top-4 duration-500">
+            {ongoing.map((m, i) => (
+                <div key={`ongoing-${i}`} className="relative overflow-hidden rounded-[2rem] p-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 shadow-xl shadow-emerald-500/20 group">
+                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+                    <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/20 blur-3xl rounded-full group-hover:bg-white/30 transition-all duration-700"></div>
+
+                    <div className="relative bg-white/10 dark:bg-slate-900/40 backdrop-blur-xl rounded-[1.8rem] p-6 flex flex-col md:flex-row items-center gap-6 md:gap-8">
+                        {/* Status Badge - Left */}
+                        <div className="flex flex-col items-center justify-center min-w-[100px] gap-2">
+                            <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur border border-white/20 flex items-center justify-center shadow-lg relative overflow-hidden">
+                                <Video size={32} className="text-white relative z-10" />
+                                <div className="absolute inset-0 bg-emerald-500/50 animate-pulse"></div>
+                            </div>
+                            <span className="px-3 py-1 rounded-full bg-white/20 border border-white/20 text-white text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                Đang diễn ra
+                            </span>
+                        </div>
+
+                        {/* Content - Center */}
+                        <div className="flex-1 text-center md:text-left min-w-0 w-full">
+                            <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
+                                <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/10 border border-white/10 text-white text-xs font-mono font-bold shadow-sm">
+                                    <Clock size={12} />
+                                    {m.startTime} - {m.endTime}
+                                </div>
+                                {m.scope && (
+                                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 border border-white/5 text-emerald-100 text-xs shadow-sm">
+                                        <MapPin size={12} />
+                                        <span className="truncate max-w-[150px]">{m.scope}</span>
+                                    </div>
+                                )}
+                            </div>
+                            <h3 className="text-xl md:text-2xl font-black text-white leading-tight mb-2 drop-shadow-md line-clamp-2 md:line-clamp-1 group-hover:line-clamp-none transition-all">
+                                {m.content}
+                            </h3>
+                            <div className="flex flex-col md:flex-row gap-3 mt-3 items-center justify-center md:justify-start">
+                                {m.pic && (
+                                    <div className="flex items-center gap-2 text-emerald-100 text-sm font-medium bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 shadow-sm backdrop-blur-sm">
+                                        <span className="opacity-70 text-xs uppercase tracking-wider font-bold">Phụ trách:</span>
+                                        <span className="font-bold text-white">{m.pic}</span>
+                                    </div>
+                                )}
+                                {m.secretary && (
+                                    <div className="flex items-center gap-2 text-emerald-100 text-sm font-medium bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 shadow-sm backdrop-blur-sm">
+                                        <span className="opacity-70 text-xs uppercase tracking-wider font-bold">Thư ký:</span>
+                                        <span className="font-bold text-white">{m.secretary}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Action - Right */}
+                        <div className="hidden md:flex items-center justify-center pr-4">
+                            <div className="w-12 h-12 rounded-full border-2 border-white/20 flex items-center justify-center group-hover:scale-110 group-hover:border-white/50 transition-all duration-300 cursor-pointer bg-white/5">
+                                <span className="w-3 h-3 bg-white rounded-full animate-ping"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            {upcoming.map((m, i) => {
+                const dateLabel = formatMeetingDate(m.date);
+                const isToday = dateLabel === "Hôm nay";
+
+                return (
+                    <div key={`upcoming-${i}`} className="relative overflow-hidden rounded-[2rem] p-1 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 shadow-xl shadow-amber-500/20 group opacity-90 hover:opacity-100 transition-opacity">
+                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+                        <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/20 blur-3xl rounded-full group-hover:bg-white/30 transition-all duration-700"></div>
+
+                        <div className="relative bg-white/10 dark:bg-slate-900/40 backdrop-blur-xl rounded-[1.8rem] p-5 flex flex-col md:flex-row items-center gap-5 md:gap-8">
+                            {!isToday && (
+                                <div className="absolute top-3 right-3 md:top-4 md:right-4 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-500/30 border border-white/10 text-white text-xs font-mono font-bold shadow-sm z-10">
+                                    <CalendarDays size={12} />
+                                    {dateLabel}
+                                </div>
+                            )}
+                            {/* Status Badge - Left */}
+                            <div className="flex flex-col items-center justify-center min-w-[100px] gap-2">
+                                <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur border border-white/20 flex items-center justify-center shadow-lg">
+                                    <Clock size={28} className="text-white" />
+                                </div>
+                                <span className="px-3 py-1 rounded-full bg-white/20 border border-white/20 text-white text-[10px] font-black uppercase tracking-widest shadow-sm whitespace-nowrap">
+                                    {isToday ? "Sắp bắt đầu" : "Cuộc trao đổi sắp tới"}
+                                </span>
+                            </div>
+
+                            {/* Content - Center */}
+                            <div className="flex-1 text-center md:text-left min-w-0 w-full">
+                                <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
+
+                                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/10 border border-white/10 text-white text-xs font-mono font-bold shadow-sm">
+                                        <Clock size={12} />
+                                        {m.startTime} - {m.endTime}
+                                    </div>
+                                    {m.scope && (
+                                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 border border-white/5 text-amber-100 text-xs shadow-sm">
+                                            <MapPin size={12} />
+                                            <span className="truncate max-w-[150px]">{m.scope}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <h3 className="text-lg md:text-xl font-bold text-white leading-tight mb-2 drop-shadow-md line-clamp-1">
+                                    {m.content}
+                                </h3>
+                                <div className="flex flex-row flex-wrap gap-3 mt-3 items-center justify-center md:justify-start">
+                                    {m.pic && (
+                                        <div className="flex items-center gap-2 text-amber-100 text-sm font-medium bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 shadow-sm backdrop-blur-sm">
+                                            <span className="opacity-70 text-xs uppercase tracking-wider font-bold">Phụ trách:</span>
+                                            <span className="font-bold text-white">{m.pic}</span>
+                                        </div>
+                                    )}
+                                    {m.secretary && (
+                                        <div className="flex items-center gap-2 text-amber-100 text-sm font-medium bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 shadow-sm backdrop-blur-sm">
+                                            <span className="opacity-70 text-xs uppercase tracking-wider font-bold">Thư ký:</span>
+                                            <span className="font-bold text-white">{m.secretary}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+
+
 const Dashboard: React.FC = () => {
     const navigate = useNavigate();
-    const { logs, payrollRecords } = useData();
+    const { logs, payrollRecords, users } = useData();
     const { currentUser } = useAuth();
     const { t } = useLanguage();
     const { theme } = useTheme();
@@ -27,6 +234,54 @@ const Dashboard: React.FC = () => {
 
     const today = new Date();
     const lunar = getLunarDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
+
+    // Personnel Status Calculation
+    const { leaveList, onlineList } = React.useMemo(() => {
+        const lList: { user: any, leave: any }[] = [];
+        const oList: { user: any, leave: any }[] = [];
+
+        const y = today.getFullYear();
+        const m = String(today.getMonth() + 1).padStart(2, '0');
+        const d = String(today.getDate()).padStart(2, '0');
+        const currentDate = `${y}-${m}-${d}`;
+
+        if (users) {
+            users.forEach(user => {
+                if (!user.leaves) return;
+                user.leaves.forEach(leave => {
+                    const startVal = leave.start.split('T')[0];
+                    const endVal = leave.end.split('T')[0];
+                    if (currentDate >= startVal && currentDate <= endVal) {
+                        // Time-based Visibility Check
+                        // Morning Leave (Start < 12:00) -> Show from 8:00
+                        // Afternoon Leave (Start >= 12:00) -> Show from 13:30
+                        const leaveStart = new Date(leave.start);
+                        const startHour = leaveStart.getHours();
+                        const currentHour = today.getHours();
+                        const currentMinute = today.getMinutes();
+
+                        let isVisible = false;
+                        if (startHour < 12) {
+                            // Morning / Full Day
+                            if (currentHour >= 8) isVisible = true;
+                        } else {
+                            // Afternoon
+                            if (currentHour > 13 || (currentHour === 13 && currentMinute >= 30)) isVisible = true;
+                        }
+
+                        if (isVisible) {
+                            if (leave.type === 'online') {
+                                oList.push({ user, leave });
+                            } else {
+                                lList.push({ user, leave });
+                            }
+                        }
+                    }
+                });
+            });
+        }
+        return { leaveList: lList, onlineList: oList };
+    }, [users, today]);
 
     // Theme helper
     const isDark = theme === 'dark';
@@ -114,15 +369,17 @@ const Dashboard: React.FC = () => {
 
                 <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                     <div>
-                        <div className="flex items-center gap-2 mb-3 text-indigo-100 font-medium bg-white/10 w-fit px-3 py-1 rounded-full backdrop-blur-sm border border-white/10 cursor-default">
-                            <CloudSun size={16} className="animate-pulse" />
-                            <span className="text-xs uppercase tracking-wider font-bold">
-                                {today.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long' })}
-                            </span>
-                            <span className="w-1 h-1 rounded-full bg-white/50 mx-1"></span>
-                            <span className="text-xs uppercase tracking-wider font-bold opacity-80">
-                                {lunar.day}/{lunar.month} ÂL
-                            </span>
+                        <div className="flex items-center gap-3 mb-3 flex-wrap">
+                            <div className="flex items-center gap-2 text-indigo-100 font-medium bg-white/10 w-fit px-3 py-1 rounded-full backdrop-blur-sm border border-white/10 cursor-default">
+                                <CloudSun size={16} className="animate-pulse" />
+                                <span className="text-xs uppercase tracking-wider font-bold">
+                                    {today.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                </span>
+                                <span className="w-1 h-1 rounded-full bg-white/50 mx-1"></span>
+                                <span className="text-xs uppercase tracking-wider font-bold opacity-80">
+                                    {lunar.day}/{lunar.month} ÂL
+                                </span>
+                            </div>
                         </div>
                         <h1 className="text-3xl md:text-5xl font-bold mb-3 tracking-tight">Xin chào, {currentUser?.displayName?.split(' ').pop() || 'Bạn'}! <span className="animate-wave inline-block origin-[70%_70%]">👋</span></h1>
                         <p className="text-indigo-100 max-w-xl text-sm md:text-base leading-relaxed opacity-90">
@@ -132,37 +389,100 @@ const Dashboard: React.FC = () => {
                         </p>
                     </div>
 
-                    <div className="flex gap-3 w-full md:w-auto overflow-x-auto no-scrollbar pb-2 md:pb-0">
-                        <button
-                            onClick={() => navigate('/tasks')}
-                            className="flex flex-col items-center justify-center min-w-[80px] h-20 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all border border-white/10 group cursor-pointer active:scale-95"
-                        >
-                            <div className="p-2 bg-white/10 rounded-xl mb-1 group-hover:bg-white/20 transition-colors">
-                                <Zap size={20} className="text-yellow-300" />
+                    <div className="flex flex-col gap-4">
+                        {(leaveList.length > 0 || onlineList.length > 0) && (
+                            <div className="flex flex-col sm:flex-row gap-3 w-full">
+                                {leaveList.length > 0 && (
+                                    <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-white/10 rounded-xl border border-white/10 backdrop-blur-md transition-all hover:bg-white/20">
+                                        <div className="p-1.5 bg-rose-500/20 rounded-lg text-rose-200">
+                                            <UserMinus size={16} />
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-[10px] uppercase font-bold text-rose-200/70 tracking-wider truncate">Vắng mặt</span>
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex -space-x-1.5">
+                                                    {leaveList.map((item, i) => (
+                                                        <img
+                                                            key={i}
+                                                            src={item.user.avatar}
+                                                            className="w-5 h-5 rounded-full border border-rose-500/30 object-cover"
+                                                            title={`${item.user.name}: ${item.leave.reason}`}
+                                                            alt={item.user.name}
+                                                        />
+                                                    ))}
+                                                </div>
+                                                <span className="text-xs font-bold text-white line-clamp-1">
+                                                    {leaveList.map(i => i.user.name).join(', ')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {onlineList.length > 0 && (
+                                    <div className="flex-1 flex items-center gap-3 px-4 py-2 bg-white/10 rounded-xl border border-white/10 backdrop-blur-md transition-all hover:bg-white/20">
+                                        <div className="p-1.5 bg-blue-500/20 rounded-lg text-blue-200">
+                                            <Laptop2 size={16} />
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-[10px] uppercase font-bold text-blue-200/70 tracking-wider truncate">Làm việc Online</span>
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex -space-x-1.5">
+                                                    {onlineList.map((item, i) => (
+                                                        <img
+                                                            key={i}
+                                                            src={item.user.avatar}
+                                                            className="w-5 h-5 rounded-full border border-blue-500/30 object-cover"
+                                                            title={`${item.user.name}: Online`}
+                                                            alt={item.user.name}
+                                                        />
+                                                    ))}
+                                                </div>
+                                                <span className="text-xs font-bold text-white truncate max-w-[80px]">
+                                                    {onlineList.map(i => i.user.name.split(' ').pop()).join(', ')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                            <span className="text-[10px] font-bold">Nhiệm vụ</span>
-                        </button>
-                        <button
-                            onClick={() => navigate('/timesheet')}
-                            className="flex flex-col items-center justify-center min-w-[80px] h-20 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all border border-white/10 group cursor-pointer active:scale-95"
-                        >
-                            <div className="p-2 bg-white/10 rounded-xl mb-1 group-hover:bg-white/20 transition-colors">
-                                <CalendarDays size={20} className="text-emerald-300" />
-                            </div>
-                            <span className="text-[10px] font-bold">Chấm công</span>
-                        </button>
-                        <button
-                            onClick={() => navigate('/schedule')}
-                            className="flex flex-col items-center justify-center min-w-[80px] h-20 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all border border-white/10 group cursor-pointer active:scale-95"
-                        >
-                            <div className="p-2 bg-white/10 rounded-xl mb-1 group-hover:bg-white/20 transition-colors">
-                                <Sparkles size={20} className="text-pink-300" />
-                            </div>
-                            <span className="text-[10px] font-bold">Sự kiện</span>
-                        </button>
+                        )}
+
+                        <div className="flex gap-3 w-full md:w-auto overflow-x-auto no-scrollbar pb-2 md:pb-0">
+                            <button
+                                onClick={() => navigate('/tasks')}
+                                className="flex flex-col items-center justify-center min-w-[80px] h-20 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all border border-white/10 group cursor-pointer active:scale-95"
+                            >
+                                <div className="p-2 bg-white/10 rounded-xl mb-1 group-hover:bg-white/20 transition-colors">
+                                    <Zap size={20} className="text-yellow-300" />
+                                </div>
+                                <span className="text-[10px] font-bold">Nhiệm vụ</span>
+                            </button>
+                            <button
+                                onClick={() => navigate('/timesheet')}
+                                className="flex flex-col items-center justify-center min-w-[80px] h-20 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all border border-white/10 group cursor-pointer active:scale-95"
+                            >
+                                <div className="p-2 bg-white/10 rounded-xl mb-1 group-hover:bg-white/20 transition-colors">
+                                    <CalendarDays size={20} className="text-emerald-300" />
+                                </div>
+                                <span className="text-[10px] font-bold">Chấm công</span>
+                            </button>
+                            <button
+                                onClick={() => navigate('/schedule')}
+                                className="flex flex-col items-center justify-center min-w-[80px] h-20 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all border border-white/10 group cursor-pointer active:scale-95"
+                            >
+                                <div className="p-2 bg-white/10 rounded-xl mb-1 group-hover:bg-white/20 transition-colors">
+                                    <Sparkles size={20} className="text-pink-300" />
+                                </div>
+                                <span className="text-[10px] font-bold">Sự kiện</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            {/* Meeting Alerts Section */}
+            <MeetingAlerts />
 
             {/* TOP ROW: Active Users & News Board */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
@@ -246,8 +566,8 @@ const Dashboard: React.FC = () => {
             {/* Analytics Layer */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Bar Chart - Backlog */}
-                <div className="lg:col-span-2 bg-white/60 dark:bg-slate-800/60 backdrop-blur-2xl rounded-[2rem] border border-white/20 dark:border-white/10 shadow-xl p-8">
-                    <h3 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 mb-6 flex items-center gap-2">
+                <div className="lg:col-span-2 bg-white/60 dark:bg-slate-800/60 backdrop-blur-2xl rounded-[2rem] border border-white/20 dark:border-white/10 shadow-xl p-4 md:p-8">
+                    <h3 className="text-lg md:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 mb-4 md:mb-6 flex items-center gap-2">
                         <span className="p-2 bg-blue-100 dark:bg-blue-500/20 rounded-lg text-blue-600 dark:text-blue-400"><Activity size={20} /></span>
                         {t.reports.cards.deptDesc}
                     </h3>
@@ -298,8 +618,8 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 {/* Donut Chart - Status */}
-                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-2xl rounded-[2rem] border border-white/20 dark:border-white/10 shadow-xl p-8 flex flex-col items-center">
-                    <h3 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-600 dark:from-emerald-400 dark:to-teal-400 mb-6 w-full text-left flex items-center gap-2">
+                <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-2xl rounded-[2rem] border border-white/20 dark:border-white/10 shadow-xl p-4 md:p-8 flex flex-col items-center">
+                    <h3 className="text-lg md:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-600 dark:from-emerald-400 dark:to-teal-400 mb-4 md:mb-6 w-full text-left flex items-center gap-2">
                         <span className="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-lg text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={20} /></span>
                         {t.dashboard.distribution}
                     </h3>
@@ -353,17 +673,22 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Payroll Chart Section */}
-            <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-2xl rounded-[2rem] border border-white/20 dark:border-white/10 shadow-xl p-8 mb-8">
-                <div className="flex items-center justify-between mb-8">
-                    <div>
-                        <h3 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-600 dark:from-emerald-400 dark:to-teal-400 mb-1 flex items-center gap-2">
-                            Biểu đồ Thu nhập Nhân sự
-                            <span className="text-sm font-bold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-500/30">Tháng 12/2025</span>
-                        </h3>
-                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Thống kê chi tiết thu nhập thực nhận và phần tăng thêm của toàn bộ nhân sự</p>
-                    </div>
-                    <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl text-white shadow-lg shadow-emerald-500/30">
-                        <TrendingUp size={24} />
+            <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-2xl rounded-[2rem] border border-white/20 dark:border-white/10 shadow-xl p-4 md:p-8 mb-8">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 md:mb-8">
+                    <div className="flex items-start gap-3 md:gap-5 flex-1">
+                        {/* Icon Box - matching Internal News Board style */}
+                        <div className="p-3 md:p-3.5 bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/40 rounded-2xl text-white shrink-0">
+                            <TrendingUp size={22} className="md:w-[26px] md:h-[26px]" />
+                        </div>
+
+                        {/* Title & Description */}
+                        <div className="flex-1 min-w-0">
+                            <h3 className="text-xl md:text-2xl lg:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-300 mb-1 md:mb-2 flex flex-wrap items-center gap-2 leading-tight">
+                                <span>Biểu đồ Thu nhập Nhân sự</span>
+                                <span className="text-xs md:text-sm font-bold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 px-2 md:px-3 py-0.5 md:py-1 rounded-full border border-emerald-200 dark:border-emerald-500/30 shadow-sm">Tháng 12/2025</span>
+                            </h3>
+                            <p className="text-xs md:text-sm font-medium text-slate-500 dark:text-slate-400">Thống kê chi tiết thu nhập thực nhận và phần tăng thêm của toàn bộ nhân sự</p>
+                        </div>
                     </div>
                 </div>
 
@@ -400,7 +725,7 @@ const Dashboard: React.FC = () => {
                                     tick={{ fill: axisTextFill, fontSize: 11, fontWeight: 500 }}
                                     axisLine={false}
                                     tickLine={false}
-                                    width={isMobile ? 100 : 60}
+                                    width={isMobile ? 110 : 60}
                                     tickFormatter={isMobile ? undefined : (value) => `${(value / 1000000).toFixed(1)}M`}
                                 />
                                 <Tooltip

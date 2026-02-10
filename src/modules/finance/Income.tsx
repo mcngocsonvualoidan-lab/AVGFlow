@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useData, PayrollRecord } from '../../context/DataContext';
 import { supabase } from '../../utils/supabaseClient';
-import { Upload, Search, Loader2 } from 'lucide-react';
+import { Upload, Search, Loader2, DollarSign, Wallet, Calculator, Sparkles } from 'lucide-react';
+import HeroBanner from '../../components/HeroBanner';
 import {
     LineChart,
     Line,
@@ -361,74 +362,61 @@ const Income = () => {
 
     return (
         <div className="p-6 h-full flex flex-col bg-white/50 dark:bg-slate-800/50 backdrop-blur-3xl rounded-[3rem] shadow-2xl border border-white/20 ring-1 ring-white/20">
-            {/* HERO BANNER - INCOME */}
-            <div className="relative rounded-3xl overflow-hidden mb-8 shadow-2xl shrink-0 group">
-                <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600">
-                    <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 mix-blend-overlay"></div>
-                    <div className="absolute bottom-0 left-0 w-64 h-64 bg-yellow-400/20 rounded-full blur-3xl -ml-10 -mb-10 mix-blend-overlay"></div>
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay"></div>
+            {/* 1. Hero Banner */}
+            <HeroBanner
+                icon={DollarSign}
+                title="Thu Nhập & Lương"
+                subtitle="Payroll System"
+                description="Quản lý chi trả lương, thưởng và các chế độ phúc lợi cho nhân sự định kỳ hàng tháng."
+                badge="Finance & HR"
+                badgeIcon={Sparkles}
+                secondBadge={`Kỳ lương: ${selectedMonth.split('-')[1]}/${selectedMonth.split('-')[0]}`}
+                stats={[
+                    { icon: Wallet, label: 'Tổng chi trả', value: new Intl.NumberFormat('en-US', { notation: "compact" }).format(filteredRecords.reduce((sum, r) => sum + (r.netPay || 0), 0)), color: 'from-emerald-400 to-green-500' },
+                    { icon: Calculator, label: 'Nhân sự', value: filteredRecords.length, color: 'from-blue-400 to-indigo-500' },
+                ]}
+                gradientFrom="from-emerald-600"
+                gradientVia="via-teal-600"
+                gradientTo="to-cyan-600"
+                accentColor="emerald"
+            />
+
+            {/* 2. Action Toolbar */}
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm mb-6">
+                {/* Search Bar */}
+                <div className="w-full lg:flex-1 relative group max-w-md">
+                    <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                    <input
+                        type="text"
+                        placeholder="Tìm kiếm nhân sự..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-900/50 border-none outline-none rounded-xl text-slate-700 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/20 transition-all font-medium"
+                    />
                 </div>
 
-                <div className="relative z-10 p-6 md:p-8 text-white">
-                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6">
-                        <div>
-                            <div className="flex items-center gap-2 mb-2">
-                                <span className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-bold uppercase tracking-widest border border-white/10 shadow-sm">
-                                    Payroll System
-                                </span>
-                            </div>
-                            <h1 className="text-3xl md:text-5xl font-black tracking-tight mb-2 drop-shadow-sm flex items-center gap-3">
-                                Thu Nhập & Lương
-                            </h1>
-                            <p className="text-emerald-50 font-medium max-w-xl text-lg opacity-90 leading-relaxed">
-                                Quản lý chi trả lương, thưởng và các chế độ phúc lợi cho nhân sự
-                            </p>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex flex-wrap gap-3 w-full md:w-auto">
-                            <button
-                                onClick={loadNov2025Data}
-                                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-2 shadow-lg hover:scale-105 active:scale-95 backdrop-blur-md"
-                            >
-                                <Upload size={18} /> T11/2025
-                            </button>
-                            <button
-                                onClick={importDec2025Data}
-                                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-2 shadow-lg hover:scale-105 active:scale-95 backdrop-blur-md"
-                            >
-                                <Upload size={18} /> T12/2025
-                            </button>
-                            <button
-                                onClick={generateJan2026}
-                                disabled={isGenerating}
-                                className="px-5 py-2.5 bg-white text-emerald-600 hover:bg-emerald-50 border-none rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
-                            >
-                                {isGenerating ? <Loader2 size={18} className="animate-spin text-emerald-600" /> : <Search size={18} />}
-                                {isGenerating ? 'Đang xử lý...' : 'Dự kiến T1/2026'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Toolbar */}
-
-            {/* Toolbar */}
-
-            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
-                <div className="relative flex-1 max-w-none sm:max-w-md group">
-                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
-                    <div className="relative">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={20} />
-                        <input
-                            type="text"
-                            placeholder="Tìm kiếm nhân sự..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-white dark:bg-slate-800 border-none rounded-xl pl-12 pr-4 py-3 text-sm font-medium text-slate-900 dark:text-white shadow-lg ring-1 ring-black/5 focus:ring-2 focus:ring-emerald-500 outline-none transition-all placeholder:text-slate-400"
-                        />
-                    </div>
+                {/* Actions */}
+                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
+                    <button
+                        onClick={loadNov2025Data}
+                        className="px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 rounded-xl font-bold text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2"
+                    >
+                        <Upload size={16} /> <span className="hidden sm:inline">T11/2025</span>
+                    </button>
+                    <button
+                        onClick={importDec2025Data}
+                        className="px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 rounded-xl font-bold text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2"
+                    >
+                        <Upload size={16} /> <span className="hidden sm:inline">T12/2025</span>
+                    </button>
+                    <button
+                        onClick={generateJan2026}
+                        disabled={isGenerating}
+                        className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-500 transition-all flex items-center gap-2 disabled:opacity-70"
+                    >
+                        {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                        {isGenerating ? 'Đang xử lý...' : 'Dự kiến T1/2026'}
+                    </button>
                 </div>
             </div>
 

@@ -64,6 +64,11 @@
     .font-mono {
         font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
     }
+
+    /* Remove outline for ALL elements when focused/active to prevent chart black borders */
+    *:focus {
+        outline: none !important;
+    }
 }
 
 @layer utilities {

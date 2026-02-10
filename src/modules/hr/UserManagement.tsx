@@ -1,20 +1,24 @@
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { storage, auth } from '../../lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 // import { doc, updateDoc, deleteDoc } from 'firebase/firestore'; // Removed as unused
 import { useAuth } from '../../context/AuthContext'; // Import useAuth
 import { sendInviteEmail } from '../../utils/emailService';
 import {
-    X, Save, RefreshCw, CreditCard, Sparkles, Cake,
-    Upload, Search, Trash2, Edit2, Loader2,
-    Mail, Phone, Briefcase, CheckCircle, Send,
-    Copy, Download, ExternalLink
+    Briefcase, Edit2, Mail,
+    Phone, Search, Trash2,
+    X, CheckCircle, Sparkles, Upload,
+    RefreshCw, Loader2, Send, Save, Users,
+    CreditCard, Cake, Copy, Download, ExternalLink
 } from 'lucide-react';
+import HeroBanner from '../../components/HeroBanner';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useData, User } from '../../context/DataContext';
 import { useLanguage } from '../../context/LanguageContext';
+import UserProfilePortal from './portfolio/UserProfilePortal';
 
 import { DEPARTMENTS as departments, USER_SORT_ORDER } from '../../constants/common';
 
@@ -56,6 +60,7 @@ const UserManagement: React.FC = () => {
 
     const [showForm, setShowForm] = useState(false);
     const [showBankSelector, setShowBankSelector] = useState(false);
+    const [selectedPortfolioUser, setSelectedPortfolioUser] = useState<User | null>(null);
 
 
 
@@ -373,120 +378,88 @@ const UserManagement: React.FC = () => {
     return (
         <div ref={containerRef} className="flex flex-col bg-white/50 dark:bg-slate-800/50 backdrop-blur-3xl rounded-[3rem] p-6 md:p-8 shadow-2xl border border-white/20 ring-1 ring-white/20">
 
-            {/* 1. HERO BANNER & STATS */}
-            <div className="relative rounded-3xl overflow-hidden mb-10 shadow-2xl">
-                {/* Background Gradient & Effects */}
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600">
-                    <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 mix-blend-overlay"></div>
-                    <div className="absolute bottom-0 left-0 w-64 h-64 bg-pink-500/20 rounded-full blur-3xl -ml-10 -mb-10 mix-blend-overlay"></div>
+            {/* 1. Hero Banner */}
+            <HeroBanner
+                icon={Briefcase}
+                title="Quản Lý Nhân Sự"
+                subtitle="HR Management System"
+                description="Quản lý hồ sơ, thông tin nhân viên và phân quyền hệ thống. Tích hợp gửi email mời và tạo tài khoản tự động."
+                badge="Human Resources"
+                badgeIcon={Sparkles}
+                secondBadge={`${users.length} nhân sự`}
+                stats={[
+                    { icon: Users, label: 'Tổng nhân sự', value: users.length, color: 'from-blue-400 to-indigo-500' },
+                    { icon: CheckCircle, label: 'Chính thức', value: users.filter(u => u.verified).length, color: 'from-emerald-400 to-green-500' },
+                ]}
+                gradientFrom="from-blue-600"
+                gradientVia="via-indigo-600"
+                gradientTo="to-violet-600"
+                accentColor="blue"
+            />
+
+            {/* 2. Action Toolbar */}
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm mb-8">
+                {/* Search Bar */}
+                <div className="w-full lg:flex-1 relative group">
+                    <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                    <input
+                        type="text"
+                        placeholder="Tìm kiếm nhân sự theo tên, email..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-slate-100 dark:bg-slate-900/50 border-none outline-none rounded-xl text-slate-700 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                    />
                 </div>
 
-                <div className="relative z-10 p-8 md:p-10 text-white">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-                        <div>
-                            <div className="flex items-center gap-2 mb-2">
-                                <span className="px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-bold uppercase tracking-widest border border-white/10">
-                                    HR Management
-                                </span>
-                            </div>
-                            <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-2 drop-shadow-sm">
-                                {t.users.title}
-                            </h1>
-                            <p className="text-blue-100 font-medium max-w-xl text-lg opacity-90">
-                                {t.users.subtitle}
-                            </p>
-                        </div>
+                {/* Actions */}
+                <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
+                    {hasAdminRights && (
+                        <button
+                            onClick={async () => {
+                                const excludedNames = ['Phan Hải', 'Quỳnh Nga', 'Thị Hào'];
+                                const targetUsers = users.filter(u =>
+                                    u.email &&
+                                    !excludedNames.some(ex => u.name.toLowerCase().includes(ex.toLowerCase()))
+                                );
 
-                        {/* Top Actions */}
-                        <div className="flex flex-col sm:flex-row gap-3">
-                            {hasAdminRights && (
-                                <button
-                                    onClick={async () => {
-                                        const excludedNames = ['Phan Hải', 'Quỳnh Nga', 'Thị Hào'];
-                                        const targetUsers = users.filter(u =>
-                                            u.email &&
-                                            !excludedNames.some(ex => u.name.toLowerCase().includes(ex.toLowerCase()))
-                                        );
-
-                                        if (confirm(`Bạn có chắc muốn gửi email mời đăng nhập cho ${targetUsers.length} nhân sự (Đã trừ: ${excludedNames.join(', ')})?`)) {
-                                            let count = 0;
-                                            for (const u of targetUsers) {
-                                                try {
-                                                    await sendInviteEmail({ name: u.name, email: u.email });
-                                                    count++;
-                                                } catch (err) {
-                                                    console.error(`Failed for ${u.email}`, err);
-                                                }
-                                            }
-                                            alert(`✅ Đã gửi thành công ${count}/${targetUsers.length} email!`);
+                                if (confirm(`Bạn có chắc muốn gửi email mời đăng nhập cho ${targetUsers.length} nhân sự (Đã trừ: ${excludedNames.join(', ')})?`)) {
+                                    let count = 0;
+                                    for (const u of targetUsers) {
+                                        try {
+                                            await sendInviteEmail({ name: u.name, email: u.email });
+                                            count++;
+                                        } catch (err) {
+                                            console.error(`Failed for ${u.email}`, err);
                                         }
-                                    }}
-                                    className="group relative px-6 py-3 bg-white text-indigo-600 rounded-xl font-bold shadow-xl overflow-hidden transition-all hover:scale-105 active:scale-95"
-                                >
-                                    <div className="absolute inset-0 bg-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                    <div className="relative flex items-center gap-2">
-                                        <Mail size={18} className="group-hover:rotate-12 transition-transform" />
-                                        <span>GỬI MỜI HÀNG LOẠT</span>
-                                    </div>
-                                </button>
-                            )}
-                            {hasAdminRights && (
-                                <button
-                                    onClick={() => {
-                                        setEditingId(null);
-                                        setFormData({
-                                            avatar: 'https://ui-avatars.com/api/?name=New+User&background=random',
-                                            dept: 'Kinh doanh',
-                                            verified: true,
-                                            customQrUrl: undefined
-                                        });
-                                        setShowForm(true);
-                                    }}
-                                    className="px-6 py-3 bg-indigo-500/30 backdrop-blur-md border border-white/30 rounded-xl font-bold hover:bg-white/20 transition-all flex items-center gap-2"
-                                >
-                                    <Upload size={18} />
-                                    <span>THÊM NHÂN SỰ</span>
-                                </button>
-                            )}
-                        </div>
-                    </div>
+                                    }
+                                    alert(`✅ Đã gửi thành công ${count}/${targetUsers.length} email!`);
+                                }
+                            }}
+                            className="px-4 py-3 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl font-bold shadow-sm hover:shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2"
+                            title="Gửi email mời hàng loạt"
+                        >
+                            <Mail size={18} />
+                            <span className="hidden sm:inline">Gửi mời</span>
+                        </button>
+                    )}
 
-                    {/* Quick Stats Grid */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-10">
-                        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 hover:bg-white/15 transition-colors">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-200">
-                                    <Briefcase size={20} />
-                                </div>
-                                <div>
-                                    <p className="text-xs text-blue-200 uppercase font-bold tracking-wider">Tổng nhân sự</p>
-                                    <p className="text-2xl font-black">{users.length}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 hover:bg-white/15 transition-colors">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-200">
-                                    <CheckCircle size={20} />
-                                </div>
-                                <div>
-                                    <p className="text-xs text-emerald-200 uppercase font-bold tracking-wider">Chính thức</p>
-                                    <p className="text-2xl font-black">{users.filter(u => u.verified).length}</p>
-                                </div>
-                            </div>
-                        </div>
-                        {/* Search in Banner */}
-                        <div className="col-span-2 bg-white/10 backdrop-blur-md rounded-2xl p-2 border border-white/10 flex items-center px-4 gap-3 focus-within:bg-white/20 transition-all">
-                            <Search size={20} className="text-white/50" />
-                            <input
-                                type="text"
-                                placeholder="Tìm kiếm nhân sự theo tên, email..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="bg-transparent border-none outline-none text-white placeholder-white/50 w-full h-full font-medium"
-                            />
-                        </div>
-                    </div>
+                    {hasAdminRights && (
+                        <button
+                            onClick={() => {
+                                setEditingId(null);
+                                setFormData({
+                                    avatar: 'https://ui-avatars.com/api/?name=New+User&background=random',
+                                    dept: 'Kinh doanh',
+                                    verified: true,
+                                });
+                                setShowForm(true);
+                            }}
+                            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-500 shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2"
+                        >
+                            <Upload size={18} />
+                            <span>Thêm Nhân Sự</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -798,9 +771,10 @@ const UserManagement: React.FC = () => {
                                             animate={{ opacity: 1, scale: 1 }}
                                             exit={{ opacity: 0, scale: 0.9 }}
                                             className={clsx(
-                                                "relative group rounded-3xl p-[1px] bg-gradient-to-br from-white/20 to-white/5 dark:from-white/10 dark:to-white/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/20",
+                                                "relative group rounded-3xl p-[1px] bg-gradient-to-br from-white/20 to-white/5 dark:from-white/10 dark:to-white/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/20 cursor-pointer",
                                                 highlightId === user.id ? "ring-2 ring-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.3)]" : ""
                                             )}
+                                            onClick={() => setSelectedPortfolioUser(user)}
                                         >
                                             <div className="h-full w-full bg-white/90 dark:bg-slate-900/90 rounded-[23px] relative overflow-hidden flex flex-col">
                                                 {/* Decorative Header */}
@@ -970,171 +944,185 @@ const UserManagement: React.FC = () => {
                 })}
             </div>
 
-            {/* 5. QR ZOOM MODAL */}
-            <AnimatePresence>
-                {selectedQR && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-2xl p-4"
-                        onClick={() => setSelectedQR(null)}
-                    >
+            {/* 5. QR ZOOM MODAL - Portal to Body */}
+            {typeof document !== 'undefined' && createPortal(
+                <AnimatePresence>
+                    {selectedQR && (
                         <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-white rounded-[2rem] p-6 max-w-sm w-full shadow-[0_0_50px_rgba(255,255,255,0.1)] relative"
-                            onClick={(e) => e.stopPropagation()}
+                            key="qr-modal-overlay"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 backdrop-blur-2xl p-4"
+                            onClick={() => setSelectedQR(null)}
                         >
-                            <button
-                                onClick={() => setSelectedQR(null)}
-                                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+                            <motion.div
+                                key="qr-modal-content"
+                                initial={{ scale: 0.9, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.9, opacity: 0 }}
+                                className="bg-white rounded-[2rem] p-6 max-w-sm w-full shadow-[0_0_50px_rgba(255,255,255,0.1)] relative"
+                                onClick={(e) => e.stopPropagation()}
                             >
-                                <X size={24} />
-                            </button>
+                                <button
+                                    onClick={() => setSelectedQR(null)}
+                                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+                                >
+                                    <X size={24} />
+                                </button>
 
-                            <div className="text-center mb-6">
-                                <h3 className="text-xl font-bold text-slate-900 font-sans">Thông tin thanh toán</h3>
-                                <p className="text-sm text-slate-500 mt-1">Quét mã để chuyển khoản nhanh</p>
-                            </div>
-
-                            <div className="bg-white p-4 rounded-xl mb-6 shadow-inner border border-slate-100">
-                                <img
-                                    src={selectedQR.customQrUrl || `https://img.vietqr.io/image/${selectedQR.bankName}-${selectedQR.bankAcc}-compact2.png?amount=&addInfo=&accountName=${encodeURIComponent(selectedQR.name)}`}
-                                    className="w-full rounded-lg mix-blend-multiply"
-                                    alt="QR Pay"
-                                />
-                            </div>
-
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                                    <span className="text-sm text-slate-500">Chủ tài khoản</span>
-                                    <span className="font-bold text-slate-800 uppercase font-sans">{selectedQR.name}</span>
+                                <div className="text-center mb-6">
+                                    <h3 className="text-xl font-bold text-slate-900 font-sans">Thông tin thanh toán</h3>
+                                    <p className="text-sm text-slate-500 mt-1">Quét mã để chuyển khoản nhanh</p>
                                 </div>
-                                <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                                    <span className="text-sm text-slate-500">{t.users.form.bank}</span>
-                                    <span className="font-bold text-slate-800 flex items-center gap-1 font-sans">
-                                        <CreditCard size={14} className="text-indigo-600" /> {selectedQR.bankName}
-                                    </span>
+
+                                <div className="bg-white p-4 rounded-xl mb-6 shadow-inner border border-slate-100">
+                                    <img
+                                        src={selectedQR.customQrUrl || `https://img.vietqr.io/image/${selectedQR.bankName}-${selectedQR.bankAcc}-compact2.png?amount=&addInfo=&accountName=${encodeURIComponent(selectedQR.name)}`}
+                                        className="w-full rounded-lg mix-blend-multiply"
+                                        alt="QR Pay"
+                                    />
                                 </div>
-                                <div className="flex justify-between items-center py-2">
-                                    <span className="text-sm text-slate-500">{t.users.form.accNum}</span>
-                                    <div className="flex flex-col items-end gap-1">
-                                        <span className="font-mono font-bold text-xl text-indigo-600 tracking-wider break-all text-right">
-                                            {selectedQR.bankAcc}
+
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                                        <span className="text-sm text-slate-500">Chủ tài khoản</span>
+                                        <span className="font-bold text-slate-800 uppercase font-sans">{selectedQR.name}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                                        <span className="text-sm text-slate-500">{t.users.form.bank}</span>
+                                        <span className="font-bold text-slate-800 flex items-center gap-1 font-sans">
+                                            <CreditCard size={14} className="text-indigo-600" /> {selectedQR.bankName}
                                         </span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-2">
+                                        <span className="text-sm text-slate-500">{t.users.form.accNum}</span>
+                                        <div className="flex flex-col items-end gap-1">
+                                            <span className="font-mono font-bold text-xl text-indigo-600 tracking-wider break-all text-right">
+                                                {selectedQR.bankAcc}
+                                            </span>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(selectedQR.bankAcc);
+                                                    alert("Đã sao chép số tài khoản!");
+                                                }}
+                                                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"
+                                                title="Sao chép"
+                                            >
+                                                <Copy size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* ACTION BUTTONS */}
+                                    <div className="grid grid-cols-2 gap-3 pt-4 mt-2 border-t border-slate-100">
+                                        <button
+                                            onClick={() => {
+                                                const link = document.createElement('a');
+                                                link.href = `https://img.vietqr.io/image/${selectedQR.bankName}-${selectedQR.bankAcc}-print.png?amount=&addInfo=&accountName=${encodeURIComponent(selectedQR.name)}`;
+                                                link.download = `QR-${selectedQR.name}.png`;
+                                                link.click();
+                                            }}
+                                            className="flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm hover:bg-slate-200 transition-colors"
+                                        >
+                                            <Download size={18} /> Tải QR
+                                        </button>
                                         <button
                                             onClick={() => {
                                                 navigator.clipboard.writeText(selectedQR.bankAcc);
-                                                alert("Đã sao chép số tài khoản!");
+                                                setShowBankSelector(true);
                                             }}
-                                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"
-                                            title="Sao chép"
+                                            className="flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-500 shadow-lg shadow-indigo-500/30 transition-all active:scale-95"
                                         >
-                                            <Copy size={16} />
+                                            <ExternalLink size={18} /> Chuyển tiền
                                         </button>
                                     </div>
+                                    <p className="text-[10px] text-center text-slate-400 italic mt-2">
+                                        *Chọn Ngân hàng của bạn để mở ứng dụng.
+                                    </p>
                                 </div>
 
-                                {/* ACTION BUTTONS */}
-                                <div className="grid grid-cols-2 gap-3 pt-4 mt-2 border-t border-slate-100">
-                                    <button
-                                        onClick={() => {
-                                            const link = document.createElement('a');
-                                            link.href = `https://img.vietqr.io/image/${selectedQR.bankName}-${selectedQR.bankAcc}-print.png?amount=&addInfo=&accountName=${encodeURIComponent(selectedQR.name)}`;
-                                            link.download = `QR-${selectedQR.name}.png`;
-                                            link.click();
-                                        }}
-                                        className="flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm hover:bg-slate-200 transition-colors"
-                                    >
-                                        <Download size={18} /> Tải QR
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            navigator.clipboard.writeText(selectedQR.bankAcc);
-                                            setShowBankSelector(true);
-                                        }}
-                                        className="flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-500 shadow-lg shadow-indigo-500/30 transition-all active:scale-95"
-                                    >
-                                        <ExternalLink size={18} /> Chuyển tiền
-                                    </button>
-                                </div>
-                                <p className="text-[10px] text-center text-slate-400 italic mt-2">
-                                    *Chọn Ngân hàng của bạn để mở ứng dụng.
-                                </p>
-                            </div>
-
-                            {/* BANK APP SELECTOR OVERLAY */}
-                            <AnimatePresence>
-                                {showBankSelector && (
-                                    <motion.div
-                                        initial={{ opacity: 0, scale: 0.95 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        exit={{ opacity: 0, scale: 0.95 }}
-                                        className="absolute inset-0 bg-white z-30 flex flex-col p-4 rounded-[2rem]"
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
-                                            <h4 className="font-bold text-slate-800">Chọn Ngân hàng của bạn</h4>
-                                            <button
-                                                onClick={() => setShowBankSelector(false)}
-                                                className="p-1 rounded-full hover:bg-slate-100 text-slate-400"
-                                            >
-                                                <X size={20} />
-                                            </button>
-                                        </div>
-                                        <div className="flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2">
-                                            <div className="grid grid-cols-3 gap-3">
-                                                {[
-                                                    { name: 'MB Bank', scheme: 'mbmobile://', color: 'bg-blue-600' },
-                                                    { name: 'Vietcombank', scheme: 'vcbdigibank://', color: 'bg-green-600' },
-                                                    { name: 'Techcombank', scheme: 'techcombankmobile://', color: 'bg-red-600' },
-                                                    { name: 'VietinBank', scheme: 'vietinbankipay://', color: 'bg-blue-700' },
-                                                    { name: 'BIDV', scheme: 'bidvsmartbanking://', color: 'bg-emerald-600' },
-                                                    { name: 'VPBank', scheme: 'vpbankneo://', color: 'bg-green-500' },
-                                                    { name: 'ACB', scheme: 'acbapp://', color: 'bg-blue-500' },
-                                                    { name: 'TPBank', scheme: 'tpbankmobile://', color: 'bg-purple-600' },
-                                                    { name: 'VIB', scheme: 'vibmobile://', color: 'bg-blue-400' },
-                                                    { name: 'MSB', scheme: 'msbmobile://', color: 'bg-orange-500' },
-                                                    { name: 'Sacombank', scheme: 'sacombankpay://', color: 'bg-blue-800' },
-                                                    { name: 'MoMo', scheme: 'momo://', color: 'bg-pink-600' },
-                                                    { name: 'ZaloPay', scheme: 'zalopay://', color: 'bg-blue-500' },
-                                                ].map((bank, idx) => (
-                                                    <a
-                                                        key={idx}
-                                                        href={bank.scheme}
-                                                        className="flex flex-col items-center gap-2 p-3 rounded-xl border border-slate-100 hover:border-indigo-500/50 hover:bg-indigo-50 transition-all group"
-                                                        onClick={() => {
-                                                            alert(`Đang mở ${bank.name}...`);
-                                                            setTimeout(() => {
-                                                                setShowBankSelector(false);
-                                                            }, 1000);
-                                                        }}
-                                                    >
-                                                        <div className={clsx("w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-[10px] shadow-md", bank.color)}>
-                                                            {bank.name.substring(0, 3)}
-                                                        </div>
-                                                        <span className="text-[10px] font-medium text-slate-600 text-center leading-tight group-hover:text-indigo-600">
-                                                            {bank.name}
-                                                        </span>
-                                                    </a>
-                                                ))}
+                                {/* BANK APP SELECTOR OVERLAY */}
+                                <AnimatePresence>
+                                    {showBankSelector && (
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.95 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.95 }}
+                                            className="absolute inset-0 bg-white z-30 flex flex-col p-4 rounded-[2rem]"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+                                                <h4 className="font-bold text-slate-800">Chọn Ngân hàng của bạn</h4>
+                                                <button
+                                                    onClick={() => setShowBankSelector(false)}
+                                                    className="p-1 rounded-full hover:bg-slate-100 text-slate-400"
+                                                >
+                                                    <X size={20} />
+                                                </button>
                                             </div>
-                                        </div>
-                                        <p className="text-[10px] text-center text-slate-400 mt-3 border-t border-slate-100 pt-2">
-                                            Lưu ý: Nếu ứng dụng không mở, vui lòng mở thủ công.
-                                        </p>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
+                                            <div className="flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2">
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    {[
+                                                        { name: 'MB Bank', scheme: 'mbmobile://', color: 'bg-blue-600' },
+                                                        { name: 'Vietcombank', scheme: 'vcbdigibank://', color: 'bg-green-600' },
+                                                        { name: 'Techcombank', scheme: 'techcombankmobile://', color: 'bg-red-600' },
+                                                        { name: 'VietinBank', scheme: 'vietinbankipay://', color: 'bg-blue-700' },
+                                                        { name: 'BIDV', scheme: 'bidvsmartbanking://', color: 'bg-emerald-600' },
+                                                        { name: 'VPBank', scheme: 'vpbankneo://', color: 'bg-green-500' },
+                                                        { name: 'ACB', scheme: 'acbapp://', color: 'bg-blue-500' },
+                                                        { name: 'TPBank', scheme: 'tpbankmobile://', color: 'bg-purple-600' },
+                                                        { name: 'VIB', scheme: 'vibmobile://', color: 'bg-blue-400' },
+                                                        { name: 'MSB', scheme: 'msbmobile://', color: 'bg-orange-500' },
+                                                        { name: 'Sacombank', scheme: 'sacombankpay://', color: 'bg-blue-800' },
+                                                        { name: 'MoMo', scheme: 'momo://', color: 'bg-pink-600' },
+                                                        { name: 'ZaloPay', scheme: 'zalopay://', color: 'bg-blue-500' },
+                                                    ].map((bank, idx) => (
+                                                        <a
+                                                            key={idx}
+                                                            href={bank.scheme}
+                                                            className="flex flex-col items-center gap-2 p-3 rounded-xl border border-slate-100 hover:border-indigo-500/50 hover:bg-indigo-50 transition-all group"
+                                                            onClick={() => {
+                                                                alert(`Đang mở ${bank.name}...`);
+                                                                setTimeout(() => {
+                                                                    setShowBankSelector(false);
+                                                                }, 1000);
+                                                            }}
+                                                        >
+                                                            <div className={clsx("w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-[10px] shadow-md", bank.color)}>
+                                                                {bank.name.substring(0, 3)}
+                                                            </div>
+                                                            <span className="text-[10px] font-medium text-slate-600 text-center leading-tight group-hover:text-indigo-600">
+                                                                {bank.name}
+                                                            </span>
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-center text-slate-400 mt-3 border-t border-slate-100 pt-2">
+                                                Lưu ý: Nếu ứng dụng không mở, vui lòng mở thủ công.
+                                            </p>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </motion.div>
                         </motion.div>
-                    </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
+
+
+            {/* 4. PORTFOLIO PORTAL */}
+            <AnimatePresence>
+                {selectedPortfolioUser && (
+                    <UserProfilePortal
+                        user={selectedPortfolioUser}
+                        onClose={() => setSelectedPortfolioUser(null)}
+                    />
                 )}
             </AnimatePresence>
-
-
-        </div >
+        </div>
     );
 };
 

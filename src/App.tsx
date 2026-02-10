@@ -22,6 +22,7 @@ import BiometricSetupPrompt from './components/BiometricSetupPrompt';
 import UpdateNotification from './components/UpdateNotification';
 import Timekeeping from './modules/timekeeping/TimekeepingLayout';
 
+import ScrollToTop from './components/ScrollToTop';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { DataProvider, useData, initialUsers } from './context/DataContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -162,6 +163,8 @@ const MainContent = () => {
   );
 };
 
+
+
 function App() {
   return (
     <ThemeProvider>
@@ -169,11 +172,12 @@ function App() {
         <AuthProvider>
           <DataProvider>
             <BrowserRouter>
+              <ScrollToTop />
               <UpdateNotification />
               <Routes>
                 {/* Admin System Routes */}
                 <Route path="/admin-login" element={<AdminLogin />} />
-                <Route path="/admin-panel/:section?" element={<AdminPanel />} />
+                <Route path="/admin-panel/*" element={<AdminPanel />} />
 
                 {/* Main App Route - Catch All */}
                 <Route path="/*" element={<MainContent />} />

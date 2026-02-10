@@ -44,6 +44,13 @@ const TimeStats: React.FC<TimeStatsProps> = ({ month, year, users: propUsers }) 
         // 2. Check Weekend
         if (isWeekend) return 'CN';
 
+        // Hoist Date Logic
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        const todayStr = `${y}-${m}-${d}`;
+
         // 3. Check User Leaves
         if (user.leaves) {
             for (const leave of user.leaves) {
@@ -56,17 +63,17 @@ const TimeStats: React.FC<TimeStatsProps> = ({ month, year, users: propUsers }) 
                         if (leave.session && leave.session !== 'full') return 'x/2';
                         return 'KP';
                     }
-                    if (leave.type === 'online') return 'ol';
+                    if (leave.type === 'online') {
+                        // Sync with TimeGrid: Only count if past or today > 18h
+                        if (dateStr > todayStr) return '';
+                        if (dateStr === todayStr && now.getHours() < 18) return '';
+                        return 'ol';
+                    }
                 }
             }
         }
 
         // 4. Default: Work (Automatic Tick Logic)
-        const now = new Date();
-        const y = now.getFullYear();
-        const m = String(now.getMonth() + 1).padStart(2, '0');
-        const d = String(now.getDate()).padStart(2, '0');
-        const todayStr = `${y}-${m}-${d}`;
 
         if (dateStr > todayStr) return ''; // Future
         if (dateStr === todayStr) {
@@ -192,10 +199,10 @@ const TimeStats: React.FC<TimeStatsProps> = ({ month, year, users: propUsers }) 
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4">Thống kê Ngày công tháng {month}</h3>
                     <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={userStats} layout="vertical" margin={{ left: 40, right: 20 }}>
+                            <BarChart data={userStats} layout="vertical" margin={{ top: 0, right: 20, left: -20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} horizontal={false} stroke="#94a3b8" />
                                 <XAxis type="number" hide />
-                                <YAxis type="category" dataKey="shortName" width={100} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 500 }} axisLine={false} tickLine={false} />
+                                <YAxis type="category" dataKey="shortName" width={90} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 500 }} axisLine={false} tickLine={false} />
                                 <Tooltip
                                     contentStyle={{ backgroundColor: '#fff', borderColor: '#e2e8f0', color: '#0f172a', borderRadius: '12px' }}
                                     itemStyle={{ color: '#0f172a' }}
@@ -216,10 +223,10 @@ const TimeStats: React.FC<TimeStatsProps> = ({ month, year, users: propUsers }) 
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4">Quỹ phép năm 2026 (12 ngày)</h3>
                     <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={userStats} layout="vertical" margin={{ left: 40 }}>
+                            <BarChart data={userStats} layout="vertical" margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} stroke="#94a3b8" />
                                 <XAxis type="number" domain={[0, 12]} stroke="#94a3b8" />
-                                <YAxis type="category" dataKey="shortName" width={100} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} />
+                                <YAxis type="category" dataKey="shortName" width={90} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} />
                                 <Tooltip
                                     contentStyle={{ backgroundColor: '#fff', borderColor: '#e2e8f0', color: '#0f172a', borderRadius: '12px' }}
                                     cursor={{ fill: 'transparent' }}

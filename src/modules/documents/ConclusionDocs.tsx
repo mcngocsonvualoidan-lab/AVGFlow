@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
-import { useMeetingSchedule, Meeting } from '../../hooks/useMeetingSchedule';
+import { useMeetingSchedule, Meeting, MEETING_ARCHIVES } from '../../hooks/useMeetingSchedule';
 import { db, storage } from '../../lib/firebase';
 import { collection, addDoc, query, onSnapshot, orderBy, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
     Loader2, Upload, FileText, BarChart2, Clock, Eye, X, Search,
-    Edit2, Trash2, Archive, CheckCircle2
+    Edit2, Trash2, Archive, CheckCircle2, Sparkles, Files
 } from 'lucide-react';
+import HeroBanner from '../../components/HeroBanner';
 import { clsx } from 'clsx';
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
@@ -93,7 +94,20 @@ const MeetingTimer = ({ deadline }: { deadline: Date }) => {
 const ConclusionDocs = () => {
     const { currentUser } = useAuth();
     const { users, addNotification } = useData();
-    const { meetings, loading: loadingMeetings } = useMeetingSchedule();
+
+    // --- Stats Logic ---
+    const [timeFilterType, setTimeFilterType] = useState<'month' | 'quarter' | 'year'>('month');
+    const [timeFilterValue, setTimeFilterValue] = useState<number>(new Date().getMonth() + 1);
+    const [yearFilter, setYearFilter] = useState<number>(new Date().getFullYear());
+
+    // Calculate the correct GID based on selected month/year
+    const selectedGid = useMemo(() => {
+        // Find matching archive for month filter
+        const archive = MEETING_ARCHIVES.find(a => a.month === timeFilterValue && a.year === yearFilter);
+        return archive?.gid || MEETING_ARCHIVES[0]?.gid || '0';
+    }, [timeFilterValue, yearFilter]);
+
+    const { meetings, loading: loadingMeetings } = useMeetingSchedule(selectedGid);
 
     const [docs, setDocs] = useState<ConclusionDoc[]>([]);
     const [loading, setLoading] = useState(true);
@@ -103,11 +117,6 @@ const ConclusionDocs = () => {
     const [selectedMeetingId, setSelectedMeetingId] = useState<string>(''); // For upload linking
     const [secretaryFilter, setSecretaryFilter] = useState<string>('');
     const [viewingDoc, setViewingDoc] = useState<{ id: string, name: string, url: string, startTime: number } | null>(null);
-
-    // --- Stats Logic ---
-    const [timeFilterType, setTimeFilterType] = useState<'month' | 'quarter' | 'year'>('month');
-    const [timeFilterValue, setTimeFilterValue] = useState<number>(new Date().getMonth() + 1);
-    const [yearFilter, setYearFilter] = useState<number>(new Date().getFullYear());
 
     // Search & Filter
     const [searchQuery, setSearchQuery] = useState('');
@@ -606,32 +615,60 @@ const ConclusionDocs = () => {
 
     return (
         <div className="h-full flex flex-col gap-6 p-6 overflow-hidden relative font-sans" style={{ fontFamily: '"Be Vietnam Pro", sans-serif' }}>
-            {/* Header - Banner Style */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 p-6 text-white shadow-xl isolate mb-2 shrink-0">
-                <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
-                <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-40 h-40 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
+            {/* Hero Banner - Modern Style */}
+            <HeroBanner
+                icon={FileText}
+                title="Quản Lý Văn Bản Kết Luận"
+                subtitle={timeFilterType === 'month' ? `Tháng ${timeFilterValue}/${yearFilter}` : timeFilterType === 'quarter' ? `Quý ${timeFilterValue}/${yearFilter}` : `Năm ${yearFilter}`}
+                description="Hệ thống theo dõi nộp, lưu trữ và đánh giá tiến độ thực hiện văn bản kết luận cuộc họp. Kết nối trực tiếp với dữ liệu lịch họp."
+                badge="Document Management"
+                badgeIcon={Sparkles}
+                secondBadge={`${docs.filter(d => !d.isArchived).length} văn bản`}
+                stats={[
+                    { icon: Files, label: 'Tổng cuộc họp', value: trackedMeetings.length, color: 'from-slate-400 to-slate-500' },
+                    { icon: CheckCircle2, label: 'Đã nộp', value: trackedMeetings.filter(t => t.status === 'completed').length, color: 'from-emerald-400 to-green-500' },
+                    { icon: Clock, label: 'Chưa nộp', value: trackedMeetings.filter(t => t.status !== 'completed').length, color: 'from-red-400 to-rose-500' },
+                ]}
+                gradientFrom="from-violet-600"
+                gradientVia="via-indigo-600"
+                gradientTo="to-purple-700"
+                accentColor="indigo"
+            />
 
-                <div className="relative z-10 flex flex-col xl:flex-row justify-between items-start xl:items-end gap-4">
-                    <div>
-                        <h1 className="text-2xl md:text-3xl font-black tracking-tight mb-2 flex items-center gap-3">
-                            <FileText size={28} className="text-indigo-200" />
-                            QUẢN LÝ VĂN BẢN KẾT LUẬN
-                        </h1>
-                        <p className="text-indigo-100 text-sm font-medium opacity-90 max-w-2xl">
-                            Hệ thống theo dõi nộp, lưu trữ và đánh giá tiến độ thực hiện văn bản kết luận cuộc họp.
-                        </p>
-                    </div>
+            {/* Secretary Filter Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-white/5 shadow-sm">
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Lọc theo thư ký:</span>
+                    <select
+                        value={secretaryFilter}
+                        onChange={(e) => setSecretaryFilter(e.target.value)}
+                        className="bg-slate-100 dark:bg-slate-900/50 text-slate-700 dark:text-white border border-slate-200 dark:border-white/10 text-sm font-bold px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                    >
+                        <option value="">-- Tất cả Thư ký --</option>
+                        {uniqueSecretaries.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                </div>
 
-                    <div className="w-full xl:w-auto bg-white/10 backdrop-blur-md p-1 rounded-xl border border-white/20">
-                        <select
-                            value={secretaryFilter}
-                            onChange={(e) => setSecretaryFilter(e.target.value)}
-                            className="bg-transparent text-white border-none text-sm font-bold px-3 py-2 outline-none w-full xl:min-w-[200px] cursor-pointer"
-                        >
-                            <option className="bg-slate-800 text-white" value="">-- Tất cả Thư ký --</option>
-                            {uniqueSecretaries.map(s => <option className="bg-slate-800 text-white" key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
+                {/* View Mode Switcher */}
+                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900/50 p-1 rounded-lg border border-slate-200 dark:border-white/10">
+                    <button
+                        onClick={() => setViewMode('active')}
+                        className={clsx(
+                            "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                            viewMode === 'active' ? "bg-indigo-500 text-white shadow-lg" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white"
+                        )}
+                    >
+                        <FileText size={14} /> Đang hoạt động
+                    </button>
+                    <button
+                        onClick={() => setViewMode('archive')}
+                        className={clsx(
+                            "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                            viewMode === 'archive' ? "bg-indigo-500 text-white shadow-lg" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white"
+                        )}
+                    >
+                        <Archive size={14} /> Kho lưu trữ
+                    </button>
                 </div>
             </div>
 
@@ -640,27 +677,10 @@ const ConclusionDocs = () => {
             {viewMode === 'active' && (
                 <div className="flex flex-col gap-6 shrink-0">
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                        {/* LEFT: Stats & Filters */}
+                        {/* LEFT: Filters & List */}
                         <div className="lg:col-span-8 flex flex-col gap-4">
-                            {/* Stats Summary Cards */}
-                            <div className="grid grid-cols-3 gap-3">
-                                <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-white/5 flex flex-col shadow-sm">
-                                    <span className="text-[10px] uppercase font-bold text-slate-500">Tổng số</span>
-                                    <span className="text-2xl font-black text-slate-700 dark:text-slate-200">{trackedMeetings.length}</span>
-                                </div>
-                                <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-500/20 flex flex-col shadow-sm">
-                                    <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-500">Đã nộp</span>
-                                    <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{trackedMeetings.filter(t => t.status === 'completed').length}</span>
-                                </div>
-                                <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-100 dark:border-red-500/20 flex flex-col shadow-sm relative overflow-hidden">
-                                    <div className="absolute -right-4 -top-4 w-16 h-16 bg-red-500/10 rounded-full blur-xl animate-pulse"></div>
-                                    <span className="text-[10px] uppercase font-bold text-red-600 dark:text-red-500">Chưa nộp</span>
-                                    <span className="text-2xl font-black text-red-600 dark:text-red-400">{trackedMeetings.filter(t => t.status !== 'completed').length}</span>
-                                </div>
-                            </div>
-
-                            {/* Main List */}
-                            <div className="bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm flex flex-col min-h-[300px] max-h-[500px]">
+                            {/* Main List - Expanded */}
+                            <div className="bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm flex flex-col min-h-[400px] max-h-[600px]">
                                 <div className="p-4 border-b border-slate-100 dark:border-white/5 flex flex-wrap justify-between items-center gap-3">
                                     <h3 className="font-bold text-sm text-slate-700 dark:text-white flex items-center gap-2">
                                         <Clock size={16} className="text-indigo-500" />

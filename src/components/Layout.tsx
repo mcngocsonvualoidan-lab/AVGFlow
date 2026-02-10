@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import { CheckSquare, Megaphone, CalendarCheck, CircleDollarSign, Calendar } from 'lucide-react';
+import { CheckSquare, Megaphone, CalendarCheck, CircleDollarSign, Calendar, Home } from 'lucide-react';
 import TetDecorations from './TetDecorations';
 import ToastContainer from './ToastContainer';
 import { useData } from '../context/DataContext';
@@ -19,8 +19,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const { showTetDecor } = useData();
     const location = useLocation();
+    const mainRef = React.useRef<HTMLElement>(null);
+
+    React.useEffect(() => {
+        if (mainRef.current) {
+            mainRef.current.scrollTo(0, 0);
+        }
+    }, [location.pathname]);
 
     const bottomNavItems = [
+        { id: 'dashboard', label: 'Tổng quan', icon: Home, path: '/dashboard' },
         { id: 'tasks', label: 'Nhiệm vụ', icon: CheckSquare, path: '/tasks' },
         { id: 'executive-directives', label: 'Điều hành', icon: Megaphone, path: '/executive-directives' },
         { id: 'timesheet', label: 'Chấm công', icon: CalendarCheck, path: '/timesheet' },
@@ -48,8 +56,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <Header onMenuClick={() => setMobileMenuOpen(true)} />
 
             <main
+                ref={mainRef}
                 className={clsx(
-                    "flex-1 overflow-y-auto pt-6 px-4 md:px-6 pb-24 md:pb-6 transition-all duration-300 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700",
+                    "flex-1 overflow-y-auto overflow-x-hidden pt-6 px-2 md:px-6 pb-24 md:pb-6 transition-all duration-300 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700",
                     collapsed ? "md:pl-20" : "md:pl-72"
                 )}
             >
@@ -102,7 +111,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                             <div className={clsx(
                                 "flex items-center justify-center transition-all duration-300 rounded-2xl",
                                 isActive
-                                    ? "bg-indigo-600 text-white w-12 h-12 shadow-lg shadow-indigo-500/40 -mt-8 mb-1"
+                                    ? "bg-indigo-600 text-white w-12 h-12 shadow-lg shadow-indigo-500/40 mb-1"
                                     : "text-slate-400 dark:text-slate-500 group-hover:bg-slate-50 dark:group-hover:bg-white/5 w-10 h-10"
                             )}>
                                 <item.icon size={isActive ? 24 : 22} strokeWidth={isActive ? 2 : 2} />

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-left: 4px solid #4CAF50;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .error {
+            border-left-color: #f44336;
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🌤️ Weather API Test Tool</h1>
+        <p>Test công cụ để kiểm tra Weather Service hoạt động đúng</p>
+
+        <div id="status"></div>
+
+        <button onclick="testGeolocation()">1. Test Geolocation</button>
+        <button onclick="testWeatherAPI()">2. Test Weather API</button>
+        <button onclick="testComplete()">3. Test Toàn Bộ</button>
+        <button onclick="clearResults()">Clear</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const resultDiv = document.getElementById('result');
+        const statusDiv = document.getElementById('status');
+
+        function log(message, isError = false) {
+            const div = document.createElement('div');
+            div.className = isError ? 'result error' : 'result';
+            div.textContent = message;
+            resultDiv.appendChild(div);
+        }
+
+        function setStatus(message, type = 'info') {
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function clearResults() {
+            resultDiv.innerHTML = '';
+            statusDiv.innerHTML = '';
+        }
+
+        async function testGeolocation() {
+            clearResults();
+            setStatus('🔍 Testing Geolocation...', 'warning');
+
+            try {
+                if (!navigator.geolocation) {
+                    throw new Error('Geolocation không được hỗ trợ');
+                }
+
+                log('✅ Geolocation API được hỗ trợ');
+
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(
+                        resolve,
+                        reject,
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        }
+                    );
+                });
+
+                const coords = {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                };
+
+                log(`✅ Vị trí hiện tại:\n${JSON.stringify(coords, null, 2)}`);
+                setStatus('✅ Geolocation hoạt động tốt!', 'success');
+
+                return coords;
+            } catch (error) {
+                log(`❌ Lỗi Geolocation: ${error.message}`, true);
+                setStatus('❌ Geolocation thất bại!', 'error');
+                throw error;
+            }
+        }
+
+        async function testWeatherAPI() {
+            clearResults();
+            setStatus('🌡️ Testing Weather API...', 'warning');
+
+            try {
+                // Get location first
+                const coords = await testGeolocation();
+
+                log('\n🌍 Testing Geocoding API...');
+                const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${coords.latitude}&longitude=${coords.longitude}&count=1`;
+                log(`URL: ${geocodeUrl}`);
+
+                const geocodeResponse = await fetch(geocodeUrl);
+                log(`Status: ${geocodeResponse.status} ${geocodeResponse.statusText}`);
+
+                if (!geocodeResponse.ok) {
+                    throw new Error(`Geocode API error: ${geocodeResponse.status}`);
+                }
+
+                const geocodeData = await geocodeResponse.json();
+                log(`✅ Geocode Response:\n${JSON.stringify(geocodeData, null, 2)}`);
+
+                const cityName = geocodeData.results?.[0]?.name || 'Unknown';
+                const countryCode = geocodeData.results?.[0]?.country_code?.toUpperCase() || 'XX';
+
+                log(`\n🌤️ Testing Weather API...`);
+                const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${coords.latitude}&longitude=${coords.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,surface_pressure&timezone=auto`;
+                log(`URL: ${weatherUrl}`);
+
+                const weatherResponse = await fetch(weatherUrl);
+                log(`Status: ${weatherResponse.status} ${weatherResponse.statusText}`);
+
+                if (!weatherResponse.ok) {
+                    throw new Error(`Weather API error: ${weatherResponse.status}`);
+                }
+
+                const weatherData = await weatherResponse.json();
+                log(`✅ Weather Response:\n${JSON.stringify(weatherData, null, 2)}`);
+
+                const current = weatherData.current;
+                if (!current) {
+                    throw new Error('No current weather data');
+                }
+
+                const finalData = {
+                    location: {
+                        city: cityName,
+                        country: countryCode,
+                        lat: coords.latitude,
+                        lon: coords.longitude
+                    },
+                    current: {
+                        temp: Math.round(current.temperature_2m ?? 0),
+                        feelsLike: Math.round(current.apparent_temperature ?? current.temperature_2m ?? 0),
+                        humidity: current.relative_humidity_2m ?? 0,
+                        windSpeed: Math.round(current.wind_speed_10m ?? 0),
+                        pressure: Math.round(current.surface_pressure ?? 1013),
+                        weatherCode: current.weather_code ?? 0
+                    },
+                    timestamp: Date.now()
+                };
+
+                log(`\n🎉 FINAL WEATHER DATA:\n${JSON.stringify(finalData, null, 2)}`);
+                setStatus('✅ TẤT CẢ TESTS THÀNH CÔNG!', 'success');
+
+            } catch (error) {
+                log(`\n❌ LỖI: ${error.message}\n${error.stack}`, true);
+                setStatus(`❌ Test thất bại: ${error.message}`, 'error');
+            }
+        }
+
+        async function testComplete() {
+            await testWeatherAPI();
+        }
+
+        // Auto check on load
+        window.addEventListener('load', () => {
+            setStatus('ℹ️ Nhấn nút để bắt đầu test', 'info');
+        });
+    </script>
+</body>
+
+</html>

@@ -227,7 +227,7 @@ const InternalNewsBoard = () => {
     return (
         <div className="w-full mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
             {/* Header Section */}
-            <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-2xl rounded-[2rem] border border-white/20 dark:border-white/10 shadow-xl p-8 relative overflow-hidden group/board transition-all duration-500 hover:shadow-2xl hover:shadow-indigo-500/10">
+            <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-2xl rounded-[2rem] border border-white/20 dark:border-white/10 shadow-xl p-4 md:p-8 relative overflow-hidden group/board transition-all duration-500 hover:shadow-2xl hover:shadow-indigo-500/10">
                 {/* Decorative Elements */}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none group-hover/board:bg-indigo-500/15 transition-all duration-700" />
                 <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/3 pointer-events-none" />
@@ -243,7 +243,7 @@ const InternalNewsBoard = () => {
                             )}
                         </div>
                         <div className="flex-1">
-                            <h2 className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-300 flex flex-wrap items-center gap-3 leading-tight">
+                            <h2 className="text-xl md:text-2xl lg:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-300 flex flex-wrap items-center gap-2 md:gap-3 leading-tight">
                                 <span>Bảng tin Nội bộ</span>
                                 <span className="text-xs font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-500/20 px-3 py-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 whitespace-nowrap shadow-sm">
                                     {news.length} tin tức
@@ -259,7 +259,7 @@ const InternalNewsBoard = () => {
                         {isAdmin && (
                             <button
                                 onClick={() => setShowCreateModal(true)}
-                                className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-white dark:text-indigo-600 dark:hover:bg-indigo-50 rounded-xl transition-all font-bold shadow-lg shadow-indigo-500/30 dark:shadow-white/10 hover:shadow-indigo-500/40 dark:hover:shadow-white/20 hover:-translate-y-0.5"
+                                className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-500/10 text-blue-600 dark:text-blue-200 hover:bg-blue-700 hover:text-white rounded-xl transition-all font-bold shadow-lg shadow-blue-500/10 hover:shadow-blue-600/30 hover:-translate-y-0.5"
                             >
                                 <Plus size={20} strokeWidth={3} />
                                 <span>Đăng tin</span>
@@ -300,7 +300,7 @@ const InternalNewsBoard = () => {
                                     )} />
 
                                     <div
-                                        className="p-5 pl-7 cursor-pointer relative"
+                                        className="p-3 md:p-5 pl-5 md:pl-7 cursor-pointer relative"
                                         onClick={() => handleRead(item)}
                                     >
                                         <div className="flex flex-col md:flex-row gap-4 md:items-start">
@@ -315,7 +315,7 @@ const InternalNewsBoard = () => {
                                                     )}
 
                                                     <span className={clsx(
-                                                        "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border",
+                                                        "text-[9px] md:text-[10px] font-bold uppercase tracking-wider px-1.5 md:px-2 py-0.5 rounded-md border",
                                                         item.priority === 'urgent' ? 'bg-red-50 text-red-600 border-red-200' :
                                                             item.priority === 'high' ? 'bg-amber-50 text-amber-600 border-amber-200' :
                                                                 'bg-indigo-50 text-indigo-600 border-indigo-200'
@@ -323,17 +323,18 @@ const InternalNewsBoard = () => {
                                                         {getPriorityLabel(item.priority)}
                                                     </span>
 
-                                                    <div className="flex items-center gap-1 text-slate-400 text-xs font-medium">
+                                                    <div className="flex items-center gap-1 text-slate-400 text-[10px] md:text-xs font-medium">
                                                         <span>•</span>
-                                                        <Calendar size={12} />
-                                                        <span>{new Date(item.createdAt).toLocaleString('vi-VN')}</span>
-                                                        <span>•</span>
-                                                        <span>{item.author.name}</span>
+                                                        <Calendar size={10} className="md:w-3 md:h-3" />
+                                                        <span className="hidden sm:inline">{new Date(item.createdAt).toLocaleString('vi-VN')}</span>
+                                                        <span className="sm:hidden">{new Date(item.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span>
+                                                        <span className="hidden md:inline">•</span>
+                                                        <span className="hidden md:inline">{item.author.name}</span>
                                                     </div>
                                                 </div>
 
                                                 <h3 className={clsx(
-                                                    "text-lg transition-colors leading-snug mb-2",
+                                                    "text-base md:text-lg transition-colors leading-snug mb-2",
                                                     !isRead ? "font-bold text-slate-900 dark:text-white" : "font-medium text-slate-600 dark:text-slate-400"
                                                 )}>
                                                     {item.title}
@@ -342,7 +343,7 @@ const InternalNewsBoard = () => {
                                                 {/* Content Snippet */}
                                                 {!isItemExpanded && (
                                                     <p className={clsx(
-                                                        "text-sm line-clamp-2 leading-relaxed max-w-3xl",
+                                                        "text-xs md:text-sm line-clamp-2 leading-relaxed max-w-3xl",
                                                         !isRead ? "text-slate-600 dark:text-slate-300" : "text-slate-400 dark:text-slate-500"
                                                     )}>
                                                         {item.content}
@@ -357,15 +358,15 @@ const InternalNewsBoard = () => {
                                             </div>
 
                                             {/* Right Content / Thumbnail / Timer */}
-                                            <div className="order-1 md:order-2 shrink-0 flex flex-row md:flex-col items-center md:items-end gap-3">
+                                            <div className="order-1 md:order-2 shrink-0 flex flex-row md:flex-col items-center md:items-end gap-2 md:gap-3">
                                                 {(item.title.toUpperCase().includes('TẤT NIÊN') || item.title.toUpperCase().includes('YEAR END PARTY')) && (
-                                                    <div className="hidden md:block scale-90 origin-top-right">
+                                                    <div className="scale-75 sm:scale-90 md:scale-100 md:origin-top-right">
                                                         <CountdownTimer targetDate="2026-02-06T18:00:00" />
                                                     </div>
                                                 )}
 
                                                 {item.bannerUrl && (
-                                                    <div className="h-full max-h-[100px] aspect-video rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 shadow-sm relative group/img">
+                                                    <div className="h-16 md:h-20 lg:h-24 aspect-video rounded-lg md:rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 shadow-sm relative group/img">
                                                         <img src={item.bannerUrl} alt="Banner" className="w-full h-full object-cover group-hover/img:scale-110 transition-transform duration-500" />
                                                     </div>
                                                 )}
@@ -642,12 +643,12 @@ const NewsDetailModal = ({ item, onClose, users, isAdmin, onDelete, getPriorityC
                             onTouchMove={handleTouchMove}
                             onTouchEnd={handleTouchEnd}
                         >
-                            <div className="overflow-hidden w-full h-full flex items-center justify-center min-h-[300px] max-h-[500px]">
+                            <div className="overflow-hidden w-full flex items-center justify-center">
                                 <img
                                     ref={imageRef}
                                     src={item.bannerUrl}
                                     alt="Banner"
-                                    className="w-full h-full object-contain transition-transform duration-100 ease-linear origin-center"
+                                    className="w-full h-auto max-h-[70vh] object-contain transition-transform duration-100 ease-linear origin-center"
                                     style={{ transform: `scale(${zoom})` }}
                                 />
                             </div>
