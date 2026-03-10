@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { db } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
-import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, orderBy, limit, where, getDocs } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, orderBy, limit } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { backupDataToSupabase } from '../services/backupService';
 
@@ -130,6 +130,22 @@ export interface Toast {
     type: 'success' | 'info' | 'alert' | 'error';
 }
 
+export interface ConfessionMessage {
+    id: string;
+    anonymousName: string;
+    anonymousEmoji: string;
+    message: string;
+    timestamp: string;
+    likes: string[];  // array of hashed user ids for anonymous likes
+    reactions: { [emoji: string]: string[] };  // emoji -> list of hashed user ids
+    imageUrl?: string; // optional image attachment
+    replyTo?: {
+        id: string;
+        text: string;
+        anonymousName: string;
+    };
+}
+
 export interface PayrollRecord {
     id: string;
     month: string; // YYYY-MM
@@ -206,6 +222,7 @@ interface DataContextType {
     setInvitation: React.Dispatch<React.SetStateAction<{ title: string; body: string } | null>>;
     birthdayWishes: BirthdayWish[];
     activeEvents: ActiveEvent[];
+    confessionMessages: ConfessionMessage[];
 
     payrollRecords: PayrollRecord[];
     meetings: Meeting[];
@@ -215,7 +232,7 @@ interface DataContextType {
     deleteMeeting: (id: string) => void;
     removeToast: (id: string) => void;
     addPayrollRecord: (record: PayrollRecord) => void;
-    updatePayrollRecord: (record: PayrollRecord) => void;
+    updatePayrollRecord: (id: string, data: Partial<PayrollRecord>) => void;
     deletePayrollRecord: (id: string) => void;
     addUser: (user: User) => void;
     updateUser: (user: User) => void;
@@ -229,11 +246,49 @@ interface DataContextType {
     addBirthdayWish: (wish: BirthdayWish) => void;
     markWishAsRead: (id: string) => void;
     addActiveEvent: (event: ActiveEvent) => void; // New
+    addConfession: (msg: ConfessionMessage) => Promise<void>;
+    deleteConfession: (id: string) => Promise<void>;
+    likeConfession: (id: string, hashedUserId: string) => Promise<void>;
+    reactToConfession: (id: string, emoji: string, hashedUserId: string) => Promise<void>;
+    pendingOrdersCount: number;
     showTetDecor: boolean;
     toggleTetDecor: () => void;
     isLoaded: boolean;
     restoreDefaults: () => Promise<void>;
+    refreshData: () => Promise<void>;
 }
+
+// --- HELPER ---
+// Updated to handle both camelCase (Firestore) and legacy snake_case (Supabase import)
+const mapPayrollRecord = (d: any): PayrollRecord => ({
+    id: d.id,
+    month: d.month,
+    userId: d.userId || d.user_id || '',
+    employeeCode: d.employeeCode || d.employee_code || '',
+    fullName: d.fullName || d.full_name || '',
+    position: d.position || '',
+    department: d.department || '',
+    basicSalary: d.basicSalary || d.basic_salary || 0,
+    actualWorkDays: d.actualWorkDays || d.actual_work_days || 0,
+    allowanceMeal: d.allowanceMeal || d.allowance_meal || 0,
+    allowanceFuel: d.allowanceFuel || d.allowance_fuel || 0,
+    allowancePhone: d.allowancePhone || d.allowance_phone || 0,
+    allowanceAttendance: d.allowanceAttendance || d.allowance_attendance || 0,
+    totalAllowanceActual: d.totalAllowanceActual || d.total_allowance_actual || 0,
+    incomeMentalHealth: d.incomeMentalHealth || d.income_mental_health || 0,
+    incomeOvertime: d.incomeOvertime || d.income_overtime || 0,
+    incomeQuality: d.incomeQuality || d.income_quality || 0,
+    incomeSpecial: d.incomeSpecial || d.income_special || 0,
+    incomeOfficer: d.incomeOfficer || d.income_officer || 0,
+    incomeKPI: d.incomeKPI || d.income_kpi || 0,
+    totalAdditional: d.totalAdditional || d.total_additional || 0,
+    totalActualIncome: d.totalActualIncome || d.total_actual_income || 0,
+    insuranceCompany: d.insuranceCompany || d.insurance_company || 0,
+    insuranceEmployee: d.insuranceEmployee || d.insurance_employee || 0,
+    advancePayment: d.advancePayment || d.advance_payment || 0,
+    totalIncome: d.totalIncome || d.total_income || 0,
+    netPay: d.netPay || d.net_pay || 0
+});
 
 // --- MOCK INITIAL DATA ---
 
@@ -270,7 +325,7 @@ export const initialUsers: User[] = [
         verified: true,
         dob: '1998-06-30',
         startDate: '2024-12-01',
-        employeeCode: 'NV017',
+        employeeCode: '24009',
         contractNo: 'N2-013/2024/HĐLĐ-HJ'
     },
     {
@@ -636,13 +691,90 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [birthdayWishes, setBirthdayWishes] = useState<BirthdayWish[]>([]);
     const [activeEvents, setActiveEvents] = useState<ActiveEvent[]>([]);
+    const [confessionMessages, setConfessionMessages] = useState<ConfessionMessage[]>([]);
 
     const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [showTetDecor, setShowTetDecor] = useState(true);
     const [activeInvitation, setActiveInvitation] = useState<{ title: string; body: string } | null>(null);
+    const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
     const [isLoaded, setIsLoaded] = useState(false);
+
+    // Fetch Pending Orders Count (from Sidebar logic)
+    useEffect(() => {
+        let isMounted = true;
+        let unsubscribe: (() => void) | undefined;
+
+        const fetchPending = async () => {
+            try {
+                const SHEET_ID = '1mzYT75VEJh-PMYvlwUEQkvVnDIj6p1P2ssS6FXvK5Vs';
+                const GID = '485384320';
+                const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
+                const res = await fetch(url);
+                if (!res.ok) return;
+                const text = await res.text();
+
+                // Simple parser that handles basic Google Sheets CSV output
+                const rows: string[][] = [];
+                let row: string[] = [];
+                let cell = '';
+                let inQuotes = false;
+                for (let i = 0; i < text.length; i++) {
+                    const ch = text[i];
+                    if (inQuotes) {
+                        if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+                        else if (ch === '"') { inQuotes = false; }
+                        else { cell += ch; }
+                    } else {
+                        if (ch === '"') { inQuotes = true; }
+                        else if (ch === ',') { row.push(cell); cell = ''; }
+                        else if (ch === '\n' || (ch === '\r' && text[i + 1] === '\n')) {
+                            if (ch === '\r') i++;
+                            row.push(cell); cell = '';
+                            rows.push(row); row = [];
+                        } else { cell += ch; }
+                    }
+                }
+                if (cell || row.length) { row.push(cell); rows.push(row); }
+
+                unsubscribe = onSnapshot(collection(db, 'order_metas'), (snap) => {
+                    const metas: Record<string, { statusOverride?: string }> = {};
+                    snap.docs.forEach(d => { metas[d.id] = d.data(); });
+                    if (!isMounted) return;
+
+                    let count = 0;
+                    for (let i = 1; i < rows.length; i++) {
+                        const cols = rows[i];
+                        if (cols.length < 4) continue;
+                        const time = (cols[1] || '').trim();
+                        const person = (cols[2] || '').trim();
+                        const brand = (cols[3] || '').trim();
+                        const request = (cols[4] || '').trim();
+                        if (!time && !person && !brand && !request) continue;
+
+                        const rawId = cols[0]?.trim() || `row-${i}`;
+                        const safeId = rawId.replace(/[\/\s:]/g, '-');
+                        const rawStatus = (cols[7] || '').trim().toLowerCase();
+                        let status = (!rawStatus || rawStatus === 'n/a') ? 'đang xử lý' : rawStatus;
+
+                        if (metas[safeId] && metas[safeId].statusOverride) {
+                            status = metas[safeId].statusOverride!.toLowerCase().trim();
+                        }
+                        const isCompleted = status.includes('hoàn thành');
+                        const isCancelled = status.includes('hủy');
+                        const isPrinting = status.includes('đặt in') || status.includes('in ấn');
+
+                        if (!isCompleted && !isCancelled && !isPrinting) count++;
+                    }
+                    if (isMounted) setPendingOrdersCount(count);
+                });
+            } catch (err) { console.error('Error fetching pending orders:', err); }
+        };
+
+        fetchPending();
+        return () => { isMounted = false; if (unsubscribe) unsubscribe(); };
+    }, []);
 
     // Using ref to prevent seeding multiple times in strict mode
     // const seedingRef = useRef(false);
@@ -830,62 +962,23 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             unsubs.push(onSnapshot(collection(db, 'wishes'), s => setBirthdayWishes(s.docs.map(d => d.data() as BirthdayWish))));
             unsubs.push(onSnapshot(collection(db, 'events'), s => setActiveEvents(s.docs.map(d => d.data() as ActiveEvent))));
 
+            // CONFESSIONS
+            unsubs.push(onSnapshot(
+                query(collection(db, 'confessions'), orderBy('timestamp', 'desc'), limit(100)),
+                s => setConfessionMessages(s.docs.map(d => d.data() as ConfessionMessage))
+            ));
+
 
             // SUPABASE: Payroll (Realtime)
-            const mapPayrollRecord = (d: any): PayrollRecord => ({
-                id: d.id,
-                month: d.month,
-                userId: d.user_id || '',
-                employeeCode: d.employee_code || '',
-                fullName: d.full_name || '',
-                position: d.position || '',
-                department: d.department || '',
-                basicSalary: d.basic_salary || 0,
-                actualWorkDays: d.actual_work_days || 0,
-                allowanceMeal: d.allowance_meal || 0,
-                allowanceFuel: d.allowance_fuel || 0,
-                allowancePhone: d.allowance_phone || 0,
-                allowanceAttendance: d.allowance_attendance || 0,
-                totalAllowanceActual: d.total_allowance_actual || 0,
-                incomeMentalHealth: d.income_mental_health || 0,
-                incomeOvertime: d.income_overtime || 0,
-                incomeQuality: d.income_quality || 0,
-                incomeSpecial: d.income_special || 0,
-                incomeOfficer: d.income_officer || 0,
-                incomeKPI: d.income_kpi || 0,
-                totalAdditional: d.total_additional || 0,
-                totalActualIncome: d.total_actual_income || 0,
-                insuranceCompany: d.insurance_company || 0,
-                insuranceEmployee: d.insurance_employee || 0,
-                advancePayment: d.advance_payment || 0,
-                totalIncome: d.total_income || 0,
-                netPay: d.net_pay || 0
-            });
+            // (mapPayrollRecord moved to module scope)
 
-            const payrollChannel = supabase
-                .channel('public:payroll')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll' }, (payload: any) => {
-                    if (payload.eventType === 'INSERT') {
-                        const newRecord = mapPayrollRecord(payload.new);
-                        setPayrollRecords(prev => [...prev, newRecord]);
-                    } else if (payload.eventType === 'UPDATE') {
-                        const updated = mapPayrollRecord(payload.new);
-                        setPayrollRecords(prev => prev.map(r => r.id === updated.id ? updated : r));
-                    } else if (payload.eventType === 'DELETE') {
-                        setPayrollRecords(prev => prev.filter(r => r.id !== payload.old.id));
-                    }
-                })
-                .subscribe();
+            // FIREBASE: Payroll (Replaces Supabase due to Quota Limit)
+            unsubs.push(onSnapshot(collection(db, 'payroll'), s => {
+                setPayrollRecords(s.docs.map(d => mapPayrollRecord(d.data())));
+            }));
 
-            const fetchPayroll = async () => {
-                const { data, error } = await supabase.from('payroll').select('*');
-                if (!error && data) {
-                    setPayrollRecords(data.map(mapPayrollRecord));
-                }
-            };
-
-            fetchPayroll(); // Initial Load
-            return () => { supabase.removeChannel(payrollChannel); };
+            // Legacy Supabase cleanup (no longer used)
+            // supabase.removeChannel(payrollChannel);
 
             unsubs.push(onSnapshot(collection(db, 'meetings'), snap => {
                 if (snap.empty) {
@@ -903,27 +996,44 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         return () => unsubs.forEach(u => u());
     }, [currentUser]);
 
-    // PRESENCE HEARTBEAT
+    // PRESENCE HEARTBEAT (Dual Update: Firestore + Supabase)
     useEffect(() => {
-        if (!currentUser) return;
+        if (!currentUser || !isLoaded) return;
 
         const sendHeartbeat = () => {
-            const appUser = usersRef.current.find(u => u.email === currentUser.email);
-            if (!appUser) return;
+            const currentEmail = (currentUser.email || '').toLowerCase().trim();
+            const appUser = usersRef.current.find(u => (u.email || '').toLowerCase().trim() === currentEmail);
 
-            supabase.from('users').update({ last_seen: new Date().toISOString() }).eq('id', appUser.id).then(({ error }) => {
-                if (error) console.warn('Heartbeat fail', error);
+            if (!appUser) {
+                console.warn(`[Presence] Heartbeat skip: User with email ${currentEmail} not found in database. Found ${usersRef.current.length} users.`);
+                return;
+            }
+
+            const nowIso = new Date().toISOString();
+            console.log(`[Presence] Sending heartbeat for ${appUser.name} (${appUser.id}) at ${nowIso}`);
+
+            // 1. Direct Firestore update
+            const userDocRef = doc(db, 'users', appUser.id);
+            updateDoc(userDocRef, { lastSeen: nowIso }).then(() => {
+                console.log(`[Presence] Firestore heartbeat success for ${appUser.id}`);
+            }).catch(_err => {
+                console.warn(`[Presence] Firestore updateDoc fail, trying setDoc merge for ${appUser.id}`);
+                setDoc(userDocRef, { lastSeen: nowIso }, { merge: true }).catch(e => console.error('[Presence] Firestore heartbeat permanent fail', e));
+            });
+
+            // 2. Supabase update
+            supabase.from('users').update({ last_seen: nowIso }).eq('id', appUser.id).then(({ error }) => {
+                if (error) console.warn('[Presence] Supabase heartbeat fail', error);
+                else console.log(`[Presence] Supabase heartbeat success for ${appUser.id}`);
             });
         };
 
-        // Send immediately on mount/login
+        // Send immediately
         sendHeartbeat();
 
-        // Send periodically (keep alive)
-        const interval = setInterval(sendHeartbeat, 60000); // Every 1 minute
-
+        const interval = setInterval(sendHeartbeat, 60000); // 1 minute
         return () => clearInterval(interval);
-    }, [currentUser, isLoaded]);
+    }, [currentUser?.email, isLoaded]);
 
     // SELF-HEALING: Restore ALL initial users if missing from DB (Req: Restore 8 personnel)
     // SELF-HEALING: Removed to allow full control by Firestore.
@@ -945,42 +1055,44 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     };
 
     // CLEANUP: Remove Nguyen Thi Hao (Run once on client load)
+    // REPAIR: Ensure User 2 (Trần Hải Lưu) exists in Firestore
     useEffect(() => {
-        const cleanupDes = async () => {
-            console.log('Starting cleanup...');
+        const repairMissingUser = async () => {
+            console.log('Checking for missing user: Trần Hải Lưu (2)...');
+            try {
+                // Force Update User 2 from Initial Data
+                const targetUser = initialUsers.find(u => u.id === '2');
+                if (targetUser) {
+                    // 1. Update Firestore
+                    await setDoc(doc(db, 'users', '2'), targetUser, { merge: true });
+                    console.log('Restored User 2 to Firestore.');
 
-            // 1. Delete legacy 'NV013' / ID '11'
-            await deleteDoc(doc(db, 'users', '11')).catch(() => { });
-            await supabase.from('payroll').delete().eq('employee_code', 'NV013');
-
-            // 2. Delete 'Nguyễn Thị Hào' (Code 24009)
-            // Query Firestore to find ID if dynamic
-            const q = query(collection(db, 'users'), where('employeeCode', '==', '24009'));
-            const snap = await getDocs(q);
-
-            snap.forEach(async (d) => {
-                await deleteDoc(doc(db, 'users', d.id));
-                // Also delete from Supabase Users
-                await supabase.from('users').delete().eq('id', d.id);
-                console.log(`Deleted user ${d.id} (24009) from Firestore/Supabase`);
-            });
-
-            // Double check by Name
-            const qName = query(collection(db, 'users'), where('name', '==', 'Nguyễn Thị Hào'));
-            const snapName = await getDocs(qName);
-            snapName.forEach(async (d) => {
-                await deleteDoc(doc(db, 'users', d.id));
-                await supabase.from('users').delete().eq('id', d.id);
-                console.log(`Deleted user ${d.id} (Name Match) from Firestore/Supabase`);
-            });
-
-            // Delete from Payroll by Code 24009
-            await supabase.from('payroll').delete().eq('employee_code', '24009');
-            await supabase.from('payroll').delete().eq('full_name', 'Nguyễn Thị Hào');
-
-            console.log('Cleanup executed.');
+                    // 2. Ensure Supabase entry is up to date (Code 24009)
+                    await supabase.from('users').upsert({
+                        id: targetUser.id,
+                        name: targetUser.name,
+                        alias: targetUser.alias,
+                        email: targetUser.email,
+                        role: targetUser.role,
+                        dept: targetUser.dept,
+                        phone: targetUser.phone,
+                        avatar: targetUser.avatar,
+                        bank_acc: targetUser.bankAcc,
+                        bank_name: targetUser.bankName,
+                        is_admin: targetUser.isAdmin,
+                        verified: targetUser.verified,
+                        dob: targetUser.dob,
+                        start_date: targetUser.startDate,
+                        employee_code: targetUser.employeeCode,
+                        contract_no: targetUser.contractNo
+                    });
+                    console.log(' synced User 2 to Supabase.');
+                }
+            } catch (err) {
+                console.error('Repair failed:', err);
+            }
         };
-        cleanupDes();
+        repairMissingUser();
     }, []);
 
     // MIGRATION: Fix Leave for Le Thi Anh Nguyet and Ha Ngoc Doanh (Jan 2026 updates)
@@ -1095,8 +1207,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     // USERS (Primary Source: Firestore)
     const sanitize = (obj: any) => JSON.parse(JSON.stringify(obj));
 
-    const addUser = (user: User) => setDoc(doc(db, 'users', user.id), sanitize(user));
-    const updateUser = (user: User) => setDoc(doc(db, 'users', user.id), sanitize(user));
+    const addUser = (user: User) => setDoc(doc(db, 'users', user.id), sanitize(user), { merge: true });
+    const updateUser = (user: User) => setDoc(doc(db, 'users', user.id), sanitize(user), { merge: true });
     const deleteUser = (id: string) => deleteDoc(doc(db, 'users', id));
 
     // SYNC: Listen for Supabase changes (Source of Truth) -> Update Local State
@@ -1104,7 +1216,14 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         // Removed currentUser check to allow background sync / public access if rules permit
 
         const unsub = onSnapshot(collection(db, 'users'), (snap) => {
-            const currentUsers = snap.docs.map(d => d.data() as User);
+            const currentUsers = snap.docs.map(d => {
+                const data = d.data() as User;
+                return {
+                    ...data,
+                    id: d.id, // Ensure ID consistency
+                    lastSeen: data.lastSeen || (data as any).last_seen // Support both formats
+                };
+            });
             setUsers(currentUsers);
             setIsLoaded(true);
 
@@ -1269,51 +1388,68 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     // EVENTS
     const addActiveEvent = (event: ActiveEvent) => setDoc(doc(db, 'events', event.id), event);
 
-    // PAYROLL
-    // PAYROLL (Supabase)
-    const addPayrollRecord = async (record: PayrollRecord) => {
-        // Convert camelCase to snake_case
-        const payload = {
-            id: record.id,
-            month: record.month,
-            user_id: record.userId,
-            employee_code: record.employeeCode,
-            full_name: record.fullName,
-            position: record.position,
-            department: record.department,
-            basic_salary: record.basicSalary,
-            actual_work_days: record.actualWorkDays,
-            allowance_meal: record.allowanceMeal,
-            allowance_fuel: record.allowanceFuel,
-            allowance_phone: record.allowancePhone,
-            allowance_attendance: record.allowanceAttendance,
-            total_allowance_actual: record.totalAllowanceActual,
-            income_mental_health: record.incomeMentalHealth,
-            income_overtime: record.incomeOvertime,
-            income_quality: record.incomeQuality,
-            income_special: record.incomeSpecial,
-            income_officer: record.incomeOfficer,
-            income_kpi: record.incomeKPI,
-            total_additional: record.totalAdditional,
-            total_actual_income: record.totalActualIncome,
-            insurance_company: record.insuranceCompany,
-            insurance_employee: record.insuranceEmployee,
-            advance_payment: record.advancePayment,
-            total_income: record.totalIncome,
-            net_pay: record.netPay
-        };
-        const { error } = await supabase.from('payroll').upsert(payload);
-        if (error) console.error('Error adding payroll:', error);
+    // CONFESSIONS
+    const addConfession = async (msg: ConfessionMessage) => {
+        await setDoc(doc(db, 'confessions', msg.id), msg);
+    };
+    const deleteConfession = async (id: string) => {
+        await deleteDoc(doc(db, 'confessions', id));
+    };
+    const likeConfession = async (id: string, hashedUserId: string) => {
+        const existing = confessionMessages.find(m => m.id === id);
+        if (!existing) return;
+        const likes = existing.likes || [];
+        const newLikes = likes.includes(hashedUserId)
+            ? likes.filter(l => l !== hashedUserId)
+            : [...likes, hashedUserId];
+        await updateDoc(doc(db, 'confessions', id), { likes: newLikes });
     };
 
-    const updatePayrollRecord = async (record: PayrollRecord) => {
-        // Same as add (upsert)
-        await addPayrollRecord(record);
+    const reactToConfession = async (id: string, emoji: string, hashedUserId: string) => {
+        const existing = confessionMessages.find(m => m.id === id);
+        if (!existing) return;
+        
+        const reactions = { ...(existing.reactions || {}) };
+        
+        // Remove from all other emojis if present (one reaction per user per message)
+        Object.keys(reactions).forEach(e => {
+            reactions[e] = (reactions[e] || []).filter(uid => uid !== hashedUserId);
+            if (reactions[e].length === 0) delete reactions[e];
+        });
+
+        // Toggle if same emoji, else add
+        const currentReactions = existing.reactions?.[emoji] || [];
+        if (currentReactions.includes(hashedUserId)) {
+            // Already reacted with this emoji, removing it (handled by generic removal above)
+        } else {
+            reactions[emoji] = [...(reactions[emoji] || []), hashedUserId];
+        }
+
+        await updateDoc(doc(db, 'confessions', id), { reactions });
+    };
+
+    // PAYROLL
+    // PAYROLL (Supabase)
+
+    const addPayrollRecord = async (record: PayrollRecord) => {
+        try {
+            // Use setDoc with a specific ID to ensure idempotency if needed, or just standard add
+            await setDoc(doc(db, 'payroll', record.id), record);
+        } catch (e) {
+            console.error('Add payroll error:', e);
+            throw e;
+        }
+    };
+
+
+
+    // New helper for direct update by ID
+    const updatePayrollRecordDirect = async (id: string, data: Partial<PayrollRecord>) => {
+        await updateDoc(doc(db, 'payroll', id), data);
     };
 
     const deletePayrollRecord = async (id: string) => {
-        const { error } = await supabase.from('payroll').delete().eq('id', id);
-        if (error) console.error('Error deleting payroll:', error);
+        await deleteDoc(doc(db, 'payroll', id));
     };
 
     // MEETINGS
@@ -1342,8 +1478,20 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         };
     }, []);
 
+    const refreshData = async () => {
+        console.log('🔄 Firestore sync is active. Manual refresh is implicit.');
+        addNotification({
+            id: `REFRESH-FS-${Date.now()}`,
+            title: 'Đồng bộ dữ liệu',
+            message: 'Đang sử dụng kết nối thời gian thực với Firebase.',
+            type: 'info',
+            time: new Date().toISOString(),
+            read: false
+        });
+    };
+
     const value = {
-        users, tasks, logs, notifications, toasts, birthdayWishes, activeEvents, payrollRecords,
+        users, tasks, logs, notifications, toasts, birthdayWishes, activeEvents, confessionMessages, payrollRecords,
         addUser, updateUser, deleteUser,
         addTask, updateTask, deleteTask, markTaskAsAccepted,
         addLog, updateLog,
@@ -1351,10 +1499,12 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         addNotification, removeToast,
         addBirthdayWish, markWishAsRead,
         addActiveEvent,
-        addPayrollRecord, updatePayrollRecord, deletePayrollRecord,
+        addConfession, deleteConfession, likeConfession, reactToConfession,
+        addPayrollRecord, updatePayrollRecord: updatePayrollRecordDirect, deletePayrollRecord,
         meetings, addMeeting, updateMeeting, deleteMeeting,
+        pendingOrdersCount,
         showTetDecor, toggleTetDecor,
-        isLoaded, restoreDefaults,
+        isLoaded, restoreDefaults, refreshData,
         invitation: activeInvitation,
         setInvitation: setActiveInvitation,
         setToasts

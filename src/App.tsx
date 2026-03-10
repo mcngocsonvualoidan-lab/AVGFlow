@@ -17,10 +17,12 @@ import AdminPanel from './modules/admin/AdminPanel';
 import AppsPortal from './modules/apps/AppsPortal';
 import ExecutiveDirectives from './modules/documents/ExecutiveDirectives';
 import BusinessFund from './modules/finance/BusinessFund';
+import Orders from './modules/orders/Orders';
 import ErrorBoundary from './components/ErrorBoundary';
 import BiometricSetupPrompt from './components/BiometricSetupPrompt';
 import UpdateNotification from './components/UpdateNotification';
 import Timekeeping from './modules/timekeeping/TimekeepingLayout';
+import Minigame from './modules/minigame/Minigame';
 
 import ScrollToTop from './components/ScrollToTop';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
@@ -142,6 +144,7 @@ const MainContent = () => {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="workflow" element={<ErrorBoundary><Workflow /></ErrorBoundary>} />
+          <Route path="orders" element={<Orders />} />
           <Route path="tasks" element={<ErrorBoundary><TaskManager /></ErrorBoundary>} />
           <Route path="schedule" element={<MeetingSchedule />} />
           <Route path="users" element={<UserManagement />} />
@@ -156,6 +159,7 @@ const MainContent = () => {
           <Route path="apps" element={<AppsPortal />} />
           <Route path="executive-directives" element={<ExecutiveDirectives />} />
           <Route path="business-fund" element={<BusinessFund />} />
+          <Route path="minigame" element={<Minigame />} />
           <Route path="*" element={<Navigate to="dashboard" replace />} />
         </Routes>
       </Layout>

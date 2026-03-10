@@ -2,6 +2,8 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
+const db = admin.firestore();
+const rtdb = admin.database();
 
 /**
  * Triggered when a new document is created in the 'notifications' collection.
@@ -22,7 +24,7 @@ exports.sendBroadcastNotification = functions.firestore
             notification: {
                 title: data.title,
                 body: data.message,
-                // icon: 'https://avgflow-dd822.web.app/pwa-192x192.png', // Absolute URL usually better for FCM
+                icon: 'https://avgflow-dd822.web.app/pwa-192x192.png',
             },
             data: {
                 id: context.params.notifId,
@@ -77,5 +79,78 @@ exports.sendBroadcastNotification = functions.firestore
 
         } catch (error) {
             console.error("Error sending push notifications:", error);
+        }
+    });
+
+/**
+ * Triggered when a new chat message is added to RTDB.
+ * Sends push notifications to other participants in the room.
+ */
+exports.onNewChatMessage = functions.database
+    .ref("/chatMessages/{roomId}/{msgId}")
+    .onWrite(async (change, context) => {
+        // Only trigger on creation
+        if (!change.after.exists() || change.before.exists()) return;
+
+        const msgData = change.after.val();
+        const roomId = context.params.roomId;
+        const senderId = msgData.senderId;
+
+        // Skip system messages or if missing critical info
+        if (senderId === 'system' || !msgData.text) return;
+
+        try {
+            // 1. Get room details to find participants
+            const roomSnap = await rtdb.ref(`chatRooms/${roomId}`).once('value');
+            if (!roomSnap.exists()) return;
+
+            const roomData = roomSnap.val();
+            const participants = Object.keys(roomData.participants || {});
+            const chatName = roomData.type === 'group' ? roomData.groupName : 'Tin nhắn mới';
+
+            // 2. Filter out the sender
+            const recipients = participants.filter(uid => uid !== senderId);
+            if (recipients.length === 0) return;
+
+            // 3. Get sender's name for the notification
+            // We need to look up in Firestore users
+            const senderSnap = await db.collection("users").doc(senderId).get();
+            const senderName = senderSnap.exists ? senderSnap.data().name : 'Đồng nghiệp';
+
+            const title = roomData.type === 'group' ? `[${chatName}] ${senderName}` : senderName;
+            const body = msgData.type === 'text' ? msgData.text : (msgData.type === 'image' ? '[Hình ảnh]' : '[Tập tin]');
+
+            // 4. Collect tokens for recipients
+            const tokens = [];
+            for (const uid of recipients) {
+                const userDoc = await db.collection("users").doc(uid).get();
+                if (userDoc.exists && userDoc.data().fcmToken) {
+                    tokens.push(userDoc.data().fcmToken);
+                }
+            }
+
+            if (tokens.length === 0) {
+                console.log("No recipient tokens found.");
+                return;
+            }
+
+            console.log(`Sending chat push to ${tokens.length} tokens for room ${roomId}`);
+
+            // 5. Send notifications
+            await admin.messaging().sendEachForMulticast({
+                tokens: tokens,
+                notification: {
+                    title: title,
+                    body: body
+                },
+                data: {
+                    url: '/dashboard', // Can be refined to deep link to specific chat
+                    type: 'chat',
+                    roomId: roomId
+                }
+            });
+
+        } catch (error) {
+            console.error("Error in onNewChatMessage trigger:", error);
         }
     });

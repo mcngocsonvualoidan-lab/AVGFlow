@@ -21,6 +21,17 @@
                 "source": "**",
                 "destination": "/index.html"
             }
+        ],
+        "headers": [
+            {
+                "source": "**/*.@(png|jpg|jpeg|webp)",
+                "headers": [
+                    {
+                        "key": "Cache-Control",
+                        "value": "no-cache, max-age=0"
+                    }
+                ]
+            }
         ]
     },
     "extensions": {

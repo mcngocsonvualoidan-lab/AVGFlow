@@ -51,12 +51,12 @@ const UserManagement: React.FC = () => {
     });
 
     const { t } = useLanguage();
-    const { currentUser } = useAuth(); // Get currentUser
+    const { currentUser, isAdminView } = useAuth(); // Get currentUser and isAdminView
 
     // Check real permissions
     const loggedInUser = users.find(u => (u.email || '').toLowerCase() === (currentUser?.email || '').toLowerCase());
     const isSuperAdmin = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'].includes((currentUser?.email || '').toLowerCase());
-    const hasAdminRights = loggedInUser?.isAdmin || isSuperAdmin;
+    const hasAdminRights = (loggedInUser?.isAdmin || isSuperAdmin) && isAdminView;
 
     const [showForm, setShowForm] = useState(false);
     const [showBankSelector, setShowBankSelector] = useState(false);
@@ -826,7 +826,7 @@ const UserManagement: React.FC = () => {
                                                                     {user.isAdmin && <span className="shrink-0 text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded border border-amber-200 font-bold">ADMIN</span>}
                                                                 </div>
                                                                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 dark:bg-slate-700/50 rounded-md text-[11px] font-bold text-slate-500 dark:text-slate-400 tracking-wider font-mono border border-slate-200 dark:border-slate-700">
-                                                                    <span className="opacity-50">#</span>{user.alias}
+                                                                    {user.alias}
                                                                 </div>
                                                             </div>
                                                         </div>

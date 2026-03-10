@@ -8,6 +8,7 @@ export interface HeroBannerStat {
     label: string;
     value: number | string;
     color: string; // e.g., 'from-emerald-400 to-green-500'
+    isHighlight?: boolean;
 }
 
 export interface HeroBannerProps {
@@ -132,16 +133,25 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: 0.5 }}
-                                className="flex flex-wrap gap-2 sm:gap-3"
+                                className="grid grid-cols-2 lg:flex lg:flex-wrap gap-2 lg:gap-1.5 xl:gap-2.5"
                             >
                                 {stats.map((stat, i) => (
-                                    <div key={i} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10 hover:bg-white/20 transition-colors cursor-default">
-                                        <div className={`p-1 sm:p-1.5 rounded-lg bg-gradient-to-br ${stat.color}`}>
-                                            <stat.icon size={12} className="sm:w-3.5 sm:h-3.5 text-white" />
+                                    <div key={i} className={clsx(
+                                        "flex items-center gap-1.5 xl:gap-2 px-2 xl:px-3.5 py-1.5 rounded-xl backdrop-blur-sm transition-all cursor-default justify-center lg:justify-start",
+                                        stats.length === 5 && i === 0 ? "col-span-2" : "col-span-1",
+                                        stat.isHighlight
+                                            ? "bg-white/25 border-2 border-white/50 shadow-[0_0_15px_rgba(255,255,255,0.3)] scale-105 z-10"
+                                            : "bg-white/10 border border-white/10 hover:bg-white/20"
+                                    )}>
+                                        <div className={`p-1 xl:p-1.5 rounded-lg bg-gradient-to-br ${stat.color}`}>
+                                            <stat.icon size={12} className="xl:w-3.5 xl:h-3.5 text-white" />
                                         </div>
                                         <div>
-                                            <div className="text-lg sm:text-2xl font-black text-white leading-none">{stat.value}</div>
-                                            <div className="text-[9px] sm:text-[10px] text-white/60 font-medium uppercase tracking-wider">{stat.label}</div>
+                                            <div className="text-lg xl:text-2xl font-black text-white leading-none">{stat.value}</div>
+                                            <div className={clsx(
+                                                "text-[9px] xl:text-[10px] font-medium uppercase tracking-wider",
+                                                stat.isHighlight ? "text-white/90" : "text-white/60"
+                                            )}>{stat.label}</div>
                                         </div>
                                     </div>
                                 ))}

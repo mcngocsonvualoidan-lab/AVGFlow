@@ -10,7 +10,7 @@ service cloud.firestore {
     // Existing Rules (Keep them)
     match /users/{userId} {
       allow read: if true; 
-      allow write: if isAuthenticated();
+      allow write: if true;
     }
     match /tasks/{taskId} {
       allow read, write: if true; 
@@ -50,9 +50,18 @@ service cloud.firestore {
       allow write: if isAuthenticated(); // Should be admin only in prod
     }
 
+    match /order_metas/{metaId} {
+      allow read, write: if true;
+    }
+
     // Rules for Email Extension
     match /mail/{mailId} {
       allow read, write: if isAuthenticated();
+    }
+
+    // --- CONFESSIONS (Anonymous Chat) ---
+    match /confessions/{confId} {
+      allow read, write: if true;
     }
 
     // --- INTERNAL CHAT RULES ---

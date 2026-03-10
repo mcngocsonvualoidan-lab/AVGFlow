@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bell, Settings, Check, Trash2, X, LogOut, ChevronDown, Shield, Gift, Send, Info, Calendar, Menu, Sun, Moon, RefreshCw } from 'lucide-react';
+import { Bell, Settings, Check, Trash2, X, LogOut, ChevronDown, Shield, Gift, Send, Info, Calendar, Menu, Sun, Moon, RefreshCw, User } from 'lucide-react';
 import { useData, Notification } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
@@ -17,7 +17,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     const { notifications, markAsRead, clearNotifications, users, addNotification, addBirthdayWish } = useData();
     // ... (rest of hook calls)
     const { t } = useLanguage();
-    const { currentUser, logout } = useAuth();
+    const { currentUser, logout, isAdminView, setAdminView } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const [showNotifications, setShowNotifications] = useState(false);
     const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -355,6 +355,42 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                         <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_10px_#6366f1]" />
                         <span className="text-xs font-bold text-indigo-500 dark:text-indigo-300">{t.header.aiActive}</span>
                     </div>
+
+                    {/* Admin View Toggle (Simulation) - Only for Admins */}
+                    {isAdmin && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest hidden sm:inline-block">
+                                {isAdminView ? 'Admin' : 'Guest'}
+                            </span>
+                            <button
+                                onClick={() => setAdminView(!isAdminView)}
+                                className={clsx(
+                                    "relative w-14 h-7 rounded-full p-0.5 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500",
+                                    isAdminView
+                                        ? "bg-gradient-to-r from-red-500 to-rose-600"
+                                        : "bg-gradient-to-r from-slate-400 to-slate-500"
+                                )}
+                                title={isAdminView ? 'Switch to Guest View' : 'Switch to Admin View'}
+                            >
+                                <motion.div
+                                    layout
+                                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                    className={clsx(
+                                        "w-6 h-6 rounded-full shadow-lg flex items-center justify-center",
+                                        isAdminView
+                                            ? "bg-white ml-auto"
+                                            : "bg-white ml-0"
+                                    )}
+                                >
+                                    {isAdminView ? (
+                                        <Shield size={14} className="text-rose-500" />
+                                    ) : (
+                                        <User size={14} className="text-slate-500" />
+                                    )}
+                                </motion.div>
+                            </button>
+                        </div>
+                    )}
 
                     {/* Theme Toggle Switch */}
                     <button

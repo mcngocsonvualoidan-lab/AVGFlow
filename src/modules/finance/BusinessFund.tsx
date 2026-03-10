@@ -23,7 +23,7 @@ interface FundTransaction {
 
 const BusinessFund = () => {
     const [activeTab, setActiveTab] = useState<'INVESTMENT' | 'WELFARE'>('INVESTMENT');
-    const [selectedMonth, setSelectedMonth] = useState('2025-12');
+    const [selectedMonth, setSelectedMonth] = useState('2026-02');
     const [transactions, setTransactions] = useState<FundTransaction[]>([]);
     const [historyData, setHistoryData] = useState<any[]>([]); // Data for Chart
     const [loading, setLoading] = useState(true);
@@ -36,6 +36,105 @@ const BusinessFund = () => {
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
+
+            // STATIC FALLBACK DATA - Always available even when Supabase is down
+            const FALLBACK_DATA: Record<string, Record<string, FundTransaction[]>> = {
+                '2025-11': {
+                    'INVESTMENT': [
+                        { id: 'inv_nov_00', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 5473792, note: 'Chuyển từ T10/2025' },
+                        { id: 'inv_nov_01', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-13', content: 'Thưởng Hân về SL câu hỏi', amount_in: 0, amount_out: 200000, balance: 5273792 },
+                        { id: 'inv_nov_02', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-13', content: 'Thưởng Tâm về SL câu hỏi', amount_in: 0, amount_out: 200000, balance: 5073792 },
+                        { id: 'inv_nov_03', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-13', content: 'Thưởng Nga về SL câu hỏi', amount_in: 0, amount_out: 200000, balance: 4873792 },
+                        { id: 'inv_nov_04', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-13', content: 'Thưởng Nguyệt về SL câu hỏi', amount_in: 0, amount_out: 200000, balance: 4673792 },
+                        { id: 'inv_nov_05', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-13', content: 'Thưởng Nguyệt về SL câu hỏi', amount_in: 0, amount_out: 190000, balance: 4483792 },
+                        { id: 'inv_nov_06', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-13', content: 'Thưởng Lưu về SL câu hỏi', amount_in: 0, amount_out: 150000, balance: 4333792 },
+                        { id: 'inv_nov_07', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-13', content: 'Thưởng Sơn', amount_in: 0, amount_out: 100000, balance: 4233792 },
+                        { id: 'inv_nov_08', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-13', content: 'Thưởng Doanh', amount_in: 0, amount_out: 100000, balance: 4133792 },
+                        { id: 'inv_nov_09', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-14', content: 'Thưởng nhân sự 0910', amount_in: 100000, amount_out: 100000, balance: 4133792 },
+                        { id: 'inv_nov_10', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-14', content: 'Tâm nộp phạt', amount_in: 0, amount_out: 100000, balance: 4033792 },
+                        { id: 'inv_nov_11', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-15', content: 'Chi ăn nhẹ buổi tối', amount_in: 0, amount_out: 315000, balance: 3718792 },
+                        { id: 'inv_nov_12', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-17', content: 'Thăm bố Nga ốm, DH chi', amount_in: 0, amount_out: 500000, balance: 3218792 },
+                        { id: 'inv_nov_13', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-22', content: 'DH ck thừa', amount_in: 28952, amount_out: 0, balance: 3247744 },
+                        { id: 'inv_nov_14', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-22', content: '2.1 nộp phạt', amount_in: 100000, amount_out: 0, balance: 3347744 },
+                        { id: 'inv_nov_15', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-22', content: 'K2 nộp phạt', amount_in: 100000, amount_out: 0, balance: 3447744 },
+                        { id: 'inv_nov_16', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-22', content: '5.1B nộp phạt', amount_in: 100000, amount_out: 0, balance: 3547744 },
+                        { id: 'inv_nov_17', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-27', content: 'Tạm ứng chi phí ăn nhẹ tối 4 người', amount_in: 0, amount_out: 200000, balance: 3347744 },
+                        { id: 'inv_nov_18', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-27', content: 'Tạm ứng chi phí ăn nhẹ tối 4 người', amount_in: 0, amount_out: 200000, balance: 3147744 },
+                        { id: 'inv_nov_19', fund_type: 'INVESTMENT', month: '2025-11', date: '2025-11-27', content: 'AVG tặng quà cảm ơn Hải RDI', amount_in: 0, amount_out: 200000, balance: 2947744 },
+                    ],
+                    'WELFARE': [
+                        { id: 'wel_nov_00', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 16941833, note: 'Chuyển từ T10/2025' },
+                        { id: 'wel_nov_01', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-14', content: 'Sơn ck', amount_in: 5000, amount_out: 0, balance: 16946833 },
+                        { id: 'wel_nov_02', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-14', content: 'Sơn ck quỹ PL', amount_in: 30000, amount_out: 0, balance: 16976833 },
+                        { id: 'wel_nov_03', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-14', content: 'Thành ck quỹ PL', amount_in: 452490, amount_out: 0, balance: 17429323 },
+                        { id: 'wel_nov_04', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-14', content: 'Hân ck quỹ PL', amount_in: 141000, amount_out: 0, balance: 17570323 },
+                        { id: 'wel_nov_05', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-14', content: 'Nga ck quỹ PL', amount_in: 186000, amount_out: 0, balance: 17756323 },
+                        { id: 'wel_nov_06', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-14', content: 'Trích phần thu nhập tháng 10 của Hào', amount_in: 1000000, amount_out: 0, balance: 18756323 },
+                        { id: 'wel_nov_07', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-14', content: 'Nguyệt ck quỹ PL', amount_in: 204000, amount_out: 0, balance: 18960323 },
+                        { id: 'wel_nov_08', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-14', content: 'Thiện Tâm ck', amount_in: 98000, amount_out: 0, balance: 19058323 },
+                        { id: 'wel_nov_09', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-16', content: 'Lãi TG', amount_in: 401, amount_out: 0, balance: 19058724 },
+                        { id: 'wel_nov_10', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-18', content: 'Doanh ck quỹ PL', amount_in: 37500, amount_out: 0, balance: 19096224 },
+                        { id: 'wel_nov_11', fund_type: 'WELFARE', month: '2025-11', date: '2025-11-18', content: 'Lưu ck quỹ PL', amount_in: 44500, amount_out: 0, balance: 19140724 },
+                    ],
+                },
+                '2025-12': {
+                    'INVESTMENT': [
+                        { id: 'inv_dec_00', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 2947744, note: 'Chuyển từ T11/2025' },
+                        { id: 'inv_dec_01', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-04', content: 'Ăn phụ tối 0412', amount_in: 0, amount_out: 355000, balance: 2592744 },
+                        { id: 'inv_dec_02', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-06', content: 'Thưởng Hân biểu mẫu', amount_in: 0, amount_out: 100000, balance: 2492744 },
+                        { id: 'inv_dec_03', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-06', content: 'Thưởng Sơn góp ý biểu mẫu', amount_in: 0, amount_out: 100000, balance: 2392744 },
+                        { id: 'inv_dec_04', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-06', content: 'Hân phạt BM xa rời thực tiễn', amount_in: 50000, amount_out: 0, balance: 2442744 },
+                        { id: 'inv_dec_05', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-06', content: 'Ăn phụ tối 0612', amount_in: 0, amount_out: 330000, balance: 2112744 },
+                        { id: 'inv_dec_06', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-06', content: 'Nguyệt nộp phạt', amount_in: 50000, amount_out: 0, balance: 2162744 },
+                        { id: 'inv_dec_07', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-06', content: 'Doanh nộp phạt', amount_in: 50000, amount_out: 0, balance: 2212744 },
+                        { id: 'inv_dec_08', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-06', content: 'Sơn nộp phạt', amount_in: 50000, amount_out: 0, balance: 2262744 },
+                        { id: 'inv_dec_09', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-08', content: 'Ăn phụ tối 0812', amount_in: 0, amount_out: 400000, balance: 1862744 },
+                        { id: 'inv_dec_10', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-29', content: 'Nguyễn Ngọc Sơn hoàn tiền tạm ứng đi phúng viếng bố Nga', amount_in: 715000, amount_out: 0, balance: 2577744 },
+                        { id: 'inv_dec_11', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-29', content: 'OG hoàn tiền phúng viếng', amount_in: 125000, amount_out: 0, balance: 2702744 },
+                        { id: 'inv_dec_12', fund_type: 'INVESTMENT', month: '2025-12', date: '2025-12-29', content: 'Hoàn tiền phúng viếng Nguyễn Mạnh Thành', amount_in: 0, amount_out: 2500000, balance: 202744 },
+                    ],
+                    'WELFARE': [
+                        { id: 'wel_dec_00', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 19140724, note: 'Chuyển từ T11/2025' },
+                        { id: 'wel_dec_01', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-06', content: 'Định Hân nộp QPL', amount_in: 5000, amount_out: 0, balance: 19145724 },
+                        { id: 'wel_dec_02', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-06', content: 'Sơn nộp quỹ PL', amount_in: 5000, amount_out: 0, balance: 19150724 },
+                        { id: 'wel_dec_03', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-16', content: 'Sơn nộp QPL', amount_in: 25000, amount_out: 0, balance: 19175724 },
+                        { id: 'wel_dec_04', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-16', content: 'Thành nộp QPL', amount_in: 419740, amount_out: 0, balance: 19595464 },
+                        { id: 'wel_dec_05', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-16', content: 'Tâm nộp QPL', amount_in: 85500, amount_out: 0, balance: 19680964 },
+                        { id: 'wel_dec_06', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-16', content: 'Nguyệt nộp QPL', amount_in: 166000, amount_out: 0, balance: 19846964 },
+                        { id: 'wel_dec_07', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-16', content: 'Lưu nộp QPL', amount_in: 61000, amount_out: 0, balance: 19907964 },
+                        { id: 'wel_dec_08', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-16', content: 'Trích thu nhập Hào nộp QPL', amount_in: 630000, amount_out: 0, balance: 20537964 },
+                        { id: 'wel_dec_09', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-16', content: 'Doanh nộp QPL', amount_in: 60500, amount_out: 0, balance: 20598464 },
+                        { id: 'wel_dec_10', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-16', content: 'Hân nộp QPL', amount_in: 84500, amount_out: 0, balance: 20682964 },
+                        { id: 'wel_dec_11', fund_type: 'WELFARE', month: '2025-12', date: '2025-12-16', content: 'Nga nộp QPL', amount_in: 82000, amount_out: 0, balance: 20764964 },
+                    ],
+                },
+            };
+
+            // Check if we have fallback data for this month
+            const fallbackForMonth = FALLBACK_DATA[selectedMonth];
+            if (fallbackForMonth && fallbackForMonth[activeTab]) {
+                // Try Supabase first, use fallback if Supabase returns empty
+                try {
+                    const { data: dbData, error } = await supabase
+                        .from('fund_transactions')
+                        .select('*')
+                        .eq('fund_type', activeTab)
+                        .eq('month', selectedMonth)
+                        .order('date', { ascending: true })
+                        .order('created_at', { ascending: true });
+
+                    if (!error && dbData && dbData.length > 0) {
+                        setTransactions(dbData);
+                        setLoading(false);
+                        return;
+                    }
+                } catch { /* Supabase unavailable, fall through to fallback */ }
+
+                // Use fallback data
+                setTransactions(fallbackForMonth[activeTab]);
+                setLoading(false);
+                return;
+            }
 
             // DATA INJECTION FOR JAN 2026 (User Request)
             if (selectedMonth === '2026-01') {
@@ -76,6 +175,36 @@ const BusinessFund = () => {
                         { id: 'inv_jan_26_11', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Hỗ trợ nghiệp vụ Hào - Nguyệt', amount_in: 0, amount_out: 500000, balance: 5202744 }
                     ];
                     setTransactions(DATA_INVESTMENT_JAN_2026);
+                    setLoading(false);
+                    return;
+                }
+            }
+
+            if (selectedMonth === '2026-02') {
+                if (activeTab === 'WELFARE') {
+                    const DATA_WELFARE_FEB_2026: FundTransaction[] = [
+                        { id: 'wel_feb_26_00', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 21689126, note: 'Chuyển từ T01/2026' },
+                        { id: 'wel_feb_26_01', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-12', content: 'Sơn nộp quỹ PL', amount_in: 25000, amount_out: 0, balance: 21714126 },
+                        { id: 'wel_feb_26_02', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-13', content: 'Tâm nộp quỹ PL', amount_in: 115750, amount_out: 0, balance: 21829876 },
+                        { id: 'wel_feb_26_03', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-13', content: 'Nguyệt nộp quỹ PL', amount_in: 219500, amount_out: 0, balance: 22049376 },
+                        { id: 'wel_feb_26_04', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-13', content: 'Thành nộp quỹ PL', amount_in: 308500, amount_out: 0, balance: 22357876 },
+                        { id: 'wel_feb_26_05', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-13', content: 'Hân nộp quỹ PL', amount_in: 127000, amount_out: 0, balance: 22484876 },
+                        { id: 'wel_feb_26_06', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-13', content: 'Doanh nộp quỹ PL', amount_in: 48250, amount_out: 0, balance: 22533126 },
+                        { id: 'wel_feb_26_07', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-13', content: 'Lưu nộp quỹ PL', amount_in: 77500, amount_out: 0, balance: 22610626 },
+                        { id: 'wel_feb_26_08', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-22', content: 'Lãi tiền gửi', amount_in: 309, amount_out: 0, balance: 22610935 },
+                        { id: 'wel_feb_26_09', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-24', content: 'Nga nộp quỹ PL', amount_in: 149000, amount_out: 0, balance: 22759935 }
+                    ];
+                    setTransactions(DATA_WELFARE_FEB_2026);
+                    setLoading(false);
+                    return;
+                }
+
+                if (activeTab === 'INVESTMENT') {
+                    const DATA_INVESTMENT_FEB_2026: FundTransaction[] = [
+                        { id: 'inv_feb_26_00', fund_type: 'INVESTMENT', month: '2026-02', date: '2026-02-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 5202744, note: 'Chuyển từ T01/2026' },
+                        { id: 'inv_feb_26_01', fund_type: 'INVESTMENT', month: '2026-02', date: '2026-02-01', content: 'Lãi ngân hàng', amount_in: 141, amount_out: 0, balance: 5202885 }
+                    ];
+                    setTransactions(DATA_INVESTMENT_FEB_2026);
                     setLoading(false);
                     return;
                 }
@@ -147,6 +276,22 @@ const BusinessFund = () => {
     // Load History Data (Chart)
     useEffect(() => {
         const fetchHistory = async () => {
+            // Precomputed fallback chart data per fund type (aggregated monthly)
+            const FALLBACK_CHART: Record<string, { month: string, in: number, out: number, balance: number }[]> = {
+                'INVESTMENT': [
+                    { month: '2025-11', in: 428952, out: 2855000, balance: 2947744 },
+                    { month: '2025-12', in: 990000, out: 3785000, balance: 202744 },
+                    { month: '2026-01', in: 10000000, out: 5000000, balance: 5202744 },
+                    { month: '2026-02', in: 141, out: 0, balance: 5202885 },
+                ],
+                'WELFARE': [
+                    { month: '2025-11', in: 2198891, out: 0, balance: 19140724 },
+                    { month: '2025-12', in: 1624240, out: 0, balance: 20764964 },
+                    { month: '2026-01', in: 924162, out: 0, balance: 21689126 },
+                    { month: '2026-02', in: 1070809, out: 0, balance: 22759935 },
+                ],
+            };
+
             try {
                 // Fetch all data for the active fund to build history
                 const { data, error } = await supabase
@@ -157,44 +302,34 @@ const BusinessFund = () => {
 
                 if (error) throw error;
 
-                if (data) {
+                if (data && data.length > 0) {
                     let finalData = [...data];
 
-                    // INJECT HISTORY DATA FOR JAN 2026 IF MISSING FROM DB
+                    // INJECT HISTORY DATA FOR JAN & FEB 2026 IF MISSING FROM DB
                     if (!data.some((t: any) => t.month === '2026-01')) {
                         if (activeTab === 'WELFARE') {
-                            const DATA_WELFARE_JAN_2026: any[] = [
-                                { id: 'wel_jan_26_00', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 20764964 }, // Opening
-                                { id: 'wel_jan_26_01', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-14', content: 'Thành nộp quỹ PL', amount_in: 68000, amount_out: 0, balance: 20832964 },
-                                { id: 'wel_jan_26_02', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-15', content: 'Tâm nộp quỹ PL', amount_in: 85000, amount_out: 0, balance: 20917964 },
-                                { id: 'wel_jan_26_03', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Lưu nộp quỹ PL', amount_in: 62000, amount_out: 0, balance: 20979964 },
-                                { id: 'wel_jan_26_04', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Sơn nộp quỹ PL', amount_in: 25000, amount_out: 0, balance: 21004964 },
-                                { id: 'wel_jan_26_05', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Nguyệt nộp quỹ PL', amount_in: 147000, amount_out: 0, balance: 21151964 },
-                                { id: 'wel_jan_26_06', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Sơn nộp quỹ PL (Lần 2)', amount_in: 25000, amount_out: 0, balance: 21176964 },
-                                { id: 'wel_jan_26_07', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Hân nộp quỹ PL', amount_in: 177000, amount_out: 0, balance: 21353964 },
-                                { id: 'wel_jan_26_08', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Doanh nộp quỹ PL', amount_in: 74000, amount_out: 0, balance: 21427964 },
-                                { id: 'wel_jan_26_09', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Tâm nộp quỹ PL (Lần 2)', amount_in: 25000, amount_out: 0, balance: 21452964 },
-                                { id: 'wel_jan_26_10', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-16', content: 'Nga nộp quỹ PL', amount_in: 211000, amount_out: 0, balance: 21663964 },
-                                { id: 'wel_jan_26_11', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-18', content: 'Lãi Tiền gửi', amount_in: 162, amount_out: 0, balance: 21664126 },
-                                { id: 'wel_jan_26_12', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-19', content: 'Lưu nộp quỹ PL (Lần 2)', amount_in: 25000, amount_out: 0, balance: 21689126 }
+                            finalData = [...finalData,
+                            { id: 'wel_jan_26_00', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 20764964 },
+                            { id: 'wel_jan_26_12', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-19', content: 'Lưu nộp quỹ PL (Lần 2)', amount_in: 924162, amount_out: 0, balance: 21689126 }
                             ];
-                            finalData = [...finalData, ...DATA_WELFARE_JAN_2026];
                         } else if (activeTab === 'INVESTMENT') {
-                            const DATA_INVESTMENT_JAN_2026: any[] = [
-                                { id: 'inv_jan_26_00', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 202744 },
-                                { id: 'inv_jan_26_01', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-15', content: 'Thu nhập Hào', amount_in: 10000000, amount_out: 0, balance: 10202744 },
-                                { id: 'inv_jan_26_02', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Nguyệt', amount_in: 0, amount_out: 500000, balance: 9702744 },
-                                { id: 'inv_jan_26_03', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Doanh', amount_in: 0, amount_out: 500000, balance: 9202744 },
-                                { id: 'inv_jan_26_04', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Sơn', amount_in: 0, amount_out: 500000, balance: 8702744 },
-                                { id: 'inv_jan_26_05', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Thành', amount_in: 0, amount_out: 500000, balance: 8202744 },
-                                { id: 'inv_jan_26_06', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Tâm', amount_in: 0, amount_out: 500000, balance: 7702744 },
-                                { id: 'inv_jan_26_07', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Nga', amount_in: 0, amount_out: 500000, balance: 7202744 },
-                                { id: 'inv_jan_26_08', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Lưu', amount_in: 0, amount_out: 500000, balance: 6702744 },
-                                { id: 'inv_jan_26_09', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Thưởng tinh thần T12 - Hân', amount_in: 0, amount_out: 500000, balance: 6202744 },
-                                { id: 'inv_jan_26_10', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Hỗ trợ nghiệp vụ Hào - Thành', amount_in: 0, amount_out: 500000, balance: 5702744 },
-                                { id: 'inv_jan_26_11', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Hỗ trợ nghiệp vụ Hào - Nguyệt', amount_in: 0, amount_out: 500000, balance: 5202744 }
+                            finalData = [...finalData,
+                            { id: 'inv_jan_26_00', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 202744 },
+                            { id: 'inv_jan_26_11', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Tổng hợp T01/2026', amount_in: 10000000, amount_out: 5000000, balance: 5202744 }
                             ];
-                            finalData = [...finalData, ...DATA_INVESTMENT_JAN_2026];
+                        }
+                    }
+                    if (!data.some((t: any) => t.month === '2026-02')) {
+                        if (activeTab === 'WELFARE') {
+                            finalData = [...finalData,
+                            { id: 'wel_feb_26_00', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 21689126 },
+                            { id: 'wel_feb_26_09', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-24', content: 'Tổng hợp T02/2026', amount_in: 1070809, amount_out: 0, balance: 22759935 }
+                            ];
+                        } else if (activeTab === 'INVESTMENT') {
+                            finalData = [...finalData,
+                            { id: 'inv_feb_26_00', fund_type: 'INVESTMENT', month: '2026-02', date: '2026-02-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 5202744 },
+                            { id: 'inv_feb_26_01', fund_type: 'INVESTMENT', month: '2026-02', date: '2026-02-01', content: 'Tổng hợp T02/2026', amount_in: 141, amount_out: 0, balance: 5202885 }
+                            ];
                         }
                     }
 
@@ -209,15 +344,22 @@ const BusinessFund = () => {
                         const entry = monthlyMap.get(m)!;
                         entry.in += Number(t.amount_in) || 0;
                         entry.out += Number(t.amount_out) || 0;
-                        entry.balance = t.balance; // Last transaction's balance wins
+                        entry.balance = Number(t.balance) || 0; // Last transaction's balance wins
                     });
 
                     // Convert to Array and Sort
                     const chartData = Array.from(monthlyMap.values()).sort((a, b) => a.month.localeCompare(b.month));
                     setHistoryData(chartData);
+                    return; // Success from DB
                 }
             } catch (err) {
                 console.error('Error fetching history:', err);
+            }
+
+            // FALLBACK: Use precomputed static chart data
+            const fallback = FALLBACK_CHART[activeTab];
+            if (fallback) {
+                setHistoryData(fallback);
             }
         };
 
@@ -320,7 +462,7 @@ const BusinessFund = () => {
 
                 {/* Month Selector */}
                 <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-                    {['2025-11', '2025-12', '2026-01'].map(month => (
+                    {['2025-11', '2025-12', '2026-01', '2026-02'].map(month => (
                         <button
                             key={month}
                             onClick={() => setSelectedMonth(month)}
@@ -399,10 +541,7 @@ const BusinessFund = () => {
 
                     {/* Chart - GLASSMORPHISM STYLE */}
                     <div className="lg:col-span-1 relative group">
-                        {/* Glow Effect */}
-                        <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-amber-500 rounded-2xl opacity-20 group-hover:opacity-40 blur-xl transition duration-500"></div>
-
-                        <div className="relative bg-white dark:bg-[#0f172a]/60 backdrop-blur-2xl border border-slate-200 dark:border-white/10 p-5 rounded-2xl shadow-xl dark:shadow-2xl h-[400px] flex flex-col overflow-hidden">
+                        <div className="relative bg-white dark:bg-[#0f172a]/60 backdrop-blur-2xl border border-slate-200 dark:border-white/10 p-5 rounded-2xl h-[400px] flex flex-col overflow-hidden">
                             <div className="flex justify-between items-start mb-6 z-10">
                                 <div>
                                     <h3 className="text-slate-900 dark:text-white font-bold text-base flex items-center gap-2">

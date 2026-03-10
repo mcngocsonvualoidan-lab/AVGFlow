@@ -105,22 +105,6 @@ const TimekeepingLayout = () => {
         return contextUsers.map(u => {
             let leaves = [...(u.leaves || [])];
 
-            // SPECIAL FIX: Force Doanh (id 6) Feb 10 to be Leave (P)
-            if (u.id === '6') {
-                // Remove existing leaves on Feb 10 to avoid conflict (especially the auto-generated KP)
-                leaves = leaves.filter((l: any) => !l.start.startsWith('2026-02-10'));
-
-                // Add the correct Paid Leave
-                leaves.push({
-                    id: 'fixed_doanh_feb10',
-                    type: 'leave', // P
-                    start: '2026-02-10',
-                    end: '2026-02-10',
-                    session: 'full',
-                    reason: 'Việc gia đình'
-                });
-            }
-
             const fix = HARDCODED_LEAVES.find(h => h.userId === u.id || (h.userName && h.userName === u.name));
             if (fix) {
                 const existingIds = new Set(leaves.map((l: any) => l.id));
@@ -238,70 +222,79 @@ const TimekeepingLayout = () => {
         const requestingUser = users.find(u => u.id === leaveUserId);
         if (!requestingUser) return;
 
-        // Auto-convert to absence if quota exceeded
-        let finalLeaveType = leaveType;
-        let finalReason = leaveReason;
-        let finalSession = leaveSession;
+        // Prepare the new leave object initially 
+        const newLeave: any = {
+            id: Date.now().toString(),
+            type: leaveType,
+            reason: leaveReason,
+            session: leaveType === 'leave' || leaveType === 'absence' ? leaveSession : undefined,
+            start: leaveType === 'leave' ? leaveStartDate : (leaveType === 'absence' ? `${leaveStartDate}T${absenceStartTime || '00:00'}:00.000` : leaveStartDate),
+            end: leaveType === 'leave'
+                ? (leaveSession === 'full' ? (leaveEndDate || leaveStartDate) : leaveStartDate)
+                : (leaveType === 'absence' ? `${leaveStartDate}T${absenceEndTime || '23:59'}:00.000` : leaveStartDate),
+        };
+
+        let updatedLeaves = [...(requestingUser.leaves || [])];
+
+        let shouldAlertQuota = false;
+        let alertContext = '';
 
         if (leaveType === 'leave') {
             const startD = new Date(leaveStartDate);
-            const m = startD.getMonth() + 1;
-            const y = startD.getFullYear();
-            const usedInMonth = getUsedLeavesInMonth(leaveUserId, m, y);
+            const targetM = startD.getMonth() + 1;
+            const targetY = startD.getFullYear();
 
-            // Calculate request duration
-            let duration = 0;
-            if (leaveSession === 'full') {
-                if (leaveEndDate && leaveEndDate !== leaveStartDate) {
-                    // Multi-day logic simplified: strict 1 day check means if they book 2 days, they exceed.
-                    // For simplicity, just count days.
-                    const d1 = new Date(leaveStartDate);
-                    const d2 = new Date(leaveEndDate);
-                    const diffTime = Math.abs(d2.getTime() - d1.getTime());
-                    duration = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+            // Add the new leave temporarily to recalculate
+            updatedLeaves.push(newLeave);
+
+            // Extract all leaves/absences (that were converted from leaves) for this month
+            const monthLeaves = updatedLeaves.filter((l: any) => {
+                const d = new Date(l.start);
+                return d.getMonth() + 1 === targetM && d.getFullYear() === targetY &&
+                    (l.type === 'leave' || (l.type === 'absence' && l.reason.includes('Hết phép')));
+            });
+
+            // Sort them chronologically
+            monthLeaves.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+            // Recalculate Quota: Max 1 day
+            let usedQuota = 0;
+            const maxQuota = 1;
+
+            monthLeaves.forEach(l => {
+                const duration = l.session === 'full' ? 1 : 0.5; // Simplification for 1 day
+
+                if (usedQuota + duration <= maxQuota) {
+                    // It fits in quota, make it a paid leave
+                    l.type = 'leave';
+                    l.reason = l.reason.replace(' (Hết phép -> KP)', '').replace(' (Nghỉ phép -> KP)', '');
+                    usedQuota += duration;
                 } else {
-                    duration = 1;
+                    // It exceeds quota, make it absence
+                    if (l.type === 'leave') {
+                        l.type = 'absence';
+                        if (!l.reason.includes('Hết phép')) {
+                            l.reason = `${l.reason} (Hết phép -> KP)`;
+                            shouldAlertQuota = true;
+                            alertContext = `${targetM}/${targetY}`;
+                        }
+                    }
+                    usedQuota += duration; // Keep accumulating to see total requested
                 }
-            } else {
-                duration = 0.5;
-            }
+            });
 
-            if (usedInMonth + duration > 1) {
-                // EXCEEDED QUOTA
-                finalLeaveType = 'absence'; // Convert to KP or similar. "x/2" is visualized in Grid, but stored as 'absence' usually? 
-                // Actually stored as type='absence' session='...' in my previous hardcode example.
-                // If it's 0.5 day, it becomes absence with session.
-
-                // Alert the user
-                alert(`Bạn đã dùng hết ngày phép tháng ${m}/${y} (Đã dùng: ${usedInMonth}, Hạn mức: 1). Yêu cầu này sẽ được chuyển thành "Nghỉ không lương/không phép" (KP/x2).`);
-
-                finalReason = `${leaveReason} (Hết phép -> KP)`;
-            }
+            // Re-integrate back into the main leaves array (references were kept, so updatedLeaves is already mutated)
+        } else {
+            // For online or standard absence, just push it
+            updatedLeaves.push(newLeave);
         }
 
-        // SAVE LEAVE TO USER RECORD
-        const newLeave: any = {
-            id: Date.now().toString(),
-            type: finalLeaveType,
-            reason: finalReason,
-            session: finalLeaveType === 'leave' || finalLeaveType === 'absence' ? finalSession : undefined, // Keep session for absence too if converted
-            start: finalLeaveType === 'leave' ? leaveStartDate : (finalLeaveType === 'absence' && leaveType === 'leave' ? leaveStartDate : `${leaveStartDate}T${absenceStartTime || '00:00'}:00.000`), // If converted from leave, keep date format simple or adapt?
-            // Actually, existing 'absence' logic uses ISO with time. 'leave' uses YYYY-MM-DD.
-            // If we convert 'leave' -> 'absence', we should probably stick to YYYY-MM-DD format if the system handles "full day absence" gracefully.
-            // Looking at TimeGrid logic: it checks "type === 'absence'". If "session" is present, it treats it as x/2 ?
-            // Let's check TimeGrid logic... wait, I can't check it inside this tool.
-            // Warning: TimeGrid logic for 'absence' usually expects precise timestamps OR relies on `session` for half-day?
-            // My hardcoded data: type: 'absence', session: 'afternoon', start: 'YYYY-MM-DD'. So 'absence' CAN store YYYY-MM-DD if session is set.
-            // But standard 'absence' (clock based) stores ISO string.
-            // Let's coerce: If converted from Leave (Day based) -> Absence (Day based), keep YYYY-MM-DD but ensure `session` is respected.
-            end: finalLeaveType === 'leave'
-                ? (finalSession === 'full' ? (leaveEndDate || leaveStartDate) : leaveStartDate)
-                : (finalLeaveType === 'absence' && leaveType === 'leave' ? leaveStartDate : `${leaveStartDate}T${absenceEndTime || '23:59'}:00.000`),
-        };
+        if (shouldAlertQuota) {
+            alert(`Do giới hạn 1 ngày phép/tháng, hệ thống đã sắp xếp lại các ngày nghỉ trong tháng ${alertContext}. Ngày nghỉ phát sinh thêm sẽ được chuyển thành "Nghỉ không lương/không phép" (KP/x2).`);
+        }
 
         // Fix for online/absence start/end format if needed, but keeping consistent with UserManagement logic
 
-        const updatedLeaves = [...(requestingUser.leaves || []), newLeave];
         updateUser({ ...requestingUser, leaves: updatedLeaves });
 
         const formatDate = (dateStr: string) => {

@@ -26,12 +26,13 @@ export interface MonthArchive {
 
 // Archive list of available months
 export const MEETING_ARCHIVES: MonthArchive[] = [
+    { month: 3, year: 2026, label: 'Tháng 03/2026', gid: '637878134' },
     { month: 2, year: 2026, label: 'Tháng 02/2026', gid: '896887169' },
     { month: 1, year: 2026, label: 'Tháng 01/2026', gid: '0' },
 ];
 
 // Default current month
-export const CURRENT_MONTH_GID = '896887169'; // February 2026
+export const CURRENT_MONTH_GID = '637878134'; // March 2026
 
 export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID, filterMonth?: number, filterYear?: number) => {
     const [meetings, setMeetings] = useState<Meeting[]>([]);

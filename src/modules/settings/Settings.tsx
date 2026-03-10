@@ -174,7 +174,7 @@ const SettingsPage: React.FC = () => {
     const { theme, toggleTheme } = useTheme();
     const { language, setLanguage, t } = useLanguage();
     const { restoreDefaults, users } = useData();
-    const { currentUser } = useAuth();
+    const { currentUser, isAdminView } = useAuth();
 
     // We remove local darkMode state since we use global theme context now
     const [notifications, setNotifications] = useState({
@@ -532,106 +532,108 @@ const SettingsPage: React.FC = () => {
                     </div>
                 </SettingSection>
 
-                {/* 4. Dữ liệu Hệ thống */}
-                <SettingSection title={t.settings.data} icon={Database}>
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="text-sm font-bold text-text-main">{t.settings.autoBackup}</div>
-                            <div className="text-xs text-text-muted">{t.settings.backupDesc}</div>
+                {/* 4. Dữ liệu Hệ thống — Admin Only */}
+                {isAdminView && (currentAppUser?.isAdmin || currentAppUser?.email === 'mcngocsonvualoidan@gmail.com') && (
+                    <SettingSection title={t.settings.data} icon={Database}>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <div className="text-sm font-bold text-text-main">{t.settings.autoBackup}</div>
+                                <div className="text-xs text-text-muted">{t.settings.backupDesc}</div>
+                            </div>
+                            <div className="text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">{t.settings.active}</div>
                         </div>
-                        <div className="text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">{t.settings.active}</div>
-                    </div>
 
-                    <button
-                        onClick={async () => {
-                            if (confirm('Sao lưu toàn bộ dữ liệu lên Supabase ngay lập tức?')) {
-                                setIsSaving(true);
-                                try {
-                                    const res = await backupDataToSupabase();
-                                    if (res.success) {
-                                        alert(`✅ Sao lưu thành công!\nTime: ${res.timestamp}`);
-                                    } else {
-                                        alert('❌ Sao lưu thất bại. Kiểm tra console.');
-                                    }
-                                } catch (e) {
-                                    alert('Lỗi: ' + e);
-                                } finally {
-                                    setIsSaving(false);
-                                }
-                            }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 py-2 mt-4 border border-blue-500/20 bg-blue-500/10 rounded-xl text-blue-500 hover:bg-blue-500/20 transition-all font-bold"
-                    >
-                        <Database size={16} />
-                        <span className="text-sm">Sao lưu ngay (Backup Supabase)</span>
-                    </button>
-
-                    <button
-                        onClick={async () => {
-                            if (confirm('Cập nhật thông tin nhân sự về dữ liệu gốc? (Sẽ cập nhật ngày sinh mới)')) {
-                                await restoreDefaults();
-                                alert('Đã cập nhật dữ liệu thành công!');
-                            }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 py-2 mt-4 border border-indigo-500/20 bg-indigo-500/10 rounded-xl text-indigo-500 hover:bg-indigo-500/20 transition-all font-bold"
-                    >
-                        <RefreshCw size={16} />
-                        <span className="text-sm">Cập nhật Dữ liệu Gốc</span>
-                    </button>
-
-                    <button
-                        onClick={async () => {
-                            if (confirm('⚠️ HÀNH ĐỘNG MẠNH:\n- Xóa toàn bộ Cache & Assets\n- Gỡ bỏ Service Worker cũ\n- Đăng xuất & Reset App\n\nBạn có chắc chắn muốn làm sạch triệt để?')) {
-                                try {
-                                    // 1. Clear Storage
-                                    localStorage.clear();
-                                    sessionStorage.clear();
-
-                                    // 2. Unregister Service Workers
-                                    if ('serviceWorker' in navigator) {
-                                        const registrations = await navigator.serviceWorker.getRegistrations();
-                                        for (const registration of registrations) {
-                                            await registration.unregister();
+                        <button
+                            onClick={async () => {
+                                if (confirm('Sao lưu toàn bộ dữ liệu lên Supabase ngay lập tức?')) {
+                                    setIsSaving(true);
+                                    try {
+                                        const res = await backupDataToSupabase();
+                                        if (res.success) {
+                                            alert(`✅ Sao lưu thành công!\nTime: ${res.timestamp}`);
+                                        } else {
+                                            alert('❌ Sao lưu thất bại. Kiểm tra console.');
                                         }
+                                    } catch (e) {
+                                        alert('Lỗi: ' + e);
+                                    } finally {
+                                        setIsSaving(false);
                                     }
-
-                                    // 3. Clear Cache Storage (Files)
-                                    if ('caches' in window) {
-                                        const cacheNames = await caches.keys();
-                                        await Promise.all(cacheNames.map(name => caches.delete(name)));
-                                    }
-
-                                    alert('✅ Đã dọn dẹp sạch sẽ! Ứng dụng sẽ tự tải lại phiên bản mới nhất.');
-                                    window.location.href = '/';
-                                } catch (e) {
-                                    console.error(e);
-                                    window.location.reload();
                                 }
-                            }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 py-3 mt-2 border border-red-500/30 bg-red-500/5 rounded-xl text-red-500 hover:bg-red-500/10 transition-all font-bold"
-                    >
-                        <HardDrive size={16} />
-                        <span className="text-sm">Factory Reset (Xóa sạch Cache & Lỗi)</span>
-                    </button>
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2 mt-4 border border-blue-500/20 bg-blue-500/10 rounded-xl text-blue-500 hover:bg-blue-500/20 transition-all font-bold"
+                        >
+                            <Database size={16} />
+                            <span className="text-sm">Sao lưu ngay (Backup Supabase)</span>
+                        </button>
 
-                    <button
-                        onClick={() => {
-                            if (confirm('Xóa cài đặt sinh trắc học để test lại từ đầu?')) {
-                                localStorage.removeItem('avgflow_first_login_done');
-                                localStorage.removeItem('avgflow_biometric_prompt_shown');
-                                localStorage.removeItem('avgflow_biometric_enabled');
-                                localStorage.removeItem('avgflow_biometric_credential');
-                                localStorage.removeItem('avgflow_biometric_user');
-                                alert('✅ Đã xóa! Đăng xuất để test lại.');
-                            }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 py-2 mt-2 border border-amber-500/20 rounded-xl text-amber-500/70 hover:text-amber-500 hover:border-amber-500/50 hover:bg-amber-500/10 transition-all"
-                    >
-                        <Fingerprint size={16} />
-                        <span className="text-sm">Reset Sinh trắc học (Test)</span>
-                    </button>
-                </SettingSection>
+                        <button
+                            onClick={async () => {
+                                if (confirm('Cập nhật thông tin nhân sự về dữ liệu gốc? (Sẽ cập nhật ngày sinh mới)')) {
+                                    await restoreDefaults();
+                                    alert('Đã cập nhật dữ liệu thành công!');
+                                }
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2 mt-4 border border-indigo-500/20 bg-indigo-500/10 rounded-xl text-indigo-500 hover:bg-indigo-500/20 transition-all font-bold"
+                        >
+                            <RefreshCw size={16} />
+                            <span className="text-sm">Cập nhật Dữ liệu Gốc</span>
+                        </button>
+
+                        <button
+                            onClick={async () => {
+                                if (confirm('⚠️ HÀNH ĐỘNG MẠNH:\n- Xóa toàn bộ Cache & Assets\n- Gỡ bỏ Service Worker cũ\n- Đăng xuất & Reset App\n\nBạn có chắc chắn muốn làm sạch triệt để?')) {
+                                    try {
+                                        // 1. Clear Storage
+                                        localStorage.clear();
+                                        sessionStorage.clear();
+
+                                        // 2. Unregister Service Workers
+                                        if ('serviceWorker' in navigator) {
+                                            const registrations = await navigator.serviceWorker.getRegistrations();
+                                            for (const registration of registrations) {
+                                                await registration.unregister();
+                                            }
+                                        }
+
+                                        // 3. Clear Cache Storage (Files)
+                                        if ('caches' in window) {
+                                            const cacheNames = await caches.keys();
+                                            await Promise.all(cacheNames.map(name => caches.delete(name)));
+                                        }
+
+                                        alert('✅ Đã dọn dẹp sạch sẽ! Ứng dụng sẽ tự tải lại phiên bản mới nhất.');
+                                        window.location.href = '/';
+                                    } catch (e) {
+                                        console.error(e);
+                                        window.location.reload();
+                                    }
+                                }
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-3 mt-2 border border-red-500/30 bg-red-500/5 rounded-xl text-red-500 hover:bg-red-500/10 transition-all font-bold"
+                        >
+                            <HardDrive size={16} />
+                            <span className="text-sm">Factory Reset (Xóa sạch Cache & Lỗi)</span>
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                if (confirm('Xóa cài đặt sinh trắc học để test lại từ đầu?')) {
+                                    localStorage.removeItem('avgflow_first_login_done');
+                                    localStorage.removeItem('avgflow_biometric_prompt_shown');
+                                    localStorage.removeItem('avgflow_biometric_enabled');
+                                    localStorage.removeItem('avgflow_biometric_credential');
+                                    localStorage.removeItem('avgflow_biometric_user');
+                                    alert('✅ Đã xóa! Đăng xuất để test lại.');
+                                }
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2 mt-2 border border-amber-500/20 rounded-xl text-amber-500/70 hover:text-amber-500 hover:border-amber-500/50 hover:bg-amber-500/10 transition-all"
+                        >
+                            <Fingerprint size={16} />
+                            <span className="text-sm">Reset Sinh trắc học (Test)</span>
+                        </button>
+                    </SettingSection>
+                )}
 
             </div>
 

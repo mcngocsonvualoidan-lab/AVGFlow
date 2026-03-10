@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useMeetingSchedule, MEETING_ARCHIVES, CURRENT_MONTH_GID, MonthArchive } from '../../hooks/useMeetingSchedule';
 import {
     Calendar, RefreshCw, Clock, MapPin, Users,
@@ -48,6 +48,15 @@ const MeetingSchedule: React.FC = () => {
         return groups;
     }, [displayMeetings]);
 
+    // Ref for auto-scrolling to first active meeting group
+    const firstActiveGroupRef = useRef<HTMLDivElement>(null);
+    const hasScrolledRef = useRef(false);
+
+    // Reset scroll flag when switching archive months
+    useEffect(() => {
+        hasScrolledRef.current = false;
+    }, [selectedGid]);
+
     const getMeetingStatus = (meeting: any) => {
         if (!meeting.date) return 'none';
         const dateParts = meeting.date.split('/');
@@ -93,6 +102,55 @@ const MeetingSchedule: React.FC = () => {
             weekday: dayStr
         };
     };
+
+    // Sort grouped entries chronologically (ascending by date)
+    const sortedGroupedEntries = useMemo(() => {
+        const entries = Object.entries(groupedMeetings);
+
+        // Parse date DD/MM/YYYY for chronological sorting
+        const parseDate = (dateStr: string) => {
+            const parts = dateStr.split('/');
+            if (parts.length !== 3) return 0;
+            return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])).getTime();
+        };
+
+        return entries.sort((a, b) => parseDate(a[0]) - parseDate(b[0]));
+    }, [groupedMeetings]);
+
+    // Find index of first active (non-past) group
+    const firstActiveGroupIndex = useMemo(() => {
+        return sortedGroupedEntries.findIndex(([_, meetings]) => {
+            return (meetings as any[]).some(m => ['ongoing', 'upcoming', 'planned'].includes(getMeetingStatus(m)));
+        });
+    }, [sortedGroupedEntries]);
+
+    // Auto-scroll to first active group when data loads
+    useEffect(() => {
+        if (!hasScrolledRef.current && firstActiveGroupRef.current && displayMeetings.length > 0 && firstActiveGroupIndex >= 0) {
+            hasScrolledRef.current = true;
+            // Wait for Layout's scroll-to-top and animations to complete before scrolling
+            const scrollTimer = setTimeout(() => {
+                if (firstActiveGroupRef.current) {
+                    const element = firstActiveGroupRef.current;
+                    // The actual scroll container is the <main> element with overflow-y-auto in Layout
+                    const scrollContainer = element.closest('main') || element.closest('[class*="overflow-y-auto"]');
+                    if (scrollContainer) {
+                        const containerRect = scrollContainer.getBoundingClientRect();
+                        const elementRect = element.getBoundingClientRect();
+                        const scrollTop = scrollContainer.scrollTop + (elementRect.top - containerRect.top) - 20;
+                        scrollContainer.scrollTo({
+                            top: scrollTop,
+                            behavior: 'smooth'
+                        });
+                    } else {
+                        // Fallback to scrollIntoView
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+            }, 800);
+            return () => clearTimeout(scrollTimer);
+        }
+    }, [displayMeetings, firstActiveGroupIndex]);
 
     return (
         <div className="p-4 flex flex-col gap-6 h-auto min-h-screen pb-24 bg-gradient-to-br from-indigo-50/50 via-white to-cyan-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/20">
@@ -347,12 +405,14 @@ const MeetingSchedule: React.FC = () => {
                     </div>
                 ) : (
                     <div className="flex flex-col gap-10">
-                        {Object.entries(groupedMeetings).map(([date, meetings], groupIndex) => {
-                            const dateInfo = formatDateDisplay(date, meetings[0].day);
+                        {sortedGroupedEntries.map(([date, meetings], groupIndex) => {
+                            const dateInfo = formatDateDisplay(date, (meetings as any[])[0].day);
+                            const isFirstActive = groupIndex === firstActiveGroupIndex;
 
                             return (
                                 <motion.div
                                     key={date}
+                                    ref={isFirstActive ? firstActiveGroupRef : undefined}
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ delay: groupIndex * 0.1 }}
@@ -362,15 +422,17 @@ const MeetingSchedule: React.FC = () => {
                                     <div className="absolute left-[130px] top-0 bottom-0 w-px bg-gradient-to-b from-indigo-500/20 via-indigo-500/10 to-transparent hidden md:block" />
 
                                     {/* Date Column */}
-                                    <div className="w-full md:w-[130px] md:text-right flex-shrink-0 flex md:flex-col flex-row items-center md:items-end justify-between md:justify-start gap-2 md:gap-0 sticky top-20 z-10 md:static">
-                                        <div className="flex flex-col items-center md:items-end bg-white/80 dark:bg-slate-800/60 backdrop-blur-md p-2 md:p-3 rounded-xl shadow-sm border border-indigo-100/50 dark:border-white/10 md:mr-6 transition-transform hover:scale-105 duration-300">
-                                            <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">{dateInfo.weekday}</span>
-                                            <span className="text-4xl font-black text-slate-800 dark:text-white leading-none my-1">{dateInfo.dayNum}</span>
-                                            <span className="text-sm font-medium text-slate-400">Tháng {dateInfo.month}</span>
+                                    <div className="w-full md:w-[130px] md:text-right flex-shrink-0 flex md:flex-col flex-row items-center md:items-end justify-between md:justify-start gap-2 md:gap-0">
+                                        <div className="flex flex-col items-center md:items-end bg-gradient-to-br from-indigo-500 to-violet-600 p-2.5 md:p-3.5 rounded-2xl shadow-lg shadow-indigo-500/30 border border-white/20 md:mr-6 transition-transform hover:scale-105 duration-300 relative overflow-hidden group">
+                                            <div className="absolute top-0 left-0 w-16 h-16 bg-white/20 rounded-full blur-xl -translate-y-1/2 -translate-x-1/2 group-hover:scale-150 transition-transform duration-500"></div>
+                                            <div className="absolute bottom-0 right-0 w-12 h-12 bg-white/10 rounded-full blur-lg translate-y-1/4 translate-x-1/4 group-hover:scale-150 transition-transform duration-500"></div>
+                                            <span className="text-[11px] md:text-xs font-bold text-indigo-100 uppercase tracking-wider relative z-10">{dateInfo.weekday}</span>
+                                            <span className="text-4xl md:text-5xl font-black text-white leading-none my-1 drop-shadow-md relative z-10">{dateInfo.dayNum}</span>
+                                            <span className="text-xs md:text-sm font-medium text-indigo-100 relative z-10">Tháng {dateInfo.month}</span>
                                         </div>
 
                                         {/* Mobile Timeline Dot */}
-                                        <div className="md:hidden h-px flex-1 bg-indigo-200 mx-4"></div>
+                                        <div className="md:hidden h-0.5 flex-1 bg-gradient-to-r from-indigo-400 to-transparent mx-4 rounded-full opacity-50"></div>
                                     </div>
 
                                     {/* Event Cards */}

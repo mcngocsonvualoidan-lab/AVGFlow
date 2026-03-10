@@ -1,4 +1,5 @@
 export const DEPARTMENTS = [
+    'Interwrite',
     'InterData',
     'R&D - Nghiên cứu & Phát triển',
     'Tài chính - Kế toán',

@@ -275,4 +275,16 @@
     .animate-spin-slow {
         animation: spin 2s linear infinite;
     }
+
+    @keyframes flutter {
+
+        0%,
+        100% {
+            transform: scaleX(1);
+        }
+
+        50% {
+            transform: scaleX(0.7);
+        }
+    }
 }

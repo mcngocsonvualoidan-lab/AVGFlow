@@ -166,7 +166,7 @@ const TimeStats: React.FC<TimeStatsProps> = ({ month, year, users: propUsers }) 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 p-4 rounded-xl">
                     <p className="text-slate-500 dark:text-slate-400 text-sm">Ngày công chuẩn (T{month})</p>
                     <p className="text-2xl font-bold text-slate-900 dark:text-white">{standardWorkDays} ngày</p>

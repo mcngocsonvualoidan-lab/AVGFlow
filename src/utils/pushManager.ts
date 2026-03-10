@@ -3,14 +3,10 @@ import { messaging } from "../lib/firebase";
 
 const PUBLIC_KEY = 'BPXMPe2rJJd7BPjVIEzmaiX74Oo-eVwpd7DcWvg6aWqWnc1IrCbo5xz_MyuUWVOfuxbG-3wE4WjKdFawcbPQhP8';
 
-export async function registerServiceWorker() {
-    // TEMPORARILY DISABLED - FCM configuration needed
-    console.warn('Push notifications temporarily disabled');
-    return null;
-
+export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
         try {
-            // VitePWA registers the SW automatically usually, but we can access the registration
+            // Wait for sw to be ready
             const swReg = await navigator.serviceWorker.ready;
             console.log('Service Worker is ready', swReg);
             return swReg;

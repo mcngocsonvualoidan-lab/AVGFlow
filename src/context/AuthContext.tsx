@@ -16,6 +16,8 @@ interface AuthContextType {
     logout: () => Promise<void>;
     resetPassword: (email: string) => Promise<void>;
     loginEmail: (email: string, pass: string) => Promise<void>;
+    isAdminView: boolean;
+    setAdminView: (view: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,6 +25,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isAdminView, setIsAdminView] = useState<boolean>(() => {
+        const saved = localStorage.getItem('isAdminView');
+        return saved === null ? true : saved === 'true';
+    });
+
+    const setAdminView = (view: boolean) => {
+        setIsAdminView(view);
+        localStorage.setItem('isAdminView', String(view));
+    };
 
     useEffect(() => {
         let mounted = true;
@@ -85,7 +96,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ currentUser, loading, loginGoogle, loginEmail, logout, resetPassword }}>
+        <AuthContext.Provider value={{ currentUser, loading, loginGoogle, loginEmail, logout, resetPassword, isAdminView, setAdminView }}>
             {children}
         </AuthContext.Provider>
     );

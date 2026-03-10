@@ -4,7 +4,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell
 } from 'recharts';
-import { Activity, CheckCircle2, AlertOctagon, TrendingUp, AlertTriangle, CloudSun, Sparkles, Zap, CalendarDays, Clock, Video, MapPin, UserMinus, Laptop2 } from 'lucide-react';
+import { Activity, CheckCircle2, AlertOctagon, TrendingUp, AlertTriangle, CloudSun, Sparkles, Zap, CalendarDays, Clock, Video, MapPin, UserMinus, Laptop2, ChevronDown, ChevronUp } from 'lucide-react';
 import { getLunarDate } from '@dqcai/vn-lunar';
 
 import { useData } from '../../context/DataContext';
@@ -21,7 +21,14 @@ const COLORS_LIGHT = ['#059669', '#2563eb', '#dc2626']; // Darker shades for lig
 // --- Sub-component: Meeting Alerts ---
 const MeetingAlerts: React.FC = () => {
     const { meetings } = useMeetingSchedule();
+    const navigate = useNavigate();
     const [now, setNow] = useState(new Date());
+    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+    const toggleExpand = (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+    };
 
     React.useEffect(() => {
         const timer = setInterval(() => setNow(new Date()), 60000); // Update every minute
@@ -93,74 +100,106 @@ const MeetingAlerts: React.FC = () => {
         return `${d}/${m}`;
     };
 
+    const totalAlerts = ongoing.length + upcoming.length;
+
     return (
-        <div className="flex flex-col gap-4 mb-8 animate-in slide-in-from-top-4 duration-500">
-            {ongoing.map((m, i) => (
-                <div key={`ongoing-${i}`} className="relative overflow-hidden rounded-[2rem] p-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 shadow-xl shadow-emerald-500/20 group">
-                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
-                    <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/20 blur-3xl rounded-full group-hover:bg-white/30 transition-all duration-700"></div>
+        <div className={`grid gap-4 mb-8 animate-in slide-in-from-top-4 duration-500 ${totalAlerts > 1 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+            {ongoing.map((m, i) => {
+                const isExpanded = expanded[`ongoing-${i}`];
+                return (
+                    <div key={`ongoing-${i}`} onClick={() => navigate('/schedule')} className="relative overflow-hidden rounded-[2rem] p-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 shadow-xl shadow-emerald-500/20 group cursor-pointer hover:scale-[1.01] transition-transform">
+                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+                        <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/20 blur-3xl rounded-full group-hover:bg-white/30 transition-all duration-700"></div>
 
-                    <div className="relative bg-white/10 dark:bg-slate-900/40 backdrop-blur-xl rounded-[1.8rem] p-6 flex flex-col md:flex-row items-center gap-6 md:gap-8">
-                        {/* Status Badge - Left */}
-                        <div className="flex flex-col items-center justify-center min-w-[100px] gap-2">
-                            <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur border border-white/20 flex items-center justify-center shadow-lg relative overflow-hidden">
-                                <Video size={32} className="text-white relative z-10" />
-                                <div className="absolute inset-0 bg-emerald-500/50 animate-pulse"></div>
-                            </div>
-                            <span className="px-3 py-1 rounded-full bg-white/20 border border-white/20 text-white text-[10px] font-black uppercase tracking-widest shadow-sm">
-                                Đang diễn ra
-                            </span>
-                        </div>
-
-                        {/* Content - Center */}
-                        <div className="flex-1 text-center md:text-left min-w-0 w-full">
-                            <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
-                                <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/10 border border-white/10 text-white text-xs font-mono font-bold shadow-sm">
-                                    <Clock size={12} />
-                                    {m.startTime} - {m.endTime}
+                        <div className="relative bg-white/10 dark:bg-slate-900/40 backdrop-blur-xl rounded-[1.8rem] p-6 flex flex-col md:flex-row items-center gap-6 md:gap-8">
+                            {/* Status Badge - Left */}
+                            <div className="flex flex-col items-center justify-center min-w-[100px] gap-2">
+                                <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur border border-white/20 flex items-center justify-center shadow-lg relative overflow-hidden">
+                                    <Video size={32} className="text-white relative z-10" />
+                                    <div className="absolute inset-0 bg-emerald-500/50 animate-pulse"></div>
                                 </div>
-                                {m.scope && (
-                                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 border border-white/5 text-emerald-100 text-xs shadow-sm">
-                                        <MapPin size={12} />
-                                        <span className="truncate max-w-[150px]">{m.scope}</span>
-                                    </div>
-                                )}
+                                <span className="px-3 py-1 rounded-full bg-white/20 border border-white/20 text-white text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                    Đang diễn ra
+                                </span>
                             </div>
-                            <h3 className="text-xl md:text-2xl font-black text-white leading-tight mb-2 drop-shadow-md line-clamp-2 md:line-clamp-1 group-hover:line-clamp-none transition-all">
-                                {m.content}
-                            </h3>
-                            <div className="flex flex-col md:flex-row gap-3 mt-3 items-center justify-center md:justify-start">
-                                {m.pic && (
-                                    <div className="flex items-center gap-2 text-emerald-100 text-sm font-medium bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 shadow-sm backdrop-blur-sm">
-                                        <span className="opacity-70 text-xs uppercase tracking-wider font-bold">Phụ trách:</span>
-                                        <span className="font-bold text-white">{m.pic}</span>
-                                    </div>
-                                )}
-                                {m.secretary && (
-                                    <div className="flex items-center gap-2 text-emerald-100 text-sm font-medium bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 shadow-sm backdrop-blur-sm">
-                                        <span className="opacity-70 text-xs uppercase tracking-wider font-bold">Thư ký:</span>
-                                        <span className="font-bold text-white">{m.secretary}</span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
 
-                        {/* Action - Right */}
-                        <div className="hidden md:flex items-center justify-center pr-4">
-                            <div className="w-12 h-12 rounded-full border-2 border-white/20 flex items-center justify-center group-hover:scale-110 group-hover:border-white/50 transition-all duration-300 cursor-pointer bg-white/5">
-                                <span className="w-3 h-3 bg-white rounded-full animate-ping"></span>
+                            {/* Content - Center */}
+                            <div className="flex-1 text-center md:text-left min-w-0 w-full">
+                                <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
+                                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/10 border border-white/10 text-white text-xs font-mono font-bold shadow-sm">
+                                        <Clock size={12} />
+                                        {m.startTime} - {m.endTime}
+                                    </div>
+                                    {m.scope && (
+                                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 border border-white/5 text-emerald-100 text-xs shadow-sm">
+                                            <MapPin size={12} />
+                                            <span className="truncate max-w-[150px]">{m.scope}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <h3 className="text-xl md:text-2xl font-black text-white leading-tight mb-2 drop-shadow-md transition-all">
+                                    {m.content}
+                                </h3>
+                                <div className="flex flex-row flex-wrap gap-3 mt-3 items-center justify-center md:justify-start">
+                                    {m.pic && (
+                                        <div className="flex items-center gap-2 text-emerald-100 text-sm font-medium bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 shadow-sm backdrop-blur-sm">
+                                            <span className="opacity-70 text-xs uppercase tracking-wider font-bold">Phụ trách:</span>
+                                            <span className="font-bold text-white">{m.pic}</span>
+                                        </div>
+                                    )}
+                                    {m.secretary && (
+                                        <div className="flex items-center gap-2 text-emerald-100 text-sm font-medium bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 shadow-sm backdrop-blur-sm">
+                                            <span className="opacity-70 text-xs uppercase tracking-wider font-bold">Thư ký:</span>
+                                            <span className="font-bold text-white">{m.secretary}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Expandable Details */}
+                                {isExpanded && (
+                                    <div className="mt-4 pt-4 border-t border-white/10 text-sm text-emerald-50 animate-in slide-in-from-top-2 text-left bg-white/5 rounded-xl p-4">
+                                        {m.participants && (
+                                            <div className="mb-2">
+                                                <strong className="text-white block mb-1 opacity-80 uppercase text-[10px] tracking-wider">Thành phần tham dự:</strong>
+                                                <p className="leading-relaxed">{m.participants}</p>
+                                            </div>
+                                        )}
+                                        {m.note && (
+                                            <div>
+                                                <strong className="text-white block mb-1 opacity-80 uppercase text-[10px] tracking-wider">Ghi chú:</strong>
+                                                <p className="italic opacity-90">{m.note}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Action - Right */}
+                            <div className="flex flex-row md:flex-col items-center justify-center gap-4 md:gap-2 mt-4 md:mt-0 w-full md:w-auto md:pr-4 md:pl-4 md:border-l border-white/10 border-t md:border-t-0 pt-4 md:pt-0">
+                                <div className="hidden md:flex w-12 h-12 rounded-full border-2 border-white/20 items-center justify-center group-hover:scale-110 group-hover:border-white/50 transition-all duration-300 cursor-pointer bg-white/5">
+                                    <span className="w-3 h-3 bg-white rounded-full animate-ping"></span>
+                                </div>
+                                <button
+                                    onClick={(e) => toggleExpand(e, `ongoing-${i}`)}
+                                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                                    title={isExpanded ? "Thu gọn" : "Xem chi tiết"}
+                                >
+                                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            ))}
+                )
+            })}
 
             {upcoming.map((m, i) => {
                 const dateLabel = formatMeetingDate(m.date);
                 const isToday = dateLabel === "Hôm nay";
 
+                const isExpanded = expanded[`upcoming-${i}`];
+
                 return (
-                    <div key={`upcoming-${i}`} className="relative overflow-hidden rounded-[2rem] p-1 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 shadow-xl shadow-amber-500/20 group opacity-90 hover:opacity-100 transition-opacity">
+                    <div key={`upcoming-${i}`} onClick={() => navigate('/schedule')} className="relative overflow-hidden rounded-[2rem] p-1 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 shadow-xl shadow-amber-500/20 group opacity-90 hover:opacity-100 transition-all cursor-pointer hover:scale-[1.01]">
                         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
                         <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/20 blur-3xl rounded-full group-hover:bg-white/30 transition-all duration-700"></div>
 
@@ -196,7 +235,7 @@ const MeetingAlerts: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                                <h3 className="text-lg md:text-xl font-bold text-white leading-tight mb-2 drop-shadow-md line-clamp-1">
+                                <h3 className="text-lg md:text-xl font-bold text-white leading-tight mb-2 drop-shadow-md">
                                     {m.content}
                                 </h3>
                                 <div className="flex flex-row flex-wrap gap-3 mt-3 items-center justify-center md:justify-start">
@@ -213,6 +252,35 @@ const MeetingAlerts: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Expandable Details */}
+                                {isExpanded && (
+                                    <div className="mt-4 pt-4 border-t border-white/10 text-sm text-amber-50 animate-in slide-in-from-top-2 text-left bg-white/5 rounded-xl p-4">
+                                        {m.participants && (
+                                            <div className="mb-2">
+                                                <strong className="text-white block mb-1 opacity-80 uppercase text-[10px] tracking-wider">Thành phần tham dự:</strong>
+                                                <p className="leading-relaxed">{m.participants}</p>
+                                            </div>
+                                        )}
+                                        {m.note && (
+                                            <div>
+                                                <strong className="text-white block mb-1 opacity-80 uppercase text-[10px] tracking-wider">Ghi chú:</strong>
+                                                <p className="italic opacity-90">{m.note}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Action - Right */}
+                            <div className="flex flex-row md:flex-col items-center justify-center gap-4 md:gap-2 pr-4 pl-4 border-l border-white/10 md:mt-0 mt-4 border-t md:border-t-0 pt-4 md:pt-0 w-full md:w-auto">
+                                <button
+                                    onClick={(e) => toggleExpand(e, `upcoming-${i}`)}
+                                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                                    title={isExpanded ? "Thu gọn" : "Xem chi tiết"}
+                                >
+                                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -303,17 +371,16 @@ const Dashboard: React.FC = () => {
     // --- DERIVED METRICS ---
 
     // Payroll Analysis
-    const payrollChartData = React.useMemo(() => {
-        if (!payrollRecords.length) return [];
+    const { latestMonth, payrollChartData } = React.useMemo(() => {
+        if (!payrollRecords.length) return { latestMonth: '', payrollChartData: [] };
 
-        const targetMonth = '2025-12';
-        const hasTarget = payrollRecords.some(r => r.month === targetMonth);
-        const monthToUse = hasTarget ? targetMonth : [...new Set(payrollRecords.map(r => r.month))].sort().pop();
+        const monthToUse = [...new Set(payrollRecords.map(r => r.month))].sort().pop();
 
-        if (!monthToUse) return [];
+        if (!monthToUse) return { latestMonth: '', payrollChartData: [] };
 
-        return payrollRecords
-            .filter(r => r.month === monthToUse)
+        const filtered = payrollRecords.filter(r => r.month === monthToUse);
+
+        const chartData = [...filtered]
             .sort((a, b) => (Number(b.netPay) || 0) - (Number(a.netPay) || 0))
             .map(r => ({
                 name: r.fullName,
@@ -326,6 +393,8 @@ const Dashboard: React.FC = () => {
                 additional: Number(r.totalAdditional) || 0,
                 fullIncome: Number(r.totalActualIncome) || 0
             }));
+
+        return { latestMonth: monthToUse, payrollChartData: chartData };
     }, [payrollRecords]);
 
     const totalOrders = logs.length;
@@ -385,7 +454,7 @@ const Dashboard: React.FC = () => {
                         <p className="text-indigo-100 max-w-xl text-sm md:text-base leading-relaxed opacity-90">
                             Chúc bạn một ngày làm việc hiệu quả và tràn đầy năng lượng.
                             <br className="hidden md:block" />
-                            Hệ thống đang hoạt động ổn định với <strong className="text-white">{logs.filter(l => l.status === 'processing').length} nhiệm vụ</strong> đang xử lý.
+                            Hệ thống đang hoạt động ổn định với <strong className="text-white">{logs.filter(l => l.status === 'processing').length} đơn đặt hàng</strong> đang xử lý.
                         </p>
                     </div>
 
@@ -685,7 +754,7 @@ const Dashboard: React.FC = () => {
                         <div className="flex-1 min-w-0">
                             <h3 className="text-xl md:text-2xl lg:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-300 mb-1 md:mb-2 flex flex-wrap items-center gap-2 leading-tight">
                                 <span>Biểu đồ Thu nhập Nhân sự</span>
-                                <span className="text-xs md:text-sm font-bold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 px-2 md:px-3 py-0.5 md:py-1 rounded-full border border-emerald-200 dark:border-emerald-500/30 shadow-sm">Tháng 12/2025</span>
+                                <span className="text-xs md:text-sm font-bold bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 px-2 md:px-3 py-0.5 md:py-1 rounded-full border border-emerald-200 dark:border-emerald-500/30 shadow-sm">{latestMonth ? `Tháng ${latestMonth.split('-')[1]}/${latestMonth.split('-')[0]}` : 'N/A'}</span>
                             </h3>
                             <p className="text-xs md:text-sm font-medium text-slate-500 dark:text-slate-400">Thống kê chi tiết thu nhập thực nhận và phần tăng thêm của toàn bộ nhân sự</p>
                         </div>
@@ -783,6 +852,7 @@ const Dashboard: React.FC = () => {
                     )}
                 </div>
             </div>
+
         </div >
     );
 };

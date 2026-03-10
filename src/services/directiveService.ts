@@ -4,8 +4,8 @@ import { supabase } from '../lib/supabase';
 // Helper to fetch from Google Sheets (Legacy Source)
 export const fetchFromGoogleSheet = async (): Promise<string[][]> => {
     const SOURCES = [
-        { id: '1YMauwbe9R8YprQGo3p4OjRA4y7hUqZ3kPpBasGWujGQ', gid: '80028445', year: 2025 },
-        { id: '13cN2ert23B1W4wlySPXXVbCj-UgICEef5UQb7FI2vSA', gid: '0', year: 2026 }
+        // { id: '1YMauwbe9R8YprQGo3p4OjRA4y7hUqZ3kPpBasGWujGQ', gid: '80028445', year: 2025 },
+        { id: '13cN2ert23B1W4wlySPXXVbCj-UgICEef5UQb7FI2vSA', gid: '318384172', year: 2026 }
     ];
 
     const PROXIES = [
@@ -110,15 +110,31 @@ export const fetchFromGoogleSheet = async (): Promise<string[][]> => {
 
             console.log(`Source ${source.year} parsed. Header at ${headerIdx}. Body size: ${sourceBody.length}`);
 
+            // 1.5 Deduplicate Source Headers (Critical for Sheets with repeated column names like "Lỗi", "Khác")
+            const uniqueSourceHeaders = [...sourceHeaders];
+            const headerCounts: Record<string, number> = {};
+
+            for (let i = 0; i < uniqueSourceHeaders.length; i++) {
+                const h = uniqueSourceHeaders[i];
+                if (headerCounts[h]) {
+                    headerCounts[h]++;
+                    uniqueSourceHeaders[i] = `${h}_${headerCounts[h]}`;
+                } else {
+                    headerCounts[h] = 1;
+                }
+            }
+            // Use unique headers for mapping
+            const headersToUse = uniqueSourceHeaders;
+
             // 2. If this is the FIRST valid source, set it as Master
             if (allRows.length === 0) {
-                // Prepend "Source_Year" to headers
-                const headersWithYear = ["Source_Year", ...sourceHeaders];
-                allRows.push(headersWithYear);
+                // Use headers directly
+                // const headersWithYear = ["Source_Year", ...headersToUse];
+                allRows.push(headersToUse);
 
-                // Prepend year to body
-                const bodyWithYear = sourceBody.map(r => [source.year.toString(), ...r]);
-                allRows.push(...bodyWithYear);
+                // Use body directly
+                // const bodyWithYear = sourceBody.map(r => [source.year.toString(), ...r]);
+                allRows.push(...sourceBody);
             } else {
                 // 3. Align subsequent source to Master Header (row 0 of allRows)
                 let masterHeaders = allRows[0];
@@ -126,7 +142,7 @@ export const fetchFromGoogleSheet = async (): Promise<string[][]> => {
                 // --- DYNAMIC HEADER EXPANSION ---
                 // identifying which source columns are NEW and need to be added to Master
                 const newColIndices: number[] = [];
-                const mapSourceToMaster: number[] = new Array(sourceHeaders.length).fill(-1);
+                const mapSourceToMaster: number[] = new Array(headersToUse.length).fill(-1);
 
                 // Helper to find column index in a list of headers
                 const findIndexInHeaders = (headers: string[], name: string) => {
@@ -136,7 +152,7 @@ export const fetchFromGoogleSheet = async (): Promise<string[][]> => {
                 // Semantic Indices in Master (Recalculate as we go if needed, but for now fixed)
                 // Note: masterHeaders[0] is Source_Year.
 
-                sourceHeaders.forEach((sHeader, sIdx) => {
+                headersToUse.forEach((sHeader, sIdx) => {
                     // 1. Try Semantic Match first
                     const sLow = sHeader.toLowerCase();
                     if (['ngay', 'ngày', 'date', 'time', 'timeline'].some(k => sLow.includes(k))) {
@@ -167,7 +183,7 @@ export const fetchFromGoogleSheet = async (): Promise<string[][]> => {
 
                 // Update Master Headers if new columns found
                 if (newColIndices.length > 0) {
-                    const newHeaders = newColIndices.map(i => sourceHeaders[i]);
+                    const newHeaders = newColIndices.map(i => headersToUse[i]);
                     // Mutate the master header row in allRows
                     allRows[0] = [...masterHeaders, ...newHeaders];
                     masterHeaders = allRows[0]; // refresh reference

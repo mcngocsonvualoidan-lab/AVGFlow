@@ -23,6 +23,12 @@
                 ".read": "auth != null && auth.uid == $userId",
                 ".write": "auth != null"
             }
+        },
+        "minigame_rooms": {
+            ".read": "auth != null",
+            "$roomId": {
+                ".write": "auth != null"
+            }
         }
     }
 }

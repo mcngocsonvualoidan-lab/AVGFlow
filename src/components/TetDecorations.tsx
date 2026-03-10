@@ -1,85 +1,81 @@
 import React, { useEffect, useState } from 'react';
 
-// --- FALLING PETALS (Hoa Đào & Hoa Mai) ---
+// --- FALLING PETALS (light & subtle) ---
 interface Petal {
     id: number;
     x: number;
     delay: number;
     duration: number;
     size: number;
-    type: 'dao' | 'mai';
+    type: 'petal' | 'heart';
     rotation: number;
+    opacity: number;
 }
 
 const FallingPetals: React.FC = () => {
     const [petals, setPetals] = useState<Petal[]>([]);
 
     useEffect(() => {
-        const newPetals: Petal[] = [];
-        for (let i = 0; i < 40; i++) {
-            newPetals.push({
+        const items: Petal[] = [];
+        // Only 15 particles — much lighter
+        for (let i = 0; i < 15; i++) {
+            items.push({
                 id: i,
                 x: Math.random() * 100,
-                delay: Math.random() * 10,
-                duration: 8 + Math.random() * 8,
-                size: 10 + Math.random() * 15,
-                type: Math.random() > 0.5 ? 'dao' : 'mai',
-                rotation: Math.random() * 360
+                delay: Math.random() * 15,
+                duration: 12 + Math.random() * 10,
+                size: 10 + Math.random() * 10,
+                type: Math.random() > 0.25 ? 'petal' : 'heart',
+                rotation: Math.random() * 360,
+                opacity: 0.3 + Math.random() * 0.3,
             });
         }
-        setPetals(newPetals);
+        setPetals(items);
     }, []);
 
     return (
         <div className="fixed inset-0 pointer-events-none overflow-hidden z-[100]">
-            {petals.map((petal) => (
+            {petals.map((p) => (
                 <div
-                    key={petal.id}
+                    key={p.id}
                     className="absolute animate-fall"
                     style={{
-                        left: `${petal.x}%`,
-                        animationDelay: `${petal.delay}s`,
-                        animationDuration: `${petal.duration}s`,
+                        left: `${p.x}%`,
+                        animationDelay: `${p.delay}s`,
+                        animationDuration: `${p.duration}s`,
+                        opacity: p.opacity,
                     }}
                 >
                     <div
                         className="animate-sway"
                         style={{
-                            width: petal.size,
-                            height: petal.size,
-                            transform: `rotate(${petal.rotation}deg)`,
+                            width: p.size,
+                            height: p.size,
+                            transform: `rotate(${p.rotation}deg)`,
                         }}
                     >
-                        {petal.type === 'dao' ? (
-                            // Hoa Đào (Pink cherry blossom)
-                            <svg viewBox="0 0 24 24" className="w-full h-full drop-shadow-lg">
+                        {p.type === 'petal' ? (
+                            <svg viewBox="0 0 24 24" className="w-full h-full">
                                 <defs>
-                                    <radialGradient id="pinkGrad" cx="50%" cy="50%" r="50%">
+                                    <radialGradient id="petalGrad" cx="30%" cy="30%" r="70%">
                                         <stop offset="0%" stopColor="#fce7f3" />
-                                        <stop offset="100%" stopColor="#ec4899" />
+                                        <stop offset="100%" stopColor="#f9a8d4" />
                                     </radialGradient>
                                 </defs>
-                                <path
-                                    d="M12 2C12 2 14 6 12 8C10 6 12 2 12 2Z M12 2C12 2 16 4 14 7C11 6 12 2 12 2Z M12 2C12 2 8 4 10 7C13 6 12 2 12 2Z M12 2C12 2 6 6 9 8C11 7 12 2 12 2Z M12 2C12 2 18 6 15 8C13 7 12 2 12 2Z"
-                                    fill="url(#pinkGrad)"
-                                    transform="translate(0, 8) scale(1.2)"
-                                />
-                                <circle cx="12" cy="12" r="2" fill="#fbbf24" />
+                                <ellipse cx="12" cy="10" rx="5" ry="8" fill="url(#petalGrad)" transform="rotate(15 12 10)" />
                             </svg>
                         ) : (
-                            // Hoa Mai (Yellow apricot blossom)
-                            <svg viewBox="0 0 24 24" className="w-full h-full drop-shadow-lg">
+                            <svg viewBox="0 0 24 24" className="w-full h-full">
                                 <defs>
-                                    <radialGradient id="yellowGrad" cx="50%" cy="50%" r="50%">
-                                        <stop offset="0%" stopColor="#fef3c7" />
-                                        <stop offset="100%" stopColor="#f59e0b" />
-                                    </radialGradient>
+                                    <linearGradient id="heartGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" stopColor="#fda4af" />
+                                        <stop offset="100%" stopColor="#f472b6" />
+                                    </linearGradient>
                                 </defs>
                                 <path
-                                    d="M12 4L13.5 9H18.5L14.5 12L16 17L12 14L8 17L9.5 12L5.5 9H10.5L12 4Z"
-                                    fill="url(#yellowGrad)"
+                                    d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+                                    fill="url(#heartGrad)"
                                 />
-                                <circle cx="12" cy="11" r="2.5" fill="#dc2626" />
                             </svg>
                         )}
                     </div>
@@ -89,172 +85,39 @@ const FallingPetals: React.FC = () => {
     );
 };
 
-// --- FIREWORKS ---
-interface Firework {
-    id: number;
-    x: number;
-    y: number;
-    color: string;
-    size: number;
-}
-
-const Fireworks: React.FC = () => {
-    const [fireworks, setFireworks] = useState<Firework[]>([]);
-
-    useEffect(() => {
-        const colors = ['#ef4444', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#22c55e'];
-
-        const createFirework = () => {
-            const newFirework: Firework = {
-                id: Date.now() + Math.random(),
-                x: 10 + Math.random() * 80,
-                y: 10 + Math.random() * 40,
-                color: colors[Math.floor(Math.random() * colors.length)],
-                size: 80 + Math.random() * 60
-            };
-
-            setFireworks(prev => [...prev, newFirework]);
-
-            // Remove firework after animation
-            setTimeout(() => {
-                setFireworks(prev => prev.filter(f => f.id !== newFirework.id));
-            }, 1500);
-        };
-
-        // Create fireworks periodically
-        const interval = setInterval(createFirework, 2000 + Math.random() * 2000);
-        createFirework(); // Initial firework
-
-        return () => clearInterval(interval);
-    }, []);
-
+// --- WOMEN'S DAY BANNER (subtle glassmorphism) ---
+const WomensDayBanner: React.FC = () => {
     return (
-        <div className="fixed inset-0 pointer-events-none overflow-hidden z-[99]">
-            {fireworks.map((fw) => (
-                <div
-                    key={fw.id}
-                    className="absolute animate-firework"
-                    style={{
-                        left: `${fw.x}%`,
-                        top: `${fw.y}%`,
-                        width: fw.size,
-                        height: fw.size,
-                    }}
-                >
-                    {/* Firework particles */}
-                    {[...Array(12)].map((_, i) => (
-                        <div
-                            key={i}
-                            className="absolute w-2 h-2 rounded-full animate-particle"
-                            style={{
-                                background: fw.color,
-                                boxShadow: `0 0 6px ${fw.color}, 0 0 12px ${fw.color}`,
-                                transform: `rotate(${i * 30}deg) translateY(-${fw.size / 2}px)`,
-                                left: '50%',
-                                top: '50%',
-                                animationDelay: `${i * 0.05}s`
-                            }}
-                        />
-                    ))}
-                    {/* Center burst */}
-                    <div
-                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full animate-burst"
-                        style={{
-                            background: fw.color,
-                            boxShadow: `0 0 20px ${fw.color}, 0 0 40px ${fw.color}`
-                        }}
-                    />
-                </div>
-            ))}
-        </div>
-    );
-};
-
-// --- TET BANNER ---
-const TetBanner: React.FC = () => {
-    return (
-        <div className="hidden md:block fixed top-4 left-1/2 -translate-x-1/2 z-[101] animate-bounce-slow">
-            <div className="bg-gradient-to-r from-red-600 via-red-500 to-red-600 px-8 py-3 rounded-full shadow-2xl shadow-red-500/30 border-2 border-yellow-400">
-                <div className="flex items-center gap-3">
-                    <span className="text-2xl">🧧</span>
+        <div className="hidden md:block fixed top-3 left-1/2 -translate-x-1/2 z-[101] animate-bounce-slow">
+            <div className="relative bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl px-6 py-2.5 rounded-full shadow-lg shadow-pink-500/10 border border-pink-200/60 dark:border-pink-500/20">
+                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-pink-100/40 via-rose-100/30 to-fuchsia-100/40 dark:from-pink-500/5 dark:via-rose-500/5 dark:to-fuchsia-500/5" />
+                <div className="relative flex items-center gap-2.5">
+                    <span className="text-base">🌸</span>
                     <div className="text-center">
-                        <div className="text-yellow-300 font-bold text-lg tracking-wide">CHÚC MỪNG NĂM MỚI 2026</div>
-                        <div className="text-yellow-100 text-xs">Năm Bính Ngọ - An Khang Thịnh Vượng</div>
+                        <div className="text-sm font-bold bg-gradient-to-r from-pink-500 via-rose-500 to-fuchsia-500 bg-clip-text text-transparent tracking-wide">
+                            Chào mừng ngày 8/3
+                        </div>
+                        <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium -mt-0.5">
+                            Ngày Quốc tế Phụ nữ 💐
+                        </div>
                     </div>
-                    <span className="text-2xl">🧧</span>
+                    <span className="text-base">🌷</span>
                 </div>
             </div>
         </div>
     );
 };
 
-// --- CÂU ĐỐI TẾT (Vietnamese Tet Couplets) ---
-const CauDoi: React.FC = () => {
-    // Couplet texts (shorter for compact display)
-    const leftText = "PHÚC";
-    const rightText = "LỘC";
-
+// --- SIDE FLOWER DECORATIONS ---
+const FlowerCorners: React.FC = () => {
     return (
         <div className="hidden md:block">
-            {/* Left Couplet - Bottom Left */}
-            <div className="fixed bottom-20 left-2 z-[50] opacity-80 hover:opacity-100 transition-opacity">
-                <div className="relative scale-75 origin-bottom-left">
-                    {/* Decorative top */}
-                    <div className="w-8 h-4 bg-gradient-to-b from-yellow-500 to-yellow-600 rounded-t-md mx-auto shadow-md border border-yellow-400" />
-
-                    {/* Main banner */}
-                    <div className="w-8 bg-gradient-to-b from-red-600 via-red-700 to-red-800 py-3 shadow-lg border-x border-yellow-500/50 flex flex-col items-center">
-                        <div
-                            className="text-yellow-300 font-bold text-xs"
-                            style={{ textShadow: '0 0 8px rgba(250, 204, 21, 0.6)' }}
-                        >
-                            {leftText.split('').map((char, i) => (
-                                <div key={i} className="mb-1">{char}</div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Decorative bottom */}
-                    <div className="w-8 h-3 bg-gradient-to-b from-yellow-600 to-yellow-500 rounded-b-md mx-auto shadow-md border border-yellow-400" />
-
-                    {/* Tassel */}
-                    <div className="flex justify-center gap-0.5 mt-0.5">
-                        <div className="w-0.5 h-3 bg-red-400 rounded-full" />
-                        <div className="w-0.5 h-4 bg-red-400 rounded-full" />
-                        <div className="w-0.5 h-3 bg-red-400 rounded-full" />
-                    </div>
-                </div>
+            <div className="fixed bottom-20 left-3 z-[50] opacity-50 hover:opacity-80 transition-opacity">
+                <div className="text-2xl animate-[sway_3s_ease-in-out_infinite]">💐</div>
             </div>
-
-            {/* Right Couplet - Bottom Right */}
-            <div className="fixed bottom-20 right-2 z-[50] opacity-80 hover:opacity-100 transition-opacity">
-                <div className="relative scale-75 origin-bottom-right">
-                    {/* Decorative top */}
-                    <div className="w-8 h-4 bg-gradient-to-b from-yellow-500 to-yellow-600 rounded-t-md mx-auto shadow-md border border-yellow-400" />
-
-                    {/* Main banner */}
-                    <div className="w-8 bg-gradient-to-b from-red-600 via-red-700 to-red-800 py-3 shadow-lg border-x border-yellow-500/50 flex flex-col items-center">
-                        <div
-                            className="text-yellow-300 font-bold text-xs"
-                            style={{ textShadow: '0 0 8px rgba(250, 204, 21, 0.6)' }}
-                        >
-                            {rightText.split('').map((char, i) => (
-                                <div key={i} className="mb-1">{char}</div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Decorative bottom */}
-                    <div className="w-8 h-3 bg-gradient-to-b from-yellow-600 to-yellow-500 rounded-b-md mx-auto shadow-md border border-yellow-400" />
-
-                    {/* Tassel */}
-                    <div className="flex justify-center gap-0.5 mt-0.5">
-                        <div className="w-0.5 h-3 bg-red-400 rounded-full" />
-                        <div className="w-0.5 h-4 bg-red-400 rounded-full" />
-                        <div className="w-0.5 h-3 bg-red-400 rounded-full" />
-                    </div>
-                </div>
-            </div>
+            {/* <div className="fixed bottom-20 right-3 z-[50] opacity-50 hover:opacity-80 transition-opacity">
+                <div className="text-2xl animate-[sway_3.5s_ease-in-out_infinite]">🌹</div>
+            </div> */}
         </div>
     );
 };
@@ -264,9 +127,8 @@ const TetDecorations: React.FC = () => {
     return (
         <>
             <FallingPetals />
-            <Fireworks />
-            <TetBanner />
-            <CauDoi />
+            <WomensDayBanner />
+            <FlowerCorners />
         </>
     );
 };

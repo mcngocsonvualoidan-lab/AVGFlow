@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, CheckSquare, GitGraph, Users, FileBarChart, Menu, Settings, Gift, Sparkles, CircleDollarSign, Calendar, FileCheck, Grid, Megaphone, Wallet, CalendarCheck } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, GitGraph, Users, FileBarChart, Menu, Settings, Gift, Sparkles, CircleDollarSign, Calendar, FileCheck, Grid, Megaphone, Wallet, CalendarCheck, Package, Gamepad2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+
 
 interface SidebarProps {
     collapsed: boolean;
@@ -19,25 +20,18 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
     const location = useLocation();
     const activeTab = location.pathname.substring(1) || 'dashboard'; // e.g. /tasks -> tasks
 
-    // ... logic unchanged
-    const { currentUser } = useAuth();
-    const { users, birthdayWishes, showTetDecor, toggleTetDecor } = useData();
+    const { currentUser, isAdminView } = useAuth();
+    const { users, birthdayWishes, showTetDecor, toggleTetDecor, pendingOrdersCount } = useData();
 
-    // Define appUser here to be accessible by all hooks
     const appUser = useMemo(() => {
         if (!currentUser) return null;
         return users.find(u => u.email === currentUser.email);
     }, [currentUser, users]);
 
-
-
     const unreadWishesCount = useMemo(() => {
-        if (!currentUser) return 0;
-        const appUser = users.find(u => u.email === currentUser.email);
         if (!appUser) return 0;
-
         return birthdayWishes.filter(w => w.toUserId === appUser.id && !w.isRead).length;
-    }, [currentUser, users, birthdayWishes]);
+    }, [appUser, birthdayWishes]);
 
     // Define Menu Groups
     const menuGroups = [
@@ -49,6 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
         ],
         // Group 2: Management
         [
+            { id: 'orders', icon: Package, label: 'Đơn hàng' },
             { id: 'tasks', icon: CheckSquare, label: t.sidebar.tasks },
             { id: 'workflow', icon: GitGraph, label: t.sidebar.workflow },
             { id: 'reports', icon: FileBarChart, label: t.sidebar.reports },
@@ -69,15 +64,20 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
 
     // Always show Love Message Box
     menuGroups.push([
-        { id: 'my-wishes', icon: Gift, label: 'Thông điệp yêu thương' }
+        { id: 'my-wishes', icon: Gift, label: 'Thông điệp yêu thương' },
+        { id: 'minigame', icon: Gamepad2, label: 'Minigame' }
     ]);
 
     // Filter Menu based on Permissions (RBAC)
     const filteredMenuGroups = useMemo(() => {
-        // 1. If not logged in or Super Admin, show all
+        // 1. If not logged in (Guest view simulation)
         if (!appUser) return menuGroups;
+
+        // 2. Super Admin check - conditionally respect isAdminView toggle
         const isSuperAdmin = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'].includes(appUser.email) || appUser.isAdmin;
-        if (isSuperAdmin) return menuGroups;
+        
+        // ONLY show all if they are a super admin AND they have AdminView enabled
+        if (isSuperAdmin && isAdminView) return menuGroups;
 
         // 2. Permission Mapping
         const keyMap: Record<string, string> = {
@@ -96,7 +96,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
         return menuGroups.map(group => {
             return group.filter(item => {
                 // Special items override
-                if (item.id === 'my-wishes') return true;
+                if (item.id === 'my-wishes' || item.id === 'minigame') return true;
 
                 // Check specific permission
                 const permKey = keyMap[item.id];
@@ -202,6 +202,16 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
                                                 {!collapsed && unreadWishesCount}
                                             </span>
                                         )}
+
+                                        {/* Pending Orders Badge */}
+                                        {item.id === 'orders' && pendingOrdersCount > 0 && (
+                                            <span className={clsx(
+                                                "flex items-center justify-center bg-red-500 text-white text-[10px] font-black rounded-full shadow-sm shadow-red-500/30",
+                                                (collapsed && !mobileOpen) ? "absolute -top-0.5 -right-0.5 w-4 h-4 p-0 text-[8px]" : "absolute right-3 min-w-[20px] h-5 px-1"
+                                            )}>
+                                                {pendingOrdersCount}
+                                            </span>
+                                        )}
                                     </Link>
                                 );
                             })}
@@ -212,25 +222,25 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
 
             {/* Collapse Toggle & Footer settings */}
             <div className="p-4 pb-24 md:pb-4 border-t border-border space-y-2 shrink-0">
-                {/* Tet Decoration Toggle */}
+                {/* 8/3 Women's Day Decoration Toggle */}
                 <button
                     onClick={toggleTetDecor}
                     className={clsx(
                         "w-full flex items-center p-2 rounded-lg transition-all duration-200 group",
                         collapsed ? "justify-center" : "justify-between px-3",
-                        showTetDecor ? "text-yellow-500 bg-yellow-500/5 border border-yellow-500/20" : "text-text-muted hover:text-text-main hover:bg-bg-elevated border border-transparent"
+                        showTetDecor ? "text-pink-500 bg-pink-500/5 border border-pink-500/20" : "text-text-muted hover:text-text-main hover:bg-bg-elevated border border-transparent"
                     )}
-                    title={collapsed ? "Bật/Tắt không khí Tết" : undefined}
+                    title={collapsed ? "Bật/Tắt Chào mừng 8/3" : undefined}
                 >
-                    <div className={clsx("flex items-center gap-3 transition-colors", showTetDecor && "text-yellow-500")}>
+                    <div className={clsx("flex items-center gap-3 transition-colors", showTetDecor && "text-pink-500")}>
                         <Sparkles size={20} className={clsx("shrink-0", showTetDecor && "animate-pulse")} />
-                        <span className={clsx("whitespace-nowrap transition-all duration-300 font-medium text-sm", collapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100 w-auto", showTetDecor && "bg-gradient-to-r from-yellow-500 to-amber-500 bg-clip-text text-transparent font-bold")}>
-                            Không khí Tết
+                        <span className={clsx("whitespace-nowrap transition-all duration-300 font-medium text-sm", collapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100 w-auto", showTetDecor && "bg-gradient-to-r from-pink-500 to-rose-500 bg-clip-text text-transparent font-bold")}>
+                            Chào mừng 8/3
                         </span>
                     </div>
 
                     {!collapsed && (
-                        <div className={clsx("w-8 h-4 rounded-full relative transition-colors border border-border shrink-0", showTetDecor ? "bg-red-500 shadow-sm border-red-500" : "bg-slate-300 dark:bg-slate-700")}>
+                        <div className={clsx("w-8 h-4 rounded-full relative transition-colors border border-border shrink-0", showTetDecor ? "bg-pink-500 shadow-sm border-pink-500" : "bg-slate-300 dark:bg-slate-700")}>
                             <div className={clsx("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all shadow-sm", showTetDecor ? "left-[18px]" : "left-[3px]")} />
                         </div>
                     )}

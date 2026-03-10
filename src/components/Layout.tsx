@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import { CheckSquare, Megaphone, CalendarCheck, CircleDollarSign, Calendar, Home } from 'lucide-react';
+import { Package, Megaphone, CalendarCheck, CircleDollarSign, Calendar, Home } from 'lucide-react';
 import TetDecorations from './TetDecorations';
 import ToastContainer from './ToastContainer';
 import { useData } from '../context/DataContext';
 import { clsx } from 'clsx';
-import RealtimeChatWidget from './RealtimeChatWidget';
+// import RealtimeChatWidget from './RealtimeChatWidget';
 import InvitationModal from './InvitationModal';
+import ConfessionWidget from './ConfessionWidget';
+import ScrollToTopButton from './ScrollToTopButton';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -17,7 +19,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
     const [collapsed, setCollapsed] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const { showTetDecor } = useData();
+    const { showTetDecor, pendingOrdersCount } = useData();
     const location = useLocation();
     const mainRef = React.useRef<HTMLElement>(null);
 
@@ -29,7 +31,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     const bottomNavItems = [
         { id: 'dashboard', label: 'Tổng quan', icon: Home, path: '/dashboard' },
-        { id: 'tasks', label: 'Nhiệm vụ', icon: CheckSquare, path: '/tasks' },
+        { id: 'orders', label: 'Đơn hàng', icon: Package, path: '/orders' },
         { id: 'executive-directives', label: 'Điều hành', icon: Megaphone, path: '/executive-directives' },
         { id: 'timesheet', label: 'Chấm công', icon: CalendarCheck, path: '/timesheet' },
         { id: 'income', label: 'Thu nhập', icon: CircleDollarSign, path: '/income' },
@@ -89,7 +91,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             {showTetDecor && <TetDecorations />}
 
             {/* INTERNAL CHAT WIDGET */}
-            <RealtimeChatWidget />
+            {/* <RealtimeChatWidget /> */}
+
+            {/* CONFESSION WIDGET (Global) */}
+            <ConfessionWidget />
+
+            {/* SCROLL TO TOP (Global) */}
+            <ScrollToTopButton scrollRef={mainRef} />
 
             {/* SPECIAL INVITATION POPUP */}
             <InvitationModal />
@@ -115,6 +123,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                     : "text-slate-400 dark:text-slate-500 group-hover:bg-slate-50 dark:group-hover:bg-white/5 w-10 h-10"
                             )}>
                                 <item.icon size={isActive ? 24 : 22} strokeWidth={isActive ? 2 : 2} />
+                                {item.id === 'orders' && pendingOrdersCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full shadow-lg shadow-red-500/40 animate-pulse border border-white dark:border-slate-900">
+                                        {pendingOrdersCount}
+                                    </span>
+                                )}
                             </div>
                             <span className={clsx(
                                 "text-[10px] leading-tight transition-all duration-300 text-center",

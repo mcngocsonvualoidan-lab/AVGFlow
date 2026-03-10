@@ -1,0 +1,573 @@
+/* ==================== WEREWOLF GOTHIC THEME ====================
+   Inspired by 19th century European villages, woodcut art,
+   and the age of superstition and mystery.
+   — Enhanced with luminous glow effects —
+   ============================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&display=swap');
+
+/* Gothic wrapper — all werewolf game content inherits these styles */
+.werewolf-gothic {
+    --ww-bg-primary: #0a0a0f;
+    --ww-bg-secondary: #12111a;
+    --ww-bg-card: #1a1825;
+    --ww-bg-elevated: #221f30;
+    --ww-bg-input: #16141f;
+    --ww-border: rgba(139, 92, 58, 0.25);
+    --ww-border-accent: rgba(180, 83, 40, 0.4);
+    --ww-text-primary: #e8dcc8;
+    --ww-text-secondary: #a89b85;
+    --ww-text-muted: #6b5f50;
+    --ww-text-accent: #c9873a;
+    --ww-blood: #8b1a1a;
+    --ww-blood-bright: #c62828;
+    --ww-gold: #c9873a;
+    --ww-gold-dim: #8b6914;
+    --ww-moon: #e8d5a3;
+    --ww-night-blue: #1a1a3e;
+    --ww-parchment: #d4c5a0;
+    --ww-shadow: rgba(0, 0, 0, 0.6);
+    --ww-glow-gold: rgba(201, 135, 58, 0.35);
+    --ww-glow-blood: rgba(139, 26, 26, 0.4);
+    --ww-glow-moon: rgba(232, 213, 163, 0.3);
+    --ww-glow-cyan: rgba(56, 189, 248, 0.25);
+
+    font-family: 'Playfair Display', 'Georgia', serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--ww-text-primary);
+    background:
+        radial-gradient(ellipse at 15% 5%, rgba(160, 30, 30, 0.20) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 15%, rgba(40, 30, 100, 0.18) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 95%, rgba(15, 80, 70, 0.14) 0%, transparent 55%),
+        linear-gradient(160deg, #12102a 0%, #221420 35%, #0f1a20 70%, #151028 100%);
+    min-height: 100%;
+    position: relative;
+    isolation: isolate;
+}
+
+/* Spooky gothic texture overlay — bare branches & scratchy crosses */
+.werewolf-gothic::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cpath d='M100 0 L100 60 L80 90 M100 60 L120 85 M100 40 L75 55 M100 40 L130 50' fill='none' stroke='rgba(139,92,58,0.10)' stroke-width='1.5'/%3E%3Cpath d='M0 150 L40 120 L60 130 L90 100' fill='none' stroke='rgba(120,70,35,0.08)' stroke-width='1.2'/%3E%3Cpath d='M160 180 L180 150 L200 160' fill='none' stroke='rgba(100,60,30,0.07)' stroke-width='1'/%3E%3Cpath d='M30 30 L50 50 M50 30 L30 50' fill='none' stroke='rgba(160,30,30,0.09)' stroke-width='1'/%3E%3Cpath d='M150 10 L165 25 M165 10 L150 25' fill='none' stroke='rgba(160,30,30,0.07)' stroke-width='0.8'/%3E%3Cpath d='M10 0 Q15 40 10 80 Q8 100 12 120 Q10 140 15 160' fill='none' stroke='rgba(160,30,30,0.06)' stroke-width='1'/%3E%3Cpath d='M190 50 Q185 90 190 130 Q192 150 188 170' fill='none' stroke='rgba(160,30,30,0.05)' stroke-width='0.8'/%3E%3Ccircle cx='40' cy='180' r='8' fill='none' stroke='rgba(139,26,26,0.06)' stroke-width='0.6'/%3E%3Ccircle cx='170' cy='60' r='5' fill='none' stroke='rgba(139,26,26,0.05)' stroke-width='0.5'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Atmospheric fog glow — enhanced with stronger blood/teal zones */
+.werewolf-gothic::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background:
+        radial-gradient(ellipse at 25% 85%, rgba(160, 30, 30, 0.18) 0%, transparent 50%),
+        radial-gradient(ellipse at 75% 15%, rgba(40, 30, 100, 0.16) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(15, 80, 70, 0.10) 0%, transparent 60%),
+        radial-gradient(circle at 10% 30%, rgba(160, 30, 30, 0.12) 0%, transparent 35%),
+        radial-gradient(circle at 90% 70%, rgba(40, 30, 100, 0.10) 0%, transparent 35%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.werewolf-gothic>* {
+    position: relative;
+    z-index: 1;
+}
+
+/* Force ALL text inside .werewolf-gothic to use Playfair Display */
+.werewolf-gothic,
+.werewolf-gothic * {
+    color: inherit;
+    font-family: 'Playfair Display', 'Georgia', serif !important;
+}
+
+.werewolf-gothic span,
+.werewolf-gothic p,
+.werewolf-gothic div,
+.werewolf-gothic button,
+.werewolf-gothic label,
+.werewolf-gothic input,
+.werewolf-gothic textarea,
+.werewolf-gothic h1,
+.werewolf-gothic h2,
+.werewolf-gothic h3,
+.werewolf-gothic h4,
+.werewolf-gothic a {
+    color: var(--ww-text-primary);
+    font-family: 'Playfair Display', 'Georgia', serif !important;
+}
+
+/* ==================== Typography ==================== */
+.ww-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    color: var(--ww-text-accent) !important;
+    text-shadow:
+        0 0 16px var(--ww-glow-gold),
+        0 0 50px rgba(201, 135, 58, 0.25),
+        0 2px 10px rgba(139, 26, 26, 0.4);
+    letter-spacing: 0.04em;
+}
+
+.ww-heading {
+    font-family: 'Playfair Display', serif;
+    font-weight: 600;
+    color: #e8d5a3 !important;
+    text-shadow: 0 0 14px rgba(232, 213, 163, 0.4), 0 0 35px rgba(201, 135, 58, 0.2);
+    letter-spacing: 0.03em;
+}
+
+.ww-body {
+    font-family: 'Playfair Display', serif;
+    color: var(--ww-text-secondary);
+    line-height: 1.6;
+}
+
+/* ==================== Glassmorphism Panels & Cards ==================== */
+.ww-panel {
+    background: linear-gradient(135deg, rgba(26, 24, 37, 0.55), rgba(18, 17, 26, 0.6));
+    border: 1px solid rgba(139, 92, 58, 0.2);
+    border-radius: 12px;
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.4),
+        0 0 1px rgba(201, 135, 58, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.ww-panel-blood {
+    background: linear-gradient(135deg, rgba(35, 10, 10, 0.5), rgba(25, 8, 8, 0.55));
+    border: 1px solid rgba(139, 26, 26, 0.3);
+    border-radius: 12px;
+    box-shadow:
+        0 8px 32px rgba(139, 26, 26, 0.12),
+        0 0 15px var(--ww-glow-blood),
+        inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.ww-panel-parchment {
+    background: linear-gradient(135deg, rgba(212, 197, 160, 0.06), rgba(168, 155, 133, 0.03));
+    border: 1px solid rgba(212, 197, 160, 0.12);
+    border-radius: 12px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+/* Glassmorphism glass card — use on elevated content blocks */
+.ww-glass {
+    background: linear-gradient(135deg, rgba(26, 24, 37, 0.4), rgba(14, 12, 20, 0.45));
+    border: 1px solid rgba(139, 92, 58, 0.15);
+    border-radius: 14px;
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+
+/* ==================== Separated Chat Boxes ==================== */
+.ww-chat-box {
+    background: linear-gradient(135deg, rgba(18, 17, 26, 0.5), rgba(12, 11, 18, 0.55));
+    border: 1px solid rgba(139, 92, 58, 0.18);
+    border-radius: 14px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+}
+
+.ww-chat-box-wolf {
+    background: linear-gradient(135deg, rgba(26, 8, 8, 0.5), rgba(18, 5, 5, 0.55));
+    border: 1px solid rgba(139, 26, 26, 0.25);
+    border-radius: 14px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 4px 24px rgba(139, 26, 26, 0.1), 0 0 12px var(--ww-glow-blood), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    overflow: hidden;
+}
+
+/* ==================== GLOW EFFECTS — Enhanced Intensity ==================== */
+/* Gold glow for headings and accents */
+.ww-glow-gold {
+    text-shadow: 0 0 14px rgba(201, 135, 58, 0.6), 0 0 40px rgba(201, 135, 58, 0.25), 0 0 60px rgba(201, 135, 58, 0.1);
+}
+
+/* Blood glow for danger/wolf elements */
+.ww-glow-blood {
+    text-shadow: 0 0 14px rgba(198, 40, 40, 0.6), 0 0 35px rgba(139, 26, 26, 0.35), 0 0 60px rgba(139, 26, 26, 0.15);
+}
+
+/* Moon glow for night elements */
+.ww-glow-moon {
+    text-shadow: 0 0 16px rgba(232, 213, 163, 0.5), 0 0 40px rgba(232, 213, 163, 0.25), 0 0 60px rgba(232, 213, 163, 0.1);
+}
+
+/* Box glow variants — boosted */
+.ww-box-glow-gold {
+    box-shadow: 0 0 20px rgba(201, 135, 58, 0.5), 0 0 45px rgba(201, 135, 58, 0.2), 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.ww-box-glow-blood {
+    box-shadow: 0 0 20px rgba(139, 26, 26, 0.55), 0 0 45px rgba(139, 26, 26, 0.25), 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.ww-box-glow-moon {
+    box-shadow: 0 0 20px rgba(232, 213, 163, 0.4), 0 0 45px rgba(232, 213, 163, 0.15), 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* ==================== Luminous Buttons ==================== */
+.ww-btn-primary {
+    font-family: 'Playfair Display', serif;
+    font-weight: 600;
+    background: linear-gradient(135deg, #8b1a1a, #6b1414);
+    color: var(--ww-parchment) !important;
+    border: 1px solid rgba(180, 40, 40, 0.5);
+    border-radius: 10px;
+    padding: 10px 24px;
+    text-shadow: 0 0 8px rgba(255, 200, 200, 0.3), 0 1px 2px rgba(0, 0, 0, 0.5);
+    box-shadow:
+        0 4px 12px rgba(139, 26, 26, 0.3),
+        0 0 20px var(--ww-glow-blood),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transition: all 0.2s ease;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+}
+
+.ww-btn-primary:hover {
+    background: linear-gradient(135deg, #a02020, #8b1a1a);
+    box-shadow:
+        0 6px 24px rgba(139, 26, 26, 0.5),
+        0 0 35px var(--ww-glow-blood);
+    transform: translateY(-1px);
+}
+
+.ww-btn-secondary {
+    font-family: 'Playfair Display', serif;
+    font-weight: 600;
+    background: linear-gradient(135deg, #221f30, #1a1825);
+    color: var(--ww-text-accent) !important;
+    border: 1px solid var(--ww-border-accent);
+    border-radius: 10px;
+    padding: 10px 24px;
+    text-shadow: 0 0 6px var(--ww-glow-gold), 0 1px 2px rgba(0, 0, 0, 0.5);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.3),
+        0 0 12px rgba(201, 135, 58, 0.08);
+    transition: all 0.2s ease;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+}
+
+.ww-btn-secondary:hover {
+    background: linear-gradient(135deg, #2d2940, #221f30);
+    border-color: var(--ww-gold);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 0 20px var(--ww-glow-gold);
+    transform: translateY(-1px);
+}
+
+.ww-btn-night {
+    font-family: 'Playfair Display', serif;
+    font-weight: 600;
+    background: linear-gradient(135deg, #1a1a3e, #12122e);
+    color: var(--ww-moon) !important;
+    border: 1px solid rgba(232, 213, 163, 0.25);
+    border-radius: 10px;
+    padding: 10px 24px;
+    text-shadow: 0 0 8px var(--ww-glow-moon);
+    box-shadow:
+        0 4px 12px rgba(26, 26, 62, 0.4),
+        0 0 20px rgba(232, 213, 163, 0.08);
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.ww-btn-night:hover {
+    background: linear-gradient(135deg, #24245a, #1a1a3e);
+    box-shadow:
+        0 6px 20px rgba(26, 26, 62, 0.5),
+        0 0 35px rgba(232, 213, 163, 0.15);
+}
+
+/* ==================== Player Cards ==================== */
+.ww-player-card {
+    background: var(--ww-bg-card);
+    border: 1px solid var(--ww-border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.ww-player-card:hover {
+    border-color: var(--ww-border-accent);
+    background: var(--ww-bg-elevated);
+    box-shadow: 0 0 12px var(--ww-glow-gold);
+}
+
+.ww-player-card.selected {
+    border-color: var(--ww-blood-bright);
+    background: rgba(139, 26, 26, 0.15);
+    box-shadow: 0 0 18px var(--ww-glow-blood);
+}
+
+/* ==================== Two-Column Layout ==================== */
+.ww-game-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+@media (min-width: 768px) {
+    .ww-game-layout {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 24px;
+        align-items: start;
+    }
+}
+
+/* Card column: sticky on desktop */
+.ww-card-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+@media (min-width: 768px) {
+    .ww-card-column {
+        position: sticky;
+        top: 24px;
+    }
+}
+
+/* Content column */
+.ww-content-column {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ==================== Stats Section ==================== */
+.ww-stats-section {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(139, 92, 58, 0.15);
+}
+
+.ww-stat-bar {
+    height: 8px;
+    border-radius: 4px;
+    background: rgba(26, 24, 37, 0.8);
+    overflow: hidden;
+    position: relative;
+}
+
+.ww-stat-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease-out;
+}
+
+.ww-stat-bar-fill.win {
+    background: linear-gradient(90deg, #c9873a, #e8b94a);
+    box-shadow: 0 0 8px var(--ww-glow-gold);
+}
+
+.ww-stat-bar-fill.loss {
+    background: linear-gradient(90deg, #6b1414, #8b1a1a);
+    box-shadow: 0 0 8px var(--ww-glow-blood);
+}
+
+.ww-leaderboard-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(26, 24, 37, 0.6);
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.ww-leaderboard-row:hover {
+    border-color: var(--ww-border);
+    background: rgba(34, 31, 48, 0.8);
+}
+
+.ww-leaderboard-row.top-1 {
+    border-color: rgba(201, 135, 58, 0.4);
+    box-shadow: 0 0 12px var(--ww-glow-gold);
+}
+
+.ww-leaderboard-row.top-2 {
+    border-color: rgba(192, 192, 192, 0.3);
+    box-shadow: 0 0 8px rgba(192, 192, 192, 0.1);
+}
+
+.ww-leaderboard-row.top-3 {
+    border-color: rgba(205, 127, 50, 0.3);
+    box-shadow: 0 0 8px rgba(205, 127, 50, 0.1);
+}
+
+/* ==================== Chat ==================== */
+.ww-chat {
+    background: linear-gradient(135deg, var(--ww-bg-card), var(--ww-bg-secondary));
+    border: 1px solid var(--ww-border);
+    border-radius: 14px;
+}
+
+.ww-chat-header {
+    background: linear-gradient(90deg, rgba(139, 26, 26, 0.15), transparent);
+    border-bottom: 1px solid var(--ww-border);
+    padding: 8px 12px;
+}
+
+.ww-chat-input {
+    background: var(--ww-bg-input);
+    border: 1px solid var(--ww-border);
+    color: var(--ww-text-primary);
+    font-family: 'Playfair Display', serif;
+    border-radius: 10px;
+}
+
+.ww-chat-input::placeholder {
+    color: var(--ww-text-muted);
+}
+
+.ww-chat-input:focus {
+    border-color: var(--ww-border-accent);
+    box-shadow: 0 0 12px rgba(201, 135, 58, 0.15);
+}
+
+/* ==================== Dividers ==================== */
+.ww-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--ww-border), transparent);
+    margin: 16px 0;
+}
+
+/* ==================== Animations ==================== */
+@keyframes ww-flicker {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.85;
+    }
+}
+
+@keyframes ww-blood-pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 8px rgba(139, 26, 26, 0.3);
+    }
+
+    50% {
+        box-shadow: 0 0 25px rgba(139, 26, 26, 0.6);
+    }
+}
+
+@keyframes ww-moon-glow {
+
+    0%,
+    100% {
+        text-shadow: 0 0 10px rgba(232, 213, 163, 0.3);
+    }
+
+    50% {
+        text-shadow: 0 0 30px rgba(232, 213, 163, 0.7);
+    }
+}
+
+@keyframes ww-pulse-glow {
+
+    0%,
+    100% {
+        opacity: 0.7;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+.ww-flicker {
+    animation: ww-flicker 3s ease-in-out infinite;
+}
+
+.ww-blood-pulse {
+    animation: ww-blood-pulse 2s ease-in-out infinite;
+}
+
+.ww-moon-glow {
+    animation: ww-moon-glow 3s ease-in-out infinite;
+}
+
+.ww-pulse-glow {
+    animation: ww-pulse-glow 2s ease-in-out infinite;
+}
+
+/* ==================== Scrollbar ==================== */
+.werewolf-gothic ::-webkit-scrollbar {
+    width: 6px;
+}
+
+.werewolf-gothic ::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.werewolf-gothic ::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 58, 0.3);
+    border-radius: 3px;
+}
+
+.werewolf-gothic ::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 58, 0.5);
+}
+
+/* ==================== Phase backgrounds ==================== */
+.ww-night-bg {
+    background: radial-gradient(ellipse at top center, #1a1a3e 0%, #0a0a1a 60%, #050507 100%);
+}
+
+.ww-day-bg {
+    background: radial-gradient(ellipse at top center, #1a1520 0%, #0f0d15 60%, #0a0a0f 100%);
+}
+
+/* ==================== Tailwind overrides ==================== */
+.werewolf-gothic [class*="bg-slate-50"] {
+    background-color: rgba(22, 20, 31, 0.8) !important;
+}
+
+.werewolf-gothic [class*="bg-white"] {
+    background-color: rgba(26, 24, 37, 0.9) !important;
+}
+
+.werewolf-gothic [class*="border-slate-200"] {
+    border-color: rgba(139, 92, 58, 0.2) !important;
+}
+
+/* Gothic texture overlay */
+.ww-texture::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cpath d='M40 0L80 40L40 80L0 40Z' fill='none' stroke='rgba(139,92,58,0.04)' stroke-width='1'/%3E%3C/svg%3E");
+}

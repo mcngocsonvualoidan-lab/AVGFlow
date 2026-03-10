@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     MessageCircle, X, Send, Paperclip,
     Trash2, Users, Search, ChevronLeft,
-    CheckCheck, Circle, Plus, Minimize2, Check
+    CheckCheck, Circle, Plus, Minimize2, Check,
+    Smile, CornerUpLeft
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -28,6 +29,8 @@ const RealtimeChatWidget: React.FC = () => {
     const [selectedUsersForGroup, setSelectedUsersForGroup] = useState<string[]>([]);
     const [newGroupName, setNewGroupName] = useState('');
     const [replyingTo, setReplyingTo] = useState<RTChatMessage | null>(null);
+    const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null); // For mobile/click interaction
+
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const previousChatsRef = useRef<RTChatRoom[]>([]);
@@ -245,6 +248,23 @@ const RealtimeChatWidget: React.FC = () => {
     };
 
     // --- HELPERS ---
+    const getGroupedReactions = (reactions?: { [uid: string]: string }) => {
+        if (!reactions) return [];
+        const groups: { emoji: string, count: number, users: string[] }[] = [];
+        
+        Object.entries(reactions).forEach(([uid, emoji]) => {
+            const userName = users.find(u => u.id === uid)?.name || 'Người dùng';
+            const group = groups.find(g => g.emoji === emoji);
+            if (group) {
+                group.count++;
+                group.users.push(userName);
+            } else {
+                groups.push({ emoji, count: 1, users: [userName] });
+            }
+        });
+        return groups;
+    };
+
     const getChatName = (chat: RTChatRoom) => {
         if (chat.type === 'group') return chat.groupName;
         const otherId = chat.participantsList.find(id => id !== currentUser?.uid);
@@ -533,35 +553,26 @@ const RealtimeChatWidget: React.FC = () => {
 
                                         <div key={msg.id} className={clsx("flex w-full mb-4", isMe ? "justify-end" : "justify-start")}>
                                             <div className={clsx("flex gap-2 max-w-[85%] group relative", isMe ? "flex-row-reverse" : "flex-row")}>
-                                                {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                                    <div className={clsx(
-                                                        "absolute -bottom-2 z-10 flex -space-x-1",
-                                                        isMe ? "right-0" : "left-10"
-                                                    )}>
-                                                        {Object.entries(msg.reactions).map(([uid, emoji], idx) => (
-                                                            <span key={`${uid}-${idx}`} className="bg-slate-700 border border-slate-900 rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-sm">
-                                                                {emoji}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-
                                                 {!isMe && (
                                                     <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 mt-1" title={sender?.name}>
                                                         <img src={sender?.avatar || `https://ui-avatars.com/api/?name=User`} className="w-full h-full object-cover" />
                                                     </div>
                                                 )}
 
-                                                <div id={`msg-${msg.id}`} className={clsx(
-                                                    "p-2.5 rounded-2xl text-sm leading-relaxed break-words shadow-sm relative group/bubble min-w-[120px] transition-colors duration-500",
-                                                    isMe ? "bg-indigo-600 text-white rounded-tr-none text-right" : "bg-slate-800 text-slate-200 rounded-tl-none border border-white/5 text-left"
-                                                )}>
+                                                <div id={`msg-${msg.id}`} 
+                                                    className={clsx(
+                                                        "p-2.5 rounded-2xl text-sm leading-relaxed break-words shadow-sm relative group/bubble min-w-[120px] transition-colors duration-500 cursor-pointer",
+                                                        isMe ? "bg-indigo-600 text-white rounded-tr-none text-right" : "bg-slate-800 text-slate-200 rounded-tl-none border border-white/5 text-left"
+                                                    )}
+                                                    onClick={() => setSelectedMsgId(selectedMsgId === msg.id ? null : msg.id)}
+                                                >
                                                     {msg.replyTo && (
                                                         <div className={clsx(
                                                             "mb-2 p-2 rounded bg-black/20 border-l-2 border-white/30 text-xs flex flex-col cursor-pointer opacity-80 hover:opacity-100",
                                                             isMe ? "text-right" : "text-left"
                                                         )}
-                                                            onClick={() => {
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
                                                                 const el = document.getElementById(`msg-${msg.replyTo?.id}`);
                                                                 el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                                                 el?.classList.add('bg-white/10');
@@ -598,24 +609,27 @@ const RealtimeChatWidget: React.FC = () => {
                                                         )}
                                                     </div>
 
+                                                    {/* Floating Action Menu */}
                                                     <div className={clsx(
-                                                        "absolute -top-8 hidden group-hover/bubble:flex items-center gap-1 bg-slate-900 border border-white/10 rounded-full px-2 py-1 shadow-xl z-20",
-                                                        isMe ? "right-0" : "left-0"
+                                                        "absolute flex items-center gap-1 bg-slate-900 border border-white/10 rounded-full px-2 py-1 shadow-xl z-20 transition-all duration-200",
+                                                        "-top-9",
+                                                        isMe ? "right-0" : "left-0",
+                                                        selectedMsgId === msg.id ? "opacity-100 translate-y-0 visible" : "opacity-0 translate-y-1 invisible md:group-hover:opacity-100 md:group-hover:translate-y-0 md:group-hover:visible"
                                                     )}>
                                                         <button
-                                                            onClick={() => setReplyingTo(msg)}
+                                                            onClick={(e) => { e.stopPropagation(); setReplyingTo(msg); setSelectedMsgId(null); }}
                                                             className="hover:bg-white/10 p-1 rounded-full text-slate-400 hover:text-white mr-1 border-r border-white/10 pr-2"
                                                             title="Trả lời"
                                                         >
-                                                            <MessageCircle size={14} style={{ transform: 'scaleX(-1)' }} />
+                                                            <CornerUpLeft size={14} />
                                                         </button>
-                                                        {['👍', '❤️', '😂', '😮', '😢'].map(emoji => (
+                                                        {['👍', '❤️', '😂', '😮', '😢', '🔥'].map(emoji => (
                                                             <button
                                                                 key={emoji}
-                                                                onClick={() => handleReaction(msg.id, emoji)}
+                                                                onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji); setSelectedMsgId(null); }}
                                                                 className={clsx(
-                                                                    "hover:scale-125 transition-transform text-xs",
-                                                                    msg.reactions?.[currentUser.uid] === emoji && "bg-white/10 rounded-full"
+                                                                    "hover:scale-125 transition-transform text-xs p-1 rounded-full",
+                                                                    msg.reactions?.[currentUser.uid] === emoji && "bg-indigo-500/30"
                                                                 )}
                                                             >
                                                                 {emoji}
@@ -623,6 +637,29 @@ const RealtimeChatWidget: React.FC = () => {
                                                         ))}
                                                     </div>
                                                 </div>
+
+                                                {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                                    <div className={clsx(
+                                                        "absolute -bottom-3 z-10 flex flex-wrap gap-1",
+                                                        isMe ? "right-0 justify-end" : "left-10 justify-start"
+                                                    )}>
+                                                        {getGroupedReactions(msg.reactions).map((group, idx) => (
+                                                            <div 
+                                                                key={`${group.emoji}-${idx}`} 
+                                                                className="group/rxn relative bg-slate-700/80 border border-white/10 rounded-full py-0.5 px-1.5 flex items-center gap-1 shadow-sm hover:bg-slate-600 cursor-pointer transition-colors"
+                                                                onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, group.emoji); }}
+                                                            >
+                                                                <span className="text-xs">{group.emoji}</span>
+                                                                <span className="text-[10px] text-slate-300 font-bold">{group.count}</span>
+                                                                
+                                                                {/* Tooltip */}
+                                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden md:group-hover/rxn:block bg-slate-900 text-white text-[10px] py-1 px-2 rounded whitespace-nowrap z-50 shadow-2xl border border-white/10">
+                                                                    {group.users.join(', ')}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )
@@ -672,14 +709,18 @@ const RealtimeChatWidget: React.FC = () => {
 const ChatInput = ({ onSend, onTyping }: { onSend: (text: string, file?: File) => void, onTyping?: (isTyping: boolean) => void }) => {
     const [text, setText] = useState('');
     const [file, setFile] = useState<File | null>(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
     const typingTimeoutRef = useRef<any>(null);
+
+    const COMMON_EMOJIS = ['😊', '😂', '❤️', '👍', '🔥', '😮', '😢', '😍', '👏', '🙏', '✨', '🎉', '💡', '🚀', '✅', '❌'];
 
     const handleSend = () => {
         if (!text.trim() && !file) return;
         onSend(text, file || undefined);
         setText('');
         setFile(null);
+        setShowEmojiPicker(false);
         if (onTyping) {
             onTyping(false);
             if (typingTimeoutRef.current) {
@@ -703,6 +744,11 @@ const ChatInput = ({ onSend, onTyping }: { onSend: (text: string, file?: File) =
         }
     };
 
+    const addEmoji = (emoji: string) => {
+        setText(prev => prev + emoji);
+        // setShowEmojiPicker(false); // keep it open for multiple emojis
+    };
+
     return (
         <div className="relative">
             {file && (
@@ -711,13 +757,39 @@ const ChatInput = ({ onSend, onTyping }: { onSend: (text: string, file?: File) =
                     <button onClick={() => setFile(null)} className="text-slate-400 hover:text-white"><X size={14} /></button>
                 </div>
             )}
+
+            {showEmojiPicker && (
+                <div className="absolute bottom-full right-0 mb-2 p-3 bg-slate-900 border border-white/10 rounded-2xl shadow-2xl grid grid-cols-8 gap-2 z-50 animate-slide-up">
+                    {COMMON_EMOJIS.map(emoji => (
+                        <button
+                            key={emoji}
+                            onClick={() => addEmoji(emoji)}
+                            className="text-xl hover:scale-125 transition-transform p-1"
+                        >
+                            {emoji}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             <div className="flex items-center gap-2 bg-slate-800 rounded-2xl p-1 border border-white/5 focus-within:border-indigo-500/50 transition-colors">
-                <button
-                    onClick={() => fileRef.current?.click()}
-                    className="p-2 text-slate-400 hover:text-indigo-400 transition-colors rounded-full hover:bg-white/5"
-                >
-                    <Paperclip size={18} />
-                </button>
+                <div className="flex items-center">
+                    <button
+                        onClick={() => fileRef.current?.click()}
+                        className="p-2 text-slate-400 hover:text-indigo-400 transition-colors rounded-full hover:bg-white/5"
+                        title="Đính kèm"
+                    >
+                        <Paperclip size={18} />
+                    </button>
+                    <button
+                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        className={clsx("p-2 transition-colors rounded-full hover:bg-white/5", showEmojiPicker ? "text-indigo-400" : "text-slate-400")}
+                        title="Emoji"
+                    >
+                        <Smile size={18} />
+                    </button>
+                </div>
+                
                 <input
                     type="file" ref={fileRef} className="hidden"
                     onChange={(e) => e.target.files && setFile(e.target.files[0])}
@@ -726,6 +798,7 @@ const ChatInput = ({ onSend, onTyping }: { onSend: (text: string, file?: File) =
                 <textarea
                     value={text}
                     onChange={handleTyping}
+                    onFocus={() => setShowEmojiPicker(false)}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
@@ -739,7 +812,7 @@ const ChatInput = ({ onSend, onTyping }: { onSend: (text: string, file?: File) =
                 <button
                     onClick={handleSend}
                     disabled={!text.trim() && !file}
-                    className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 disabled:bg-slate-700 transition-all shrink-0 m-1"
+                    className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-50 disabled:bg-slate-700 transition-all shrink-0 m-1 shadow-lg shadow-indigo-600/20"
                 >
                     <Send size={16} />
                 </button>

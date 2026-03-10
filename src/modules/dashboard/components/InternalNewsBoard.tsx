@@ -5,7 +5,7 @@ import { useData } from '../../../context/DataContext';
 import { db, storage } from '../../../lib/firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, arrayUnion, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Bell, Plus, X, Eye, Calendar, Trash2, Image as ImageIcon, Upload, ChevronUp, ChevronDown } from 'lucide-react';
+import { Bell, Plus, X, Eye, Calendar, Trash2, Image as ImageIcon, Upload, ChevronUp, ChevronDown, Archive, RefreshCcw, History } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface NewsItem {
@@ -19,6 +19,7 @@ interface NewsItem {
     readDetails?: Record<string, string>; // Map of updateId -> timestamp ISO
     bannerUrl?: string;
     eventDate?: string; // Optional event date for countdown
+    isArchived?: boolean;
 }
 
 const CountdownTimer = ({ targetDate }: { targetDate: string }) => {
@@ -46,7 +47,7 @@ const CountdownTimer = ({ targetDate }: { targetDate: string }) => {
 
     if (!timeLeft) return null;
 
-    if (!timeLeft) return null;
+
 
     return (
         <div className="flex items-center gap-1 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-lg px-3 py-2 border border-white/20 w-fit shadow-xl shadow-indigo-500/30 group-hover:scale-105 transition-all">
@@ -74,19 +75,20 @@ const CountdownTimer = ({ targetDate }: { targetDate: string }) => {
 };
 
 const InternalNewsBoard = () => {
-    const { currentUser } = useAuth();
+    const { currentUser, isAdminView } = useAuth();
     const { users } = useData();
     const [news, setNews] = useState<NewsItem[]>([]);
+    const [archivedNews, setArchivedNews] = useState<NewsItem[]>([]);
     const [isExpanded, setIsExpanded] = useState(false); // Show all vs show limited
+    const [showArchived, setShowArchived] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
 
-    // View Details State
     // View Details State
     const [viewingItem, setViewingItem] = useState<NewsItem | null>(null);
     // const [selectedImage, setSelectedImage] = useState<string | null>(null); // Removed in favor of full detail modal
 
-    const isAdmin = users.find(u => u.email === currentUser?.email)?.isAdmin ||
-        ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'].includes(currentUser?.email || '');
+    const isAdmin = (users.find(u => u.email === currentUser?.email)?.isAdmin ||
+        ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'].includes(currentUser?.email || '')) && isAdminView;
 
     // Form State
     const [newTitle, setNewTitle] = useState('');
@@ -102,7 +104,8 @@ const InternalNewsBoard = () => {
         const q = query(collection(db, 'internal_news'), orderBy('createdAt', 'desc'));
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as NewsItem));
-            setNews(items);
+            setNews(items.filter(i => !i.isArchived));
+            setArchivedNews(items.filter(i => i.isArchived));
         });
         return () => unsubscribe();
     }, []);
@@ -139,7 +142,8 @@ const InternalNewsBoard = () => {
                     name: 'Admin'
                 },
                 readBy: [],
-                bannerUrl
+                bannerUrl,
+                isArchived: false
             });
 
             // Dispatch Notifications to All Users
@@ -171,8 +175,26 @@ const InternalNewsBoard = () => {
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!window.confirm("Bạn chắc chắn muốn xóa tin này?")) return;
+    const handleArchive = async (id: string) => {
+        if (!window.confirm("Bạn muốn chuyển tin này vào mục lưu trữ? (Có thể xem lại trong Kho lưu trữ)")) return;
+        try {
+            await updateDoc(doc(db, 'internal_news', id), { isArchived: true });
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    const handleRestore = async (id: string) => {
+        if (!window.confirm("Khôi phục tin này về Bảng tin chính?")) return;
+        try {
+            await updateDoc(doc(db, 'internal_news', id), { isArchived: false });
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    const handlePermanentDelete = async (id: string) => {
+        if (!window.confirm("Hành động này không thể hoàn tác! Bạn có chắc chắn muốn xóa vĩnh viễn?")) return;
         try {
             await deleteDoc(doc(db, 'internal_news', id));
         } catch (error) {
@@ -222,7 +244,8 @@ const InternalNewsBoard = () => {
     const unreadCount = news.filter(n => myId && !n.readBy.includes(myId)).length;
 
     // Display Logic
-    const displayNews = isExpanded ? news : news.slice(0, 3);
+    const currentList = showArchived ? archivedNews : news;
+    const displayNews = (isExpanded || showArchived) ? currentList : currentList.slice(0, 3);
 
     return (
         <div className="w-full mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -255,14 +278,32 @@ const InternalNewsBoard = () => {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3 w-full md:w-auto">
+                    <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto overflow-x-auto no-scrollbar">
+                        <button
+                            onClick={() => setShowArchived(!showArchived)}
+                            className={clsx(
+                                "w-fit md:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl transition-all font-bold whitespace-nowrap active:scale-95",
+                                showArchived
+                                    ? "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+                                    : "bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                            )}
+                            title="Kho lưu trữ"
+                        >
+                            <Archive size={20} strokeWidth={2.5} />
+                            <span className="hidden sm:inline">Lưu trữ</span>
+                            {archivedNews.length > 0 && (
+                                <span className="bg-slate-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{archivedNews.length}</span>
+                            )}
+                        </button>
+
                         {isAdmin && (
                             <button
                                 onClick={() => setShowCreateModal(true)}
-                                className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-500/10 text-blue-600 dark:text-blue-200 hover:bg-blue-700 hover:text-white rounded-xl transition-all font-bold shadow-lg shadow-blue-500/10 hover:shadow-blue-600/30 hover:-translate-y-0.5"
+                                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-500/10 text-blue-600 dark:text-blue-200 hover:bg-blue-700 hover:text-white rounded-xl transition-all font-bold shadow-lg shadow-blue-500/10 hover:shadow-blue-600/30 hover:-translate-y-0.5 whitespace-nowrap"
                             >
                                 <Plus size={20} strokeWidth={3} />
-                                <span>Đăng tin</span>
+                                <span className="hidden sm:inline">Đăng tin</span>
+                                <span className="sm:hidden">Đăng</span>
                             </button>
                         )}
                     </div>
@@ -270,12 +311,20 @@ const InternalNewsBoard = () => {
 
                 {/* News List */}
                 <div className="grid gap-4 relative z-10">
+                    {showArchived && (
+                        <div className="flex items-center gap-2 mb-2 px-1 text-slate-500 dark:text-slate-400 font-medium text-sm">
+                            <History size={16} />
+                            <span>Đang xem nội dung lưu trữ</span>
+                        </div>
+                    )}
                     {displayNews.length === 0 ? (
                         <div className="p-12 text-center border-2 border-dashed border-slate-700/50 rounded-2xl bg-slate-800/20 backdrop-blur-sm">
                             <div className="w-16 h-16 bg-slate-700/30 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-500">
-                                <Bell size={32} />
+                                <Archive size={32} />
                             </div>
-                            <p className="text-slate-400 font-medium">Chưa có thông báo nào được đăng tải.</p>
+                            <p className="text-slate-400 font-medium">
+                                {showArchived ? "Chưa có tin nào trong mục lưu trữ." : "Chưa có thông báo nào được đăng tải."}
+                            </p>
                         </div>
                     ) : (
                         displayNews.map(item => {
@@ -381,7 +430,7 @@ const InternalNewsBoard = () => {
                 </div>
 
                 {/* Footer / Expand Toggle */}
-                {news.length > 3 && (
+                {!showArchived && news.length > 3 && (
                     <div className="mt-4 text-center">
                         <button
                             onClick={() => setIsExpanded(!isExpanded)}
@@ -537,7 +586,9 @@ const InternalNewsBoard = () => {
                         onClose={() => setViewingItem(null)}
                         users={users}
                         isAdmin={isAdmin}
-                        onDelete={() => handleDelete(viewingItem.id)}
+                        onArchive={() => handleArchive(viewingItem.id)}
+                        onRestore={() => handleRestore(viewingItem.id)}
+                        onDeletePermanent={() => handlePermanentDelete(viewingItem.id)}
                         getPriorityColor={getPriorityColor}
                         getPriorityLabel={getPriorityLabel}
                     />
@@ -547,7 +598,7 @@ const InternalNewsBoard = () => {
     );
 };
 
-const NewsDetailModal = ({ item, onClose, users, isAdmin, onDelete, getPriorityColor, getPriorityLabel }: any) => {
+const NewsDetailModal = ({ item, onClose, users, isAdmin, onArchive, onRestore, onDeletePermanent, getPriorityColor, getPriorityLabel }: any) => {
     const [zoom, setZoom] = useState(1);
     const [isZooming, setIsZooming] = useState(false);
     const imageRef = useRef<HTMLImageElement>(null);
@@ -710,19 +761,42 @@ const NewsDetailModal = ({ item, onClose, users, isAdmin, onDelete, getPriorityC
                 </div>
 
                 {isAdmin && (
-                    <div className="p-5 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/30 flex justify-end">
-                        <button
-                            onClick={() => {
-                                if (window.confirm('Xóa tin này?')) {
-                                    onDelete();
+                    <div className="p-5 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/30 flex justify-end gap-3">
+                        {item.isArchived ? (
+                            <>
+                                <button
+                                    onClick={() => {
+                                        onRestore();
+                                        onClose();
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-emerald-600 hover:text-white hover:bg-emerald-500 rounded-xl transition-all border border-emerald-500/20"
+                                >
+                                    <RefreshCcw size={16} />
+                                    <span>Khôi phục tin</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        onDeletePermanent();
+                                        onClose();
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:text-white hover:bg-red-500 rounded-xl transition-all border border-red-500/20"
+                                >
+                                    <Trash2 size={16} />
+                                    <span>Xóa vĩnh viễn</span>
+                                </button>
+                            </>
+                        ) : (
+                            <button
+                                onClick={() => {
+                                    onArchive();
                                     onClose();
-                                }
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:text-white hover:bg-red-500 rounded-xl transition-all border border-red-500/20"
-                        >
-                            <Trash2 size={16} />
-                            <span>Xóa tin này</span>
-                        </button>
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-500 hover:text-white hover:bg-slate-500 rounded-xl transition-all border border-slate-500/20"
+                            >
+                                <Archive size={16} />
+                                <span>Xóa tin này (Lưu trữ)</span>
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

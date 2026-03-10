@@ -558,14 +558,36 @@ const CollectionView = ({ name, data, onDelete, onUpdate }: {
                                                     </span>
                                                 ) : (
                                                     <span className={clsx("truncate block", col === 'id' && "font-mono text-xs text-slate-500")}>
-                                                        {val && col.toLowerCase() === 'avatar' && typeof val === 'string' ? (
-                                                            <div className="flex items-center gap-2">
-                                                                <img src={val} className="w-6 h-6 rounded-full border border-slate-600" />
-                                                                <span>{val}</span>
-                                                            </div>
-                                                        ) : (
-                                                            String(val ?? '-')
-                                                        )}
+                                                        {(() => {
+                                                            const strVal = String(val ?? '');
+                                                            // Check for Image URL (Basic & Google Drive)
+                                                            const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(strVal) || strVal.includes('drive.google.com/file');
+                                                            const isUrl = strVal.startsWith('http');
+
+                                                            if (col.toLowerCase().includes('avatar') || (isUrl && isImg)) {
+                                                                return (
+                                                                    <div className="flex items-center gap-2 group/img">
+                                                                        <div className="w-8 h-8 rounded bg-slate-800 border border-slate-700 overflow-hidden relative cursor-pointer"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                window.open(strVal, '_blank');
+                                                                            }}
+                                                                        >
+                                                                            <img
+                                                                                src={strVal}
+                                                                                alt="img"
+                                                                                className="w-full h-full object-cover group-hover/img:scale-110 transition-transform"
+                                                                                onError={(e) => (e.currentTarget.style.display = 'none')}
+                                                                            />
+                                                                        </div>
+                                                                        <a href={strVal} target="_blank" rel="noreferrer" className="text-xs text-indigo-400 hover:underline truncate max-w-[150px]" onClick={e => e.stopPropagation()}>
+                                                                            {strVal.split('/').pop()?.split('?')[0] || 'View Image'}
+                                                                        </a>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return strVal || '-';
+                                                        })()}
                                                     </span>
                                                 )}
                                             </td>
