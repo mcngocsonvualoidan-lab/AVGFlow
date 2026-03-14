@@ -18,6 +18,7 @@ import AppsPortal from './modules/apps/AppsPortal';
 import ExecutiveDirectives from './modules/documents/ExecutiveDirectives';
 import BusinessFund from './modules/finance/BusinessFund';
 import Orders from './modules/orders/Orders';
+import PublicOrders from './modules/orders/PublicOrders';
 import ErrorBoundary from './components/ErrorBoundary';
 import BiometricSetupPrompt from './components/BiometricSetupPrompt';
 import UpdateNotification from './components/UpdateNotification';
@@ -182,6 +183,9 @@ function App() {
                 {/* Admin System Routes */}
                 <Route path="/admin-login" element={<AdminLogin />} />
                 <Route path="/admin-panel/*" element={<AdminPanel />} />
+
+                {/* Public Routes (no authentication required) */}
+                <Route path="/public/orders" element={<PublicOrders />} />
 
                 {/* Main App Route - Catch All */}
                 <Route path="/*" element={<MainContent />} />

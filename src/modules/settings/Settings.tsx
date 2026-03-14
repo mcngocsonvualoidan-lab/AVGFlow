@@ -16,7 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Language } from '../../i18n/translations';
 import { db, storage } from '../../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes } from 'firebase/storage';
 import {
     isWebAuthnSupported,
     isPlatformAuthenticatorAvailable,
@@ -203,15 +203,17 @@ const SettingsPage: React.FC = () => {
 
             // Upload to Firebase
             // Path: avatars/{ID}_{timestamp}.jpg
-            const storagePath = `avatars/${currentAppUser.id}_${Date.now()}.jpg`;
+            const fileName = `${currentAppUser.id}_${Date.now()}.jpg`;
+            const storagePath = `avatars/${fileName}`;
             const storageRef = ref(storage, storagePath);
 
             await uploadBytes(storageRef, processedFile);
-            const url = await getDownloadURL(storageRef);
+            // Build public URL (no token needed - storage rules allow public read for avatars)
+            const publicUrl = `https://firebasestorage.googleapis.com/v0/b/avgflow-dd822.firebasestorage.app/o/avatars%2F${encodeURIComponent(fileName)}?alt=media`;
 
             // Update Firestore directly
             await updateDoc(doc(db, 'users', currentAppUser.id), {
-                avatar: url
+                avatar: publicUrl
             });
 
             alert("Cập nhật ảnh đại diện thành công!");
@@ -338,7 +340,10 @@ const SettingsPage: React.FC = () => {
                             <div className="relative group shrink-0">
                                 <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-bg-elevated shadow-2xl bg-bg-main relative">
                                     {currentAppUser?.avatar ? (
-                                        <img src={currentAppUser.avatar} alt="Profile" className="w-full h-full object-cover" />
+                                        <>
+                                        <img src={currentAppUser.avatar} alt="Profile" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                        <div className="avatar-fallback absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-2xl" style={{display:'none'}}>{(currentAppUser.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
+                                        </>
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center text-text-muted bg-bg-main">
                                             <User size={48} />

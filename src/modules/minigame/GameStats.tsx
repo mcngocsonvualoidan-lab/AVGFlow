@@ -184,8 +184,8 @@ const GameStats: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                                         <div className="flex items-end justify-center gap-3 mb-6 pt-4">
                                             {/* 2nd place */}
                                             <div className="text-center flex-1 max-w-[120px]">
-                                                <img src={playerStats[1].avatar || `https://ui-avatars.com/api/?name=${playerStats[1].name}&size=64`}
-                                                    className="w-14 h-14 rounded-full mx-auto mb-1 border-2 border-slate-300" alt="" />
+                                                <div className="relative w-14 h-14 rounded-full overflow-hidden mx-auto mb-1 border-2 border-slate-300"><img src={playerStats[1].avatar || `https://ui-avatars.com/api/?name=${playerStats[1].name}&size=64`}
+                                                    className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-slate-400 to-slate-500 items-center justify-center text-white font-bold text-sm" style={{display:'none'}}>{(playerStats[1].name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                                 <Medal size={16} className="mx-auto text-slate-400 mb-0.5" />
                                                 <p className="text-xs font-bold truncate">{playerStats[1].name}</p>
                                                 <p className="text-[10px] text-slate-400">{playerStats[1].wins} thắng</p>
@@ -193,8 +193,8 @@ const GameStats: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                                             </div>
                                             {/* 1st place */}
                                             <div className="text-center flex-1 max-w-[130px]">
-                                                <img src={playerStats[0].avatar || `https://ui-avatars.com/api/?name=${playerStats[0].name}&size=64`}
-                                                    className="w-16 h-16 rounded-full mx-auto mb-1 border-3 border-amber-400 shadow-lg shadow-amber-200/50" alt="" />
+                                                <div className="relative w-16 h-16 rounded-full overflow-hidden mx-auto mb-1 border-3 border-amber-400 shadow-lg shadow-amber-200/50"><img src={playerStats[0].avatar || `https://ui-avatars.com/api/?name=${playerStats[0].name}&size=64`}
+                                                    className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-400 to-amber-600 items-center justify-center text-white font-bold text-sm" style={{display:'none'}}>{(playerStats[0].name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                                 <Crown size={18} className="mx-auto text-amber-500 mb-0.5" />
                                                 <p className="text-sm font-black truncate">{playerStats[0].name}</p>
                                                 <p className="text-xs text-amber-500 font-bold">{playerStats[0].wins} thắng</p>
@@ -202,8 +202,8 @@ const GameStats: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                                             </div>
                                             {/* 3rd place */}
                                             <div className="text-center flex-1 max-w-[120px]">
-                                                <img src={playerStats[2].avatar || `https://ui-avatars.com/api/?name=${playerStats[2].name}&size=64`}
-                                                    className="w-12 h-12 rounded-full mx-auto mb-1 border-2 border-orange-300" alt="" />
+                                                <div className="relative w-12 h-12 rounded-full overflow-hidden mx-auto mb-1 border-2 border-orange-300"><img src={playerStats[2].avatar || `https://ui-avatars.com/api/?name=${playerStats[2].name}&size=64`}
+                                                    className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-orange-400 to-orange-500 items-center justify-center text-white font-bold text-xs" style={{display:'none'}}>{(playerStats[2].name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                                 <Medal size={14} className="mx-auto text-orange-400 mb-0.5" />
                                                 <p className="text-xs font-bold truncate">{playerStats[2].name}</p>
                                                 <p className="text-[10px] text-slate-400">{playerStats[2].wins} thắng</p>
@@ -232,7 +232,7 @@ const GameStats: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                                                         {i + 1}
                                                     </span>
                                                     <div className="flex items-center gap-2 min-w-0">
-                                                        <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-7 h-7 rounded-full shrink-0" alt="" />
+                                                        <div className="relative w-7 h-7 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-[8px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                                         <div className="min-w-0">
                                                             <p className="text-xs font-bold truncate">{p.name}</p>
                                                             {p.streak >= 2 && <p className="text-[9px] text-orange-500 flex items-center gap-0.5"><Flame size={9} /> {p.streak} streak</p>}
@@ -303,7 +303,7 @@ const GameStats: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                                                 {Object.entries(game.players || {}).map(([uid, p]) => (
                                                     <span key={uid} className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium border",
                                                         p.won ? "bg-emerald-50/70 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-700/30" : "bg-red-50/70 dark:bg-red-900/10 text-red-500 border-red-200/50 dark:border-red-700/30")}>
-                                                        <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=20`} className="w-4 h-4 rounded-full" alt="" />
+                                                        <div className="relative w-4 h-4 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=20`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-[6px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                                         {p.name}
                                                         {p.role && <span className="opacity-60">({p.role})</span>}
                                                         {p.won ? ' ✓' : ' ✗'}
@@ -363,7 +363,7 @@ const GameStats: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                                                     <div key={p.uid}>
                                                         <div className="flex items-center justify-between mb-1">
                                                             <span className="text-xs font-medium flex items-center gap-1.5">
-                                                                <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=20`} className="w-5 h-5 rounded-full" alt="" />
+                                                                <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=20`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-[7px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                                                 {p.name}
                                                             </span>
                                                             <span className={clsx("text-xs font-bold", winRate >= 60 ? "text-emerald-500" : winRate >= 40 ? "text-amber-500" : "text-red-400")}>
@@ -400,7 +400,7 @@ const GameStats: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                                                         <tr key={p.uid} className="border-b border-slate-50 dark:border-slate-700/50 last:border-0">
                                                             <td className="py-2">
                                                                 <div className="flex items-center gap-1.5">
-                                                                    <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=20`} className="w-5 h-5 rounded-full" alt="" />
+                                                                    <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=20`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-[7px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                                                     <span className="font-medium">{p.name}</span>
                                                                 </div>
                                                             </td>

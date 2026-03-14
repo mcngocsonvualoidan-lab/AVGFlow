@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Package, Clock, User, Tag, FileText, Filter, Search, ArrowUpDown, ChevronDown, AlertCircle, CheckCircle2, Loader2, Truck, XCircle, BarChart as BarChartIcon, Calendar, CalendarClock, Copy } from 'lucide-react';
+import { Package, Clock, User, Tag, FileText, Filter, Search, ArrowUpDown, ChevronDown, AlertCircle, CheckCircle2, Loader2, Truck, XCircle, BarChart as BarChartIcon, Calendar, CalendarClock, Copy, Printer } from 'lucide-react';
+import PrintOrdersManager from './PrintOrdersManager';
 import { clsx } from 'clsx';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList } from 'recharts';
 import HeroBanner from '../../components/HeroBanner';
@@ -194,6 +195,7 @@ const Orders: React.FC = () => {
     const [editingDelivery, setEditingDelivery] = useState<string | null>(null);
     const [tempDeliveryDate, setTempDeliveryDate] = useState<Date>(new Date());
     const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'orders' | 'print'>('orders');
 
     // Check if current user can edit orders
     const canEdit = useMemo(() => {
@@ -515,6 +517,34 @@ const Orders: React.FC = () => {
                 gradientTo="to-indigo-700"
             />
 
+            {/* Tab Switcher */}
+            <div className="flex gap-1.5 p-1.5 rounded-2xl bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border border-white/50 dark:border-white/10 shadow-sm w-fit">
+                <button
+                    onClick={() => setActiveTab('orders')}
+                    className={clsx("flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300",
+                        activeTab === 'orders'
+                            ? 'bg-gradient-to-r from-violet-500 to-indigo-600 text-white shadow-lg shadow-violet-500/30'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                    )}
+                >
+                    <Package size={16} /> Đơn hàng
+                </button>
+                <button
+                    onClick={() => setActiveTab('print')}
+                    className={clsx("flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300",
+                        activeTab === 'print'
+                            ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                    )}
+                >
+                    <Printer size={16} /> In ấn
+                </button>
+            </div>
+
+            {activeTab === 'print' ? (
+                <PrintOrdersManager />
+            ) : (
+            <>
             {/* Charts Section */}
             {monthlyStats && monthlyStats.length > 0 && (
                 <div className="grid grid-cols-1 gap-6">
@@ -1002,6 +1032,8 @@ const Orders: React.FC = () => {
                     </div>
                 )
             }
+            </>
+            )}
         </div>
     );
 };

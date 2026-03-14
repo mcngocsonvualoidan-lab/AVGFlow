@@ -54,6 +54,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /print_orders/{orderId} {
+      allow read, write: if true;
+    }
+
     // Rules for Email Extension
     match /mail/{mailId} {
       allow read, write: if isAuthenticated();

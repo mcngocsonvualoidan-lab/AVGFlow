@@ -7,6 +7,12 @@ const UpdateNotification: React.FC = () => {
 
     useEffect(() => {
         const handleUpdateAvailable = () => {
+            // On public partner page, auto-apply update silently without showing notification
+            if (window.location.pathname.startsWith('/public/orders')) {
+                // @ts-ignore
+                if (window.updateApp) { window.updateApp(); } else { window.location.reload(); }
+                return;
+            }
             setShow(true);
         };
 

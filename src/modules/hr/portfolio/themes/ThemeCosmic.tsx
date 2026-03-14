@@ -26,11 +26,21 @@ const ThemeCosmic: React.FC<PortfolioProps> = ({ user, data, onClose }) => {
                 >
                     <div className="relative">
                         <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                        <img
-                            src={user.avatar}
-                            alt={user.name}
-                            className="w-48 h-48 md:w-56 md:h-56 rounded-full border-4 border-white/10 shadow-2xl object-cover relative z-10"
-                        />
+                        <div className="w-48 h-48 md:w-56 md:h-56 rounded-full border-4 border-white/10 shadow-2xl overflow-hidden relative z-10">
+                            <img
+                                src={user.avatar}
+                                alt={user.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    const fb = e.currentTarget.nextElementSibling as HTMLElement;
+                                    if (fb) fb.style.display = 'flex';
+                                }}
+                            />
+                            <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 items-center justify-center text-white text-5xl font-black" style={{ display: 'none' }}>
+                                {(user.name || '?').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()}
+                            </div>
+                        </div>
                     </div>
                     <div className="text-center md:text-left">
                         <h1 className="text-4xl md:text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 mb-2">

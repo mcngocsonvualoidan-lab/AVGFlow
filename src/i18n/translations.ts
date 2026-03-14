@@ -61,7 +61,7 @@ export const translations = {
             avgTime: "Thời gian TB",
             reworkRate: "Tỷ lệ Rework",
             distribution: "Phân bổ",
-            systemData: "Dữ liệu Hệ thống",
+            systemData: "Đơn hàng đối tác",
             checkProcess: "Kiểm tra quy trình",
             normal: "Bình thường",
             insights: "Thông tin chi tiết",

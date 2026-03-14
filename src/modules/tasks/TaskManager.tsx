@@ -581,7 +581,8 @@ const TaskManager: React.FC = () => {
                                                         )}
                                                         <div className="flex items-center gap-3">
                                                             <div className="relative shrink-0">
-                                                                <img src={user.avatar} className={clsx("w-12 h-12 rounded-lg object-cover shadow-lg transition-transform duration-500", isSelected ? "border-2 border-indigo-400" : "border border-white/10")} />
+                                                                <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff&size=96`} className={clsx("w-12 h-12 rounded-lg object-cover shadow-lg transition-transform duration-500", isSelected ? "border-2 border-indigo-400" : "border border-white/10")} onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                                                <div className={clsx("av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-lg items-center justify-center text-white font-bold text-sm shadow-lg", isSelected ? "border-2 border-indigo-400" : "border border-white/10")} style={{display:'none'}}>{user.name.split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
                                                                 <div className={clsx("absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-slate-900 shadow-lg", status.color, status.animate && "animate-pulse")} />
                                                             </div>
                                                             <div className="flex-1 min-w-0">
@@ -1000,7 +1001,10 @@ const TaskManager: React.FC = () => {
                                                     {/* Summary Row */}
                                                     <div className="flex items-center justify-between pt-2 border-t border-border mt-2">
                                                         <div className="flex items-center gap-2">
-                                                            <img src={assigneeUser?.avatar || 'https://ui-avatars.com/api/?name=NA'} alt="User" className="w-6 h-6 rounded-full border border-border" />
+                                                            <div className="relative w-6 h-6 rounded-full overflow-hidden border border-border shrink-0">
+                                                                <img src={assigneeUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(assigneeUser?.name||'NA')}&background=6366f1&color=fff&size=48`} alt="User" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                                                <div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white text-[8px] font-bold" style={{display:'none'}}>{(assigneeUser?.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
+                                                            </div>
                                                             <div>
                                                                 <div className="text-xs font-semibold text-text-main">{assigneeUser?.alias || 'Unknown'}</div>
                                                                 <div className="flex items-center gap-1 text-[10px] text-text-muted font-mono mt-0.5">

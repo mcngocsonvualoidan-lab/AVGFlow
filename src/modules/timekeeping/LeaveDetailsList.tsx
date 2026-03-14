@@ -187,10 +187,12 @@ const LeaveDetailsList: React.FC<LeaveDetailsListProps> = ({ month, year, users 
                                             <div className="relative shrink-0">
                                                 <div className="w-10 h-10 rounded-full p-0.5 bg-white dark:bg-slate-800 shadow-sm">
                                                     <img
-                                                        src={user.avatar}
+                                                        src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff&size=80`}
                                                         className="w-full h-full rounded-full object-cover"
                                                         alt={user.name}
+                                                        onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }}
                                                     />
+                                                    <div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full items-center justify-center text-white font-bold text-xs" style={{display:'none'}}>{user.name.split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
                                                 </div>
                                                 <div className={clsx("absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white dark:border-slate-900 shadow-sm flex items-center justify-center", style.dot)}>
                                                     <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></div>

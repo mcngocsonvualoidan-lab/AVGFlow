@@ -63,6 +63,7 @@ export default {
             animation: {
                 'light-sweep': 'lightSweep 4s ease-in-out infinite',
                 'pulse-glow': 'pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                'subtle-pulse': 'subtlePulse 2.5s ease-in-out infinite',
             },
             keyframes: {
                 lightSweep: {
@@ -75,7 +76,11 @@ export default {
                 pulseGlow: {
                     '0%, 100%': { opacity: '1', boxShadow: '0 0 10px #6366f1' },
                     '50%': { opacity: '.5', boxShadow: '0 0 20px #6366f1' },
-                }
+                },
+                subtlePulse: {
+                    '0%, 100%': { transform: 'scale(1)' },
+                    '50%': { transform: 'scale(1.15)' },
+                },
             }
         },
     },

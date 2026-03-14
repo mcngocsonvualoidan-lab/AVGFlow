@@ -15,10 +15,21 @@ const ThemeExecutive: React.FC<PortfolioProps> = ({ user, data, onClose }) => {
                 <div className="bg-[#1e293b] text-white p-12 md:p-16 flex flex-col md:flex-row items-center gap-8 md:gap-12 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-[#334155] rounded-bl-full opacity-50"></div>
 
-                    <img
-                        src={user.avatar}
-                        className="w-40 h-40 rounded-full border-4 border-white object-cover shadow-xl z-10"
-                    />
+                    <div className="w-40 h-40 rounded-full border-4 border-white shadow-xl overflow-hidden z-10">
+                        <img
+                            src={user.avatar}
+                            alt={user.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                const fb = e.currentTarget.nextElementSibling as HTMLElement;
+                                if (fb) fb.style.display = 'flex';
+                            }}
+                        />
+                        <div className="w-full h-full bg-gradient-to-br from-slate-500 to-slate-700 items-center justify-center text-white text-3xl font-black" style={{ display: 'none' }}>
+                            {(user.name || '?').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()}
+                        </div>
+                    </div>
                     <div className="text-center md:text-left z-10">
                         <h1 className="text-4xl md:text-5xl font-bold mb-2 tracking-tight">{user.name}</h1>
                         <p className="text-xl text-slate-300 uppercase tracking-widest font-sans font-light">{data.experience[0]?.role}</p>

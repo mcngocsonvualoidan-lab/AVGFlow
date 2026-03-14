@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { Moon, Sun, Skull, Eye, Crown, RotateCcw, Send, ThumbsUp, Loader2, MessageCircle, Users, Shield, Clock, Trophy, BarChart3 } from 'lucide-react';
@@ -237,7 +237,7 @@ const GameChat: React.FC<{
                                         isWolfMode ? "text-[#c62828]/70 bg-red-900/30" : "text-[#6b5f50] bg-[#1a1825]")}>{m.text}</span></div>
                                 ) : (
                                     <>
-                                        <img src={m.senderAvatar || `https://ui-avatars.com/api/?name=${m.senderName}&size=32`} className="w-6 h-6 rounded-full shrink-0 mt-0.5" alt="" />
+                                        <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0 mt-0.5"><img src={m.senderAvatar || `https://ui-avatars.com/api/?name=${m.senderName}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px]" style={{display:'none'}}>{(m.senderName||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                         <div className={clsx("max-w-[75%]", m.sender === myUid ? "text-right" : "")}>
                                             <p className={clsx("text-xs", isWolfMode ? "text-[#c62828]/70" : "text-[#6b5f50]")}>
                                                 {m.senderName} {m.channel === 'wolf' && '🐺'} {m.channel === 'dead' && '💀'}
@@ -322,7 +322,7 @@ const ChatBox: React.FC<{
                                 isWolf ? "text-[#c62828]/60 bg-[#2a0a0a]/60" : "text-[#6b5f50] bg-[#1a1825]/60")}>{m.text}</span></div>
                         ) : (
                             <>
-                                <img src={m.senderAvatar || `https://ui-avatars.com/api/?name=${m.senderName}&size=32`} className="w-6 h-6 rounded-full shrink-0 mt-0.5" alt="" />
+                                <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0 mt-0.5"><img src={m.senderAvatar || `https://ui-avatars.com/api/?name=${m.senderName}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px]" style={{display:'none'}}>{(m.senderName||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                 <div className={clsx("max-w-[80%]", m.sender === myUid ? "text-right" : "")}>
                                     <p className={clsx("text-xs", isWolf ? "text-[#c62828]/60" : "text-[#6b5f50]")}>{m.senderName}</p>
                                     <p className={clsx("text-sm px-2.5 py-1.5 rounded-xl inline-block",
@@ -767,7 +767,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                     selected ? "bg-[#2a0a0a] ring-2 ring-[#8b1a1a]" : "hover:bg-[#221f30] border border-transparent hover:border-[#8b5c3a]/20",
                     disabled && "opacity-40 cursor-not-allowed",
                     !r?.alive && "opacity-30 line-through")}>
-                <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-7 h-7 rounded-full" alt="" />
+                <div className="relative w-7 h-7 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                 <span className="font-medium flex-1 text-[#e8dcc8]">{p.name}</span>
                 {!r?.alive && <Skull size={14} className="text-[#c62828]" />}
                 {p.uid === room.hostId && <Crown size={12} className="text-[#c9873a]" />}
@@ -828,7 +828,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                             const r = gs.roles?.[p.uid];
                             return (
                                 <div key={p.uid} className={clsx("flex items-center gap-2 py-1 px-2 rounded-lg text-sm", !r?.alive && "opacity-40")}>
-                                    <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=24`} className="w-5 h-5 rounded-full" alt="" />
+                                    <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=24`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                     <span className={clsx("flex-1", !r?.alive && "line-through")} style={{ color: '#e8dcc8' }}>{p.name}</span>
                                     {!r?.alive && <Skull size={12} style={{ color: '#c62828' }} />}
                                     {r?.alive && <span className="w-2 h-2 rounded-full bg-emerald-500 ww-pulse-glow" />}
@@ -899,7 +899,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                     {playerStats.slice(0, 10).map((s, i) => (
                         <div key={s.uid} className={clsx("ww-leaderboard-row", i === 0 && "top-1", i === 1 && "top-2", i === 2 && "top-3")}>
                             <span className="text-lg w-8 text-center">{medals[i] || `#${i + 1}`}</span>
-                            <img src={s.avatar || `https://ui-avatars.com/api/?name=${s.name}&size=32`} className="w-8 h-8 rounded-full" alt="" />
+                            <div className="relative w-8 h-8 rounded-full overflow-hidden shrink-0"><img src={s.avatar || `https://ui-avatars.com/api/?name=${s.name}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[9px]" style={{display:'none'}}>{(s.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                             <div className="flex-1 min-w-0">
                                 <p className="font-bold text-sm truncate" style={{ color: '#e8dcc8' }}>{s.name}</p>
                                 <div className="flex items-center gap-2 mt-1">
@@ -926,7 +926,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {playerStats.slice(0, 6).map(s => (
                                 <div key={s.uid} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'rgba(26,24,37,0.6)' }}>
-                                    <img src={s.avatar || `https://ui-avatars.com/api/?name=${s.name}&size=24`} className="w-6 h-6 rounded-full" alt="" />
+                                    <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0"><img src={s.avatar || `https://ui-avatars.com/api/?name=${s.name}&size=24`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px]" style={{display:'none'}}>{(s.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-xs font-bold truncate" style={{ color: '#e8dcc8' }}>{s.name}</p>
                                         <div className="flex flex-wrap gap-1 mt-0.5">
@@ -959,7 +959,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
             <p className="ww-body text-base mb-4" style={{ fontFamily: "'Playfair Display', serif" }}>— Phòng Chờ —</p>
             <div className="flex flex-wrap justify-center gap-2 mb-4">
                 {playerList.map(p => <span key={p.uid} className="px-3 py-1.5 ww-panel rounded-lg text-base font-medium flex items-center gap-2">
-                    <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-5 h-5 rounded-full border border-[#8b5c3a]/30" alt="" />{p.name}
+                    <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0 border border-[#8b5c3a]/30"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>{p.name}
                     {p.uid === room.hostId && <Crown size={12} className="text-[#c9873a]" />}
                 </span>)}
             </div>
@@ -1003,7 +1003,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                                             <div className="flex flex-wrap justify-center gap-2">
                                                 {wolfTeammates.map(w => (
                                                     <span key={w.uid} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#2a0a0a] rounded-lg text-sm font-medium text-[#c9873a]">
-                                                        <img src={w.avatar || `https://ui-avatars.com/api/?name=${w.name}&size=24`} className="w-5 h-5 rounded-full" alt="" />
+                                                        <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0"><img src={w.avatar || `https://ui-avatars.com/api/?name=${w.name}&size=24`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px]" style={{display:'none'}}>{(w.name||'?').split(' ').map((w2: string)=>w2[0]).join('').slice(0,2)}</div></div>
                                                         {w.name} 🐺
                                                     </span>
                                                 ))}
@@ -1049,7 +1049,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                                 <div className="flex flex-wrap gap-1.5">
                                     {wolfTeammates.map(w => (
                                         <span key={w.uid} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#2a0a0a] rounded-md text-sm font-medium text-[#c9873a]">
-                                            <img src={w.avatar || `https://ui-avatars.com/api/?name=${w.name}&size=20`} className="w-4 h-4 rounded-full" alt="" />
+                                            <div className="relative w-4 h-4 rounded-full overflow-hidden shrink-0"><img src={w.avatar || `https://ui-avatars.com/api/?name=${w.name}&size=20`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[6px]" style={{display:'none'}}>{(w.name||'?').split(' ').map((w2: string)=>w2[0]).join('').slice(0,2)}</div></div>
                                             {w.name}
                                         </span>
                                     ))}
@@ -1242,7 +1242,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                     const r = gs.roles?.[p.uid];
                     return (
                         <div key={p.uid} className={clsx("flex items-center gap-2 py-1.5 text-base", !r?.alive && "opacity-30 line-through")}>
-                            <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-6 h-6 rounded-full" alt="" />
+                            <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                             {r?.alive ? '👤' : '💀'} {p.name}
                         </div>
                     );
@@ -1283,8 +1283,8 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                                         ? 'bg-[#0f1a10] text-[#7ab87a] border border-[#2a4a1a]/40'
                                         : 'bg-[#1a1510]/80 text-[#c9873a] border border-[#8b6914]/40'
                                 )}>
-                                    <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=20`}
-                                        className={clsx('w-4 h-4 rounded-full', isDone ? 'ring-1 ring-emerald-400' : 'ring-1 ring-amber-300')} alt="" />
+                                    <div className="relative w-4 h-4 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=20`}
+                                        className={clsx('w-full h-full object-cover rounded-full', isDone ? 'ring-1 ring-emerald-400' : 'ring-1 ring-amber-300')} alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 rounded-full items-center justify-center text-amber-100 font-bold text-[6px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                     <span className="max-w-[60px] truncate">{p.name.split(' ').pop()}</span>
                                     {hasVoted && <span className="text-[#7ab87a]">✓</span>}
                                     {hasSkipped && <span className="text-[#6b8db5]">⏭</span>}
@@ -1388,7 +1388,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                             return (
                                 <div key={p.uid} className={clsx("flex items-center gap-2 py-1.5 text-base rounded-lg px-2 mb-0.5",
                                     isTarget && "bg-[#1a0808] border border-[#8b1a1a]/30")}>
-                                    <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-6 h-6 rounded-full" alt="" />
+                                    <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
                                     <span className={clsx("flex-1 font-medium", isTarget && "text-[#c62828]")}>{p.name}</span>
                                     {isTarget && <Shield size={14} className="text-[#c9873a]" />}
                                     {currentVotes > 0 && (

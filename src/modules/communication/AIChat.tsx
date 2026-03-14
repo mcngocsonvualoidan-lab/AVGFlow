@@ -337,7 +337,10 @@ const AIChat: React.FC = () => {
                                 {msg.role === 'user' && (
                                     <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center shrink-0 overflow-hidden border border-white/10 mt-1">
                                         {users.find(u => u.id === currentUser?.uid)?.avatar ? (
-                                            <img src={users.find(u => u.id === currentUser?.uid)?.avatar} className="w-full h-full object-cover" />
+                                            <>
+                                            <img src={users.find(u => u.id === currentUser?.uid)?.avatar} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                            <div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-xs" style={{display:'none'}}>{(appUser?.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
+                                            </>
                                         ) : (
                                             <UserIcon size={16} className="text-slate-400" />
                                         )}

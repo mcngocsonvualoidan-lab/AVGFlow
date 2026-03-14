@@ -1095,6 +1095,36 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         repairMissingUser();
     }, []);
 
+    // MIGRATION: Fix broken Firebase Storage avatar URLs (Mar 2026)
+    // Firebase Storage returns 412 for all avatar files, replace with ui-avatars.com
+    useEffect(() => {
+        const MIGRATION_KEY = 'avatar_url_fix_v2_done';
+        if (localStorage.getItem(MIGRATION_KEY)) return;
+        
+        const fixAvatarUrls = async () => {
+            const avatarFixes: Record<string, string> = {
+                '3': 'https://ui-avatars.com/api/?name=Thien+Tam&background=f59e0b&color=fff&size=256&bold=true',
+                '4': 'https://ui-avatars.com/api/?name=Anh+Nguyet&background=ec4899&color=fff&size=256&bold=true',
+                '5': 'https://ui-avatars.com/api/?name=Ngoc+Son&background=6366f1&color=fff&size=256&bold=true',
+                '6': 'https://ui-avatars.com/api/?name=Ngoc+Doanh&background=10b981&color=fff&size=256&bold=true',
+                '7': 'https://ui-avatars.com/api/?name=Ngoc+Han&background=f43f5e&color=fff&size=256&bold=true',
+            };
+            
+            try {
+                const batch = writeBatch(db);
+                for (const [userId, avatarUrl] of Object.entries(avatarFixes)) {
+                    batch.update(doc(db, 'users', userId), { avatar: avatarUrl });
+                }
+                await batch.commit();
+                console.log('✅ Fixed avatar URLs for users 3,4,5,6,7 in Firestore');
+                localStorage.setItem(MIGRATION_KEY, 'true');
+            } catch (err) {
+                console.error('Avatar URL fix failed:', err);
+            }
+        };
+        fixAvatarUrls();
+    }, []);
+
     // MIGRATION: Fix Leave for Le Thi Anh Nguyet and Ha Ngoc Doanh (Jan 2026 updates)
     useEffect(() => {
         if (!users || users.length === 0) return;

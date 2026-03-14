@@ -173,7 +173,10 @@ const TimeGrid: React.FC<TimeGridProps> = ({ month, year, users: propUsers }) =>
                                         }}
                                     >
                                         <div className="flex items-center gap-2">
-                                            <img src={user.avatar} className="w-5 h-5 rounded-full object-cover" />
+                                            <div className="w-5 h-5 rounded-full overflow-hidden relative shrink-0">
+                                                <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff&size=40`} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                                <div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white text-[8px] font-bold" style={{display:'none'}}>{user.name.split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
+                                            </div>
                                             <span className="text-[11px]">{user.name}</span>
                                         </div>
                                     </td>

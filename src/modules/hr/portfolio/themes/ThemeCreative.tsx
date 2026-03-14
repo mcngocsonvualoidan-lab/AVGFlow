@@ -15,8 +15,17 @@ const ThemeCreative: React.FC<PortfolioProps> = ({ user, data, onClose }) => {
             <div className="h-[60vh] md:h-[70vh] w-full relative overflow-hidden flex items-end p-6 md:p-12 bg-yellow-400">
                 <img
                     src={user.avatar}
+                    alt={user.name}
                     className="absolute inset-0 w-full h-full object-cover grayscale mix-blend-multiply opacity-50"
+                    onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const fb = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (fb) fb.style.display = 'flex';
+                    }}
                 />
+                <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-yellow-600 to-yellow-800 mix-blend-multiply opacity-30 items-center justify-center" style={{ display: 'none' }}>
+                    <span className="text-[20vw] font-black text-black/20">{(user.name || '?').charAt(0).toUpperCase()}</span>
+                </div>
                 <div className="relative z-10 w-full">
                     <motion.h1
                         initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }}

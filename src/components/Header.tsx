@@ -562,8 +562,9 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                                 "w-10 h-10 rounded-full p-0.5 relative transition-all",
                                 isAdmin ? "bg-gradient-to-tr from-indigo-500 via-purple-500 to-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]" : "bg-gradient-to-tr from-slate-400 to-slate-300 dark:from-slate-700 dark:to-slate-600"
                             )}>
-                                <div className="w-full h-full rounded-full bg-bg-card flex items-center justify-center overflow-hidden">
-                                    <img src={userAvatar} alt="Profile" className="w-full h-full object-cover" />
+                                <div className="w-full h-full rounded-full bg-bg-card flex items-center justify-center overflow-hidden relative">
+                                    <img src={userAvatar} alt="Profile" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-sm" style={{display:'none'}}>{(userName||'?')[0]}</div>
                                 </div>
                                 {/* Online Dot */}
                                 <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-bg-card rounded-full"></div>

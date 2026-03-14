@@ -214,7 +214,10 @@ const EditForm = ({ data, onSave, onSilentSave, onCancel }: {
                                         <div className="relative shrink-0 group">
                                             <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-slate-700 shadow-xl bg-slate-800">
                                                 {val ? (
-                                                    <img src={val} alt="Avatar" className="w-full h-full object-cover" />
+                                                    <>
+                                                    <img src={val} alt="Avatar" className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                                    <div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-lg" style={{display:'none'}}>{(data.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
+                                                    </>
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center text-slate-600">
                                                         <Users size={32} />

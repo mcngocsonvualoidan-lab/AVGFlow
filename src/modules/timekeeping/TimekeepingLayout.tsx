@@ -574,10 +574,14 @@ const TimekeepingLayout = () => {
                                             ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30"
                                             : leaveType === 'online' ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30" : "bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30"
                                     )}>
-                                        <img
-                                            src={users.find(u => u.id === leaveUserId)?.avatar}
-                                            className="w-10 h-10 rounded-full border border-white/20"
-                                        />
+                                        <div className="relative w-10 h-10 rounded-full border border-white/20 overflow-hidden shrink-0">
+                                            <img
+                                                src={users.find(u => u.id === leaveUserId)?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(users.find(u => u.id === leaveUserId)?.name||'NA')}&background=6366f1&color=fff&size=80`}
+                                                className="w-full h-full object-cover"
+                                                onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }}
+                                            />
+                                            <div className="av-fb absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-sm" style={{display:'none'}}>{(users.find(u => u.id === leaveUserId)?.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
+                                        </div>
                                         <div>
                                             <div className="text-slate-900 dark:text-white font-semibold">{users.find(u => u.id === leaveUserId)?.name}</div>
                                             <div className={leaveType === 'leave' ? "text-amber-600 dark:text-amber-300 text-xs" : (leaveType === 'online' ? "text-emerald-600 dark:text-emerald-300 text-xs" : "text-blue-600 dark:text-blue-300 text-xs")}>

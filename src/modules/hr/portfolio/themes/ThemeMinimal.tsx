@@ -12,7 +12,21 @@ const ThemeMinimal: React.FC<PortfolioProps> = ({ user, data, onClose }) => {
 
             <div className="max-w-3xl mx-auto py-24 px-8">
                 <div className="text-center mb-24">
-                    <img src={user.avatar} className="w-32 h-32 rounded-full mx-auto mb-8 grayscale opacity-90 object-cover" />
+                    <div className="w-32 h-32 rounded-full mx-auto mb-8 overflow-hidden">
+                        <img
+                            src={user.avatar}
+                            alt={user.name}
+                            className="w-full h-full grayscale opacity-90 object-cover"
+                            onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                const fb = e.currentTarget.nextElementSibling as HTMLElement;
+                                if (fb) fb.style.display = 'flex';
+                            }}
+                        />
+                        <div className="w-full h-full bg-gradient-to-br from-slate-400 to-slate-600 items-center justify-center text-white text-3xl font-black" style={{ display: 'none' }}>
+                            {(user.name || '?').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()}
+                        </div>
+                    </div>
                     <h1 className="text-3xl font-light tracking-[0.2em] uppercase mb-4 text-slate-900">{user.name}</h1>
                     <p className="text-slate-500 tracking-widest text-xs uppercase">{data.experience[0]?.role}</p>
                 </div>

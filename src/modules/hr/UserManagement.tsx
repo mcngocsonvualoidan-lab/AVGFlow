@@ -123,14 +123,15 @@ const UserManagement: React.FC = () => {
 
         setIsUploading(true);
         try {
-            // Create a reference
-            const storageRef = ref(storage, `avatars/${Date.now()}_${file.name}`);
+            // Create a reference with user-specific naming for easy lookup
+            const fileName = `${editingId || Date.now()}_${Date.now()}.jpg`;
+            const storageRef = ref(storage, `avatars/${fileName}`);
             // Upload
             await uploadBytes(storageRef, file);
-            // Get URL
-            const url = await getDownloadURL(storageRef);
+            // Build public URL (no token needed - storage rules allow public read for avatars)
+            const publicUrl = `https://firebasestorage.googleapis.com/v0/b/avgflow-dd822.firebasestorage.app/o/avatars%2F${encodeURIComponent(fileName)}?alt=media`;
 
-            setFormData(prev => ({ ...prev, avatar: url }));
+            setFormData(prev => ({ ...prev, avatar: publicUrl }));
         } catch (error) {
             console.error("Upload error:", error);
             alert("Lỗi khi tải ảnh lên: " + (error as any).message);
@@ -502,7 +503,19 @@ const UserManagement: React.FC = () => {
                                 <div className="md:col-span-4 flex flex-col items-center gap-6 border-r border-border pr-4">
                                     <div className="relative group/avatar cursor-pointer">
                                         <div className="w-40 h-40 rounded-full border-4 border-indigo-500/30 shadow-[0_0_30px_rgba(99,102,241,0.2)] overflow-hidden">
-                                            <img src={formData.avatar} className="w-full h-full object-cover" />
+                                            <img
+                                                src={formData.avatar}
+                                                alt={formData.name || 'Avatar'}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                    e.currentTarget.style.display = 'none';
+                                                    const fb = e.currentTarget.nextElementSibling as HTMLElement;
+                                                    if (fb) fb.style.display = 'flex';
+                                                }}
+                                            />
+                                            <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 items-center justify-center text-white text-3xl font-black" style={{ display: 'none' }}>
+                                                {(formData.name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                                            </div>
                                         </div>
                                         {isUploading && (
                                             <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
@@ -816,7 +829,19 @@ const UserManagement: React.FC = () => {
                                                         <div className="flex items-start gap-4 mb-4">
                                                             <div className="relative shrink-0">
                                                                 <div className="w-16 h-16 rounded-2xl p-0.5 bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md">
-                                                                    <img src={user.avatar} className="w-full h-full rounded-[14px] object-cover bg-white" />
+                                                                    <img
+                                                                        src={user.avatar}
+                                                                        alt={user.name}
+                                                                        className="w-full h-full rounded-[14px] object-cover bg-white"
+                                                                        onError={(e) => {
+                                                                            e.currentTarget.style.display = 'none';
+                                                                            const fb = e.currentTarget.nextElementSibling as HTMLElement;
+                                                                            if (fb) fb.style.display = 'flex';
+                                                                        }}
+                                                                    />
+                                                                    <div className="w-full h-full rounded-[14px] bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white text-lg font-black" style={{ display: 'none' }}>
+                                                                        {(user.name || '?').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()}
+                                                                    </div>
                                                                 </div>
                                                                 <div className={clsx("absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white dark:border-slate-800 shadow-sm z-10", getUserStatusColor(user))} />
                                                             </div>

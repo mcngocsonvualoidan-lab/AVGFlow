@@ -11,6 +11,7 @@ import { useData } from '../../context/DataContext';
 import { MinigameService, GameRoom, TicTacToeState, GomokuState, encodeEmail, decodeEmail } from '../../services/minigameService';
 import OnlineWerewolfNew from './WerewolfGame';
 import GameStats from './GameStats';
+import AvatarImg from '../../components/AvatarImg';
 
 type GameId = 'tic-tac-toe' | 'gomoku' | 'werewolf';
 interface GameInfo { id: GameId; name: string; desc: string; icon: React.ReactNode; gradient: string; category: string; players: string; thumbnail: string; }
@@ -472,7 +473,7 @@ const PlayerPicker: React.FC<{ selected: string[]; onToggle: (uid: string) => vo
                             <button key={u.id} onClick={() => onToggle(uEmail)}
                                 className={clsx("w-full flex items-center gap-3 p-2.5 rounded-xl text-left text-sm transition-all mb-1",
                                     isSel ? "bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700" : "hover:bg-slate-50 dark:hover:bg-slate-700/50")}>
-                                <img src={u.avatar || `https://ui-avatars.com/api/?name=${u.name}&background=6366f1&color=fff&size=80`} alt="" className="w-8 h-8 rounded-full object-cover" />
+                                <AvatarImg src={u.avatar} name={u.name} className="w-8 h-8 rounded-full shrink-0" size={32} />
                                 <div className="flex-1 min-w-0"><p className="font-medium truncate">{u.name}</p><p className="text-xs text-slate-400">{u.dept} · {u.role}</p></div>
                                 {isSel && <Check size={18} className="text-indigo-500 shrink-0" />}
                             </button>
@@ -579,7 +580,7 @@ const OnlineTicTacToe: React.FC<{ room: GameRoom; myUid: string }> = ({ room, my
                     gs.isXNext && !winner && !isDraw
                         ? "bg-blue-500/10 border-blue-400/50 shadow-lg shadow-blue-500/10"
                         : "bg-white/60 dark:bg-slate-800/60 border-white/30 dark:border-slate-700/50")}>
-                    <img src={playerNames[playerX]?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(xName)}&size=40&background=3b82f6&color=fff`} className="w-10 h-10 rounded-xl border-2 border-blue-400/50" alt="" />
+                    <AvatarImg src={playerNames[playerX]?.avatar} name={xName} className="w-10 h-10 rounded-xl border-2 border-blue-400/50 shrink-0" size={40} gradientFrom="from-blue-400" gradientTo="to-blue-600" />
                     <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-blue-600 dark:text-blue-400 truncate">{xName}</p>
                         <p className="text-xs text-slate-400">✕ Quân X</p>
@@ -600,7 +601,7 @@ const OnlineTicTacToe: React.FC<{ room: GameRoom; myUid: string }> = ({ room, my
                         <p className="text-sm font-bold text-rose-600 dark:text-rose-400 truncate">{oName}</p>
                         <p className="text-xs text-slate-400">○ Quân O</p>
                     </div>
-                    <img src={playerNames[playerO]?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(oName)}&size=40&background=f43f5e&color=fff`} className="w-10 h-10 rounded-xl border-2 border-rose-400/50" alt="" />
+                    <AvatarImg src={playerNames[playerO]?.avatar} name={oName} className="w-10 h-10 rounded-xl border-2 border-rose-400/50 shrink-0" size={40} gradientFrom="from-rose-400" gradientTo="to-rose-600" />
                 </div>
             </div>
             {/* Board with glassmorphism */}
@@ -888,7 +889,7 @@ const OnlineGomoku: React.FC<{ room: GameRoom; myUid: string }> = ({ room, myUid
                     gs.isXNext && !winner
                         ? "bg-blue-500/10 border-blue-400/50 shadow-lg shadow-blue-500/10"
                         : "bg-white/60 dark:bg-slate-800/60 border-white/30 dark:border-slate-700/50")}>
-                    <img src={playerNames[gs.playerX]?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(xName)}&size=40&background=3b82f6&color=fff`} className="w-10 h-10 rounded-xl border-2 border-blue-400/50" alt="" />
+                    <AvatarImg src={playerNames[gs.playerX]?.avatar} name={xName} className="w-10 h-10 rounded-xl border-2 border-blue-400/50 shrink-0" size={40} gradientFrom="from-blue-400" gradientTo="to-blue-600" />
                     <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-blue-600 dark:text-blue-400 truncate">{xName}</p>
                         <p className="text-xs text-slate-400">✕ Quân X</p>
@@ -909,7 +910,7 @@ const OnlineGomoku: React.FC<{ room: GameRoom; myUid: string }> = ({ room, myUid
                         <p className="text-sm font-bold text-rose-600 dark:text-rose-400 truncate">{oName}</p>
                         <p className="text-xs text-slate-400">○ Quân O</p>
                     </div>
-                    <img src={playerNames[gs.playerO]?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(oName)}&size=40&background=f43f5e&color=fff`} className="w-10 h-10 rounded-xl border-2 border-rose-400/50" alt="" />
+                    <AvatarImg src={playerNames[gs.playerO]?.avatar} name={oName} className="w-10 h-10 rounded-xl border-2 border-rose-400/50 shrink-0" size={40} gradientFrom="from-rose-400" gradientTo="to-rose-600" />
                 </div>
             </div>
             {/* Toolbar with glassmorphism */}
@@ -995,7 +996,7 @@ const RoomLobby: React.FC<{ room: GameRoom; myUid: string; onStart: () => void; 
                 <div className="space-y-2">
                     {playerList.map(([uid, data]: [string, any]) => (
                         <div key={uid} className="flex items-center gap-2 text-sm">
-                            <img src={data.avatar || `https://ui-avatars.com/api/?name=${data.name}&size=32`} className="w-7 h-7 rounded-full" alt="" />
+                            <AvatarImg src={data.avatar} name={data.name} className="w-7 h-7 rounded-full shrink-0" size={28} />
                             <span className="font-medium">{data.name}</span>
                             {uid === room.hostId && <Crown size={14} className="text-amber-500" />}
                             {isHost && uid !== myUid && (
@@ -1309,7 +1310,7 @@ const Minigame: React.FC = () => {
                                                 <div className="mt-3 flex items-center justify-center gap-3 backdrop-blur bg-gradient-to-r from-blue-50/60 via-white/40 to-rose-50/60 dark:from-blue-900/20 dark:via-slate-800/30 dark:to-rose-900/20 rounded-xl px-4 py-2 border border-white/30 dark:border-slate-700/30">
                                                     <div className="flex items-center gap-2">
                                                         <div className="relative">
-                                                            <img src={pX?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(pX?.name || 'X')}&size=24&background=3b82f6&color=fff`} className="w-7 h-7 rounded-full border-2 border-blue-300/50" alt="" />
+                                                            <AvatarImg src={pX?.avatar} name={pX?.name || 'X'} className="w-7 h-7 rounded-full border-2 border-blue-300/50" size={28} gradientFrom="from-blue-400" gradientTo="to-blue-600" />
                                                             {gs.playerX === r.hostId && <Crown size={10} className="absolute -top-1.5 -right-1 text-amber-500 drop-shadow" />}
                                                         </div>
                                                         <span className="text-xs font-bold text-blue-600 dark:text-blue-400">{pX?.name?.split(' ').pop() || 'X'}</span>
@@ -1322,7 +1323,7 @@ const Minigame: React.FC = () => {
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-xs font-bold text-rose-600 dark:text-rose-400">{pO?.name?.split(' ').pop() || 'O'}</span>
                                                         <div className="relative">
-                                                            <img src={pO?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(pO?.name || 'O')}&size=24&background=f43f5e&color=fff`} className="w-7 h-7 rounded-full border-2 border-rose-300/50" alt="" />
+                                                            <AvatarImg src={pO?.avatar} name={pO?.name || 'O'} className="w-7 h-7 rounded-full border-2 border-rose-300/50" size={28} gradientFrom="from-rose-400" gradientTo="to-rose-600" />
                                                             {gs.playerO === r.hostId && <Crown size={10} className="absolute -top-1.5 -right-1 text-amber-500 drop-shadow" />}
                                                         </div>
                                                     </div>
@@ -1336,10 +1337,14 @@ const Minigame: React.FC = () => {
                                                 <div className="flex -space-x-2">
                                                     {sortedPlayers.slice(0, 6).map(([uid, data]: [string, any]) => (
                                                         <div key={uid} className="relative">
-                                                            <img src={data.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name)}&size=28&background=6366f1&color=fff`}
+                                                            <AvatarImg
+                                                                src={data.avatar}
+                                                                name={data.name}
                                                                 className={clsx("w-7 h-7 rounded-full border-2 transition-transform hover:scale-110 hover:z-10",
                                                                     isMyTurnInRoom && uid === myUid ? "border-emerald-400 ring-2 ring-emerald-300/50" : "border-white dark:border-slate-700")}
-                                                                alt={data.name} title={data.name} />
+                                                                size={28}
+                                                                title={data.name}
+                                                            />
                                                             {uid === r.hostId && <Crown size={10} className="absolute -top-1.5 -right-0.5 text-amber-500 drop-shadow" />}
                                                         </div>
                                                     ))}

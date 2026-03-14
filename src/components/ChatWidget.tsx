@@ -310,8 +310,9 @@ const ChatWidget: React.FC = () => {
                             <Users size={20} />
                         </div>
                     ) : (
-                        <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-700">
-                            <img src={avatar || `https://ui-avatars.com/api/?name=${name}`} className="w-full h-full object-cover" />
+                        <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-700 relative">
+                            <img src={avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'U')}&background=6366f1&color=fff`} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                            <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-sm" style={{display:'none'}}>{(name||'?')[0]}</div>
                         </div>
                     )}
                     {!isGroup && isUserOnline(chat.participants.find(id => id !== currentUser?.uid)!) && (
@@ -465,8 +466,9 @@ const ChatWidget: React.FC = () => {
                                         className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors group"
                                     >
                                         <div className="relative shrink-0">
-                                            <div className="w-9 h-9 rounded-full overflow-hidden bg-slate-700">
-                                                <img src={u.avatar} className="w-full h-full object-cover" />
+                                            <div className="w-9 h-9 rounded-full overflow-hidden bg-slate-700 relative">
+                                                <img src={u.avatar} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                                <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-xs" style={{display:'none'}}>{(u.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
                                             </div>
                                             {isUserOnline(u.id) && (
                                                 <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-900 rounded-full"></div>
@@ -513,8 +515,9 @@ const ChatWidget: React.FC = () => {
                                                 isSelected ? "bg-indigo-600/20 border border-indigo-500/50" : "hover:bg-slate-800 border border-transparent"
                                             )}
                                         >
-                                            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
-                                                <img src={u.avatar} className="w-full h-full object-cover" />
+                                            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 relative">
+                                                <img src={u.avatar} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                                <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-xs" style={{display:'none'}}>{(u.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
                                             </div>
                                             <div className="flex-1 truncate text-sm text-slate-300">{u.name}</div>
                                             {isSelected ? <CheckCheck size={16} className="text-indigo-400" /> : <Circle size={16} className="text-slate-600" />}
@@ -570,8 +573,9 @@ const ChatWidget: React.FC = () => {
                                             )}
 
                                             {!isMe && (
-                                                <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 mt-1" title={sender?.name}>
-                                                    <img src={sender?.avatar || `https://ui-avatars.com/api/?name=User`} className="w-full h-full object-cover" />
+                                                <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 mt-1 relative" title={sender?.name}>
+                                                    <img src={sender?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(sender?.name||'U')}&background=6366f1&color=fff`} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 items-center justify-center text-white font-bold text-xs" style={{display:'none'}}>{(sender?.name||'?')[0]}</div>
                                                 </div>
                                             )}
 

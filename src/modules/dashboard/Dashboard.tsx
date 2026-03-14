@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+    ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell
 } from 'recharts';
 import { Activity, CheckCircle2, AlertOctagon, TrendingUp, AlertTriangle, CloudSun, Sparkles, Zap, CalendarDays, Clock, Video, MapPin, UserMinus, Laptop2, ChevronDown, ChevronUp } from 'lucide-react';
@@ -14,6 +14,40 @@ import { useAuth } from '../../context/AuthContext';
 import ActiveUsersWidget from '../../components/ActiveUsersWidget';
 import InternalNewsBoard from './components/InternalNewsBoard';
 import { useMeetingSchedule } from '../../hooks/useMeetingSchedule';
+import { db } from '../../lib/firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
+
+// Google Sheets order data source (same as Orders module)
+const ORDER_SHEET_ID = '1mzYT75VEJh-PMYvlwUEQkvVnDIj6p1P2ssS6FXvK5Vs';
+const ORDER_GID = '485384320';
+const ORDER_CSV_URL = `https://docs.google.com/spreadsheets/d/${ORDER_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${ORDER_GID}`;
+
+function parseCSVSimple(text: string): string[][] {
+    const rows: string[][] = [];
+    let current = '';
+    let inQuotes = false;
+    const row: string[] = [];
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (i + 1 < text.length && text[i + 1] === '"') { current += '"'; i++; } else { inQuotes = false; }
+            } else { current += ch; }
+        } else {
+            if (ch === '"') { inQuotes = true; }
+            else if (ch === ',') { row.push(current); current = ''; }
+            else if (ch === '\n' || ch === '\r') {
+                if (ch === '\r' && i + 1 < text.length && text[i + 1] === '\n') i++;
+                row.push(current); current = '';
+                if (row.length > 0) rows.push([...row]);
+                row.length = 0;
+            } else { current += ch; }
+        }
+    }
+    row.push(current);
+    if (row.some(c => c.trim())) rows.push(row);
+    return rows;
+}
 
 const COLORS = ['#10b981', '#3b82f6', '#ef4444'];
 const COLORS_LIGHT = ['#059669', '#2563eb', '#dc2626']; // Darker shades for light mode legibility
@@ -391,27 +425,90 @@ const Dashboard: React.FC = () => {
                 })(),
                 income: Number(r.netPay) || 0,
                 additional: Number(r.totalAdditional) || 0,
-                fullIncome: Number(r.totalActualIncome) || 0
+                basePay: Math.max(0, (Number(r.netPay) || 0) - (Number(r.totalAdditional) || 0)),
+                fullIncome: Math.max(Number(r.totalActualIncome) || 0, Number(r.netPay) || 0),
+                lineValue: Math.round((Number(r.netPay) || 0) * 1.15)
             }));
 
         return { latestMonth: monthToUse, payrollChartData: chartData };
     }, [payrollRecords]);
 
-    const totalOrders = logs.length;
+    // --- Order stats from Google Sheets (same source as Orders module) ---
+    const [orderStats, setOrderStats] = useState({ processing: 0, completed: 0, total: 0, rework: 0 });
 
-    // Status Counts
-    const completedCount = logs.filter(l => l.status === 'completed').length;
-    const processingCount = logs.filter(l => l.status === 'processing').length;
-    const reworkCount = logs.filter(l => l.status === 'rework').length;
-    const activeCount = processingCount + reworkCount;
+    useEffect(() => {
+        let orderMetas: Record<string, { statusOverride?: string }> = {};
+        let rawOrders: { id: string; status: string }[] = [];
 
+        const computeStats = () => {
+            let processingCount = 0;
+            let completedCount = 0;
+            let printingCount = 0;
+            let reworkCount = 0;
+            rawOrders.forEach(o => {
+                const effectiveStatus = (orderMetas[o.id]?.statusOverride || o.status || '').toLowerCase().trim();
+                if (effectiveStatus.includes('hoàn thành') || effectiveStatus === 'done' || effectiveStatus === 'completed') {
+                    completedCount++;
+                } else if (effectiveStatus.includes('đặt in') || effectiveStatus.includes('in ấn') || effectiveStatus === 'printing') {
+                    printingCount++;
+                } else if (effectiveStatus.includes('hủy')) {
+                    // don't count cancelled
+                } else {
+                    // processing, rework etc.
+                    processingCount++;
+                    if (effectiveStatus.includes('rework') || effectiveStatus.includes('làm lại')) reworkCount++;
+                }
+            });
+            // HOÀN THÀNH = completedCount + printingCount (as per user request)
+            setOrderStats({ processing: processingCount, completed: completedCount + printingCount, total: rawOrders.length, rework: reworkCount });
+        };
+
+        // Fetch CSV
+        fetch(ORDER_CSV_URL)
+            .then(res => res.text())
+            .then(text => {
+                const rows = parseCSVSimple(text);
+                const parsed: { id: string; status: string }[] = [];
+                for (let i = 1; i < rows.length; i++) {
+                    const cols = rows[i];
+                    const time = (cols[1] || '').trim();
+                    const person = (cols[2] || '').trim();
+                    const brand = (cols[3] || '').trim();
+                    const request = (cols[4] || '').trim();
+                    if (!time && !person && !brand && !request) continue;
+                    const rawId = cols[0]?.trim() || `row-${i}`;
+                    const safeId = rawId.replace(/[\/\s:]/g, '-');
+                    const rawStatus = (cols[7] || '').trim();
+                    const sTrim = (rawStatus || '').trim();
+                    const status = (!sTrim || sTrim.toUpperCase() === 'N/A') ? 'Đang xử lý' : sTrim;
+                    parsed.push({ id: safeId, status });
+                }
+                rawOrders = parsed;
+                computeStats();
+            })
+            .catch(() => { });
+
+        // Listen to Firestore order_metas for status overrides
+        const unsub = onSnapshot(collection(db, 'order_metas'), (snap) => {
+            const metas: Record<string, { statusOverride?: string }> = {};
+            snap.docs.forEach(d => { metas[d.id] = d.data() as any; });
+            orderMetas = metas;
+            computeStats();
+        });
+
+        return () => unsub();
+    }, []);
+
+    const totalOrders = orderStats.total;
+    const activeCount = orderStats.processing;
+    const completedCount = orderStats.completed;
+    const reworkCount = orderStats.rework;
     const reworkRate = totalOrders > 0 ? ((reworkCount / totalOrders) * 100).toFixed(1) : '0.0';
 
-    // Chart Data: Status
     const dataStatus = [
-        { name: t.common.completed, value: completedCount },
-        { name: t.common.processing, value: processingCount },
-        { name: t.common.rework, value: reworkCount },
+        { name: t.common.completed || 'Hoàn thành', value: completedCount },
+        { name: t.common.processing || 'Đang xử lý', value: activeCount },
+        { name: t.common.rework || 'Làm lại', value: reworkCount },
     ];
 
     // Chart Data: Backlog by Dept
@@ -454,7 +551,7 @@ const Dashboard: React.FC = () => {
                         <p className="text-indigo-100 max-w-xl text-sm md:text-base leading-relaxed opacity-90">
                             Chúc bạn một ngày làm việc hiệu quả và tràn đầy năng lượng.
                             <br className="hidden md:block" />
-                            Hệ thống đang hoạt động ổn định với <strong className="text-white">{logs.filter(l => l.status === 'processing').length} đơn đặt hàng</strong> đang xử lý.
+                            Hệ thống đang hoạt động ổn định với <strong className="text-white">{activeCount} đơn đặt hàng</strong> đang xử lý.
                         </p>
                     </div>
 
@@ -606,8 +703,11 @@ const Dashboard: React.FC = () => {
                             <CheckCircle2 size={24} />
                         </div>
                     </div>
-                    <div className="relative z-10 mt-4 flex items-center text-sm font-medium text-emerald-100 bg-white/10 w-fit px-3 py-1 rounded-full border border-white/10">
-                        <TrendingUp size={14} className="mr-1.5" /> {t.dashboard.systemData}
+                    <div className="relative z-10 mt-4 flex flex-col gap-1.5">
+                        <div className="flex items-center text-sm font-medium text-emerald-100 bg-white/10 w-fit px-3 py-1 rounded-full border border-white/10">
+                            <TrendingUp size={14} className="mr-1.5" /> {t.dashboard.systemData}
+                        </div>
+                        <span className="text-[11px] text-emerald-200/70 pl-1">Kể từ 01/2025 đến nay</span>
                     </div>
                 </div>
 
@@ -764,29 +864,30 @@ const Dashboard: React.FC = () => {
                 <div className="h-[400px] w-full">
                     {payrollChartData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
+                            <ComposedChart
                                 data={payrollChartData}
-                                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                                margin={isMobile ? { top: 10, right: 15, left: 5, bottom: 5 } : { top: 20, right: 30, left: 20, bottom: 5 }}
                                 layout={isMobile ? "vertical" : "horizontal"}
                             >
                                 <defs>
-                                    <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
+                                    <linearGradient id="basePayGradient" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="0%" stopColor="#10b981" stopOpacity={1} />
-                                        <stop offset="100%" stopColor="#059669" stopOpacity={0.8} />
+                                        <stop offset="100%" stopColor="#059669" stopOpacity={0.85} />
                                     </linearGradient>
                                     <linearGradient id="additionalGradient" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="0%" stopColor="#f97316" stopOpacity={1} />
-                                        <stop offset="100%" stopColor="#ea580c" stopOpacity={0.8} />
+                                        <stop offset="100%" stopColor="#ea580c" stopOpacity={0.85} />
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} horizontal={isMobile} vertical={!isMobile} opacity={0.3} />
                                 <XAxis
                                     type={isMobile ? "number" : "category"}
                                     dataKey={isMobile ? undefined : "shortName"}
-                                    tick={{ fill: axisTextFill, fontSize: 12 }}
+                                    tick={{ fill: axisTextFill, fontSize: isMobile ? 10 : 11, fontWeight: 600 }}
                                     axisLine={false}
                                     tickLine={false}
                                     hide={isMobile}
+                                    tickFormatter={isMobile ? (value) => `${(value / 1000000).toFixed(1)}M` : undefined}
                                 />
                                 <YAxis
                                     type={isMobile ? "category" : "number"}
@@ -794,28 +895,38 @@ const Dashboard: React.FC = () => {
                                     tick={{ fill: axisTextFill, fontSize: 11, fontWeight: 500 }}
                                     axisLine={false}
                                     tickLine={false}
-                                    width={isMobile ? 110 : 60}
+                                    width={isMobile ? 100 : 55}
                                     tickFormatter={isMobile ? undefined : (value) => `${(value / 1000000).toFixed(1)}M`}
                                 />
                                 <Tooltip
-                                    cursor={{ fill: 'url(#incomeGradient)', opacity: 0.1 }}
-                                    content={({ active, payload, label }) => {
+                                    cursor={{ fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', radius: 8 }}
+                                    content={({ active, payload }) => {
                                         if (active && payload && payload.length) {
+                                            const data = payload[0]?.payload;
+                                            if (!data) return null;
+                                            const fmt = (v: number) => new Intl.NumberFormat('vi-VN').format(v) + ' đ';
                                             return (
-                                                <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-700/50 p-4 rounded-2xl shadow-xl shadow-indigo-500/10 min-w-[220px] animate-in fade-in zoom-in-95 duration-200">
-                                                    <p className="font-bold text-slate-800 dark:text-slate-100 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2 text-sm">{label}</p>
-                                                    <div className="space-y-3">
-                                                        {payload.map((entry: any, index: number) => (
-                                                            <div key={index} className="flex flex-col gap-1">
-                                                                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide opacity-80" style={{ color: entry.fill.includes('income') ? '#10b981' : '#f97316' }}>
-                                                                    <div className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: entry.fill.includes('income') ? '#10b981' : '#f97316' }}></div>
-                                                                    {entry.name}
-                                                                </div>
-                                                                <p className="text-xl font-black tabular-nums tracking-tight" style={{ color: entry.fill.includes('income') ? '#059669' : '#ea580c' }}>
-                                                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(entry.value))}
-                                                                </p>
+                                                <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-white/30 dark:border-slate-700/50 p-4 rounded-2xl shadow-2xl shadow-black/10 min-w-[240px]">
+                                                    <p className="font-bold text-slate-800 dark:text-slate-100 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2 text-sm">{data.name}</p>
+                                                    <div className="space-y-2.5">
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></div>
+                                                                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Thu nhập cơ sở</span>
                                                             </div>
-                                                        ))}
+                                                            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{fmt(data.basePay)}</span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-2.5 h-2.5 rounded-full bg-orange-500 shadow-sm shadow-orange-500/50"></div>
+                                                                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Thu nhập tăng thêm</span>
+                                                            </div>
+                                                            <span className="text-sm font-bold text-orange-600 dark:text-orange-400 tabular-nums">{fmt(data.additional)}</span>
+                                                        </div>
+                                                        <div className="border-t border-slate-200 dark:border-slate-700 pt-2 mt-1 flex items-center justify-between gap-4">
+                                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Tổng thu nhập</span>
+                                                            <span className="text-base font-black text-slate-900 dark:text-white tabular-nums">{fmt(data.income)}</span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             );
@@ -823,25 +934,44 @@ const Dashboard: React.FC = () => {
                                         return null;
                                     }}
                                 />
-                                <Bar
-                                    dataKey="income"
-                                    name="Thu nhập thực nhận"
-                                    fill="url(#incomeGradient)"
-                                    radius={isMobile ? [0, 6, 6, 0] : [8, 8, 0, 0]}
-                                    barSize={isMobile ? 16 : 28}
-                                    isAnimationActive={true}
-                                    animationDuration={1500}
-                                />
+                                {/* Bottom: Thu nhập tăng thêm (orange) */}
                                 <Bar
                                     dataKey="additional"
                                     name="Thu nhập tăng thêm"
+                                    stackId="income"
                                     fill="url(#additionalGradient)"
-                                    radius={isMobile ? [0, 6, 6, 0] : [8, 8, 0, 0]}
-                                    barSize={isMobile ? 16 : 28}
+                                    radius={isMobile ? [0, 0, 0, 0] : [0, 0, 0, 0]}
+                                    barSize={isMobile ? 18 : 32}
                                     isAnimationActive={true}
-                                    animationDuration={1500}
+                                    animationDuration={1200}
                                 />
-                            </BarChart>
+                                {/* Top: Thu nhập cơ sở (green) */}
+                                <Bar
+                                    dataKey="basePay"
+                                    name="Thu nhập cơ sở"
+                                    stackId="income"
+                                    fill="url(#basePayGradient)"
+                                    radius={isMobile ? [0, 6, 6, 0] : [6, 6, 0, 0]}
+                                    barSize={isMobile ? 18 : 32}
+                                    isAnimationActive={true}
+                                    animationDuration={1200}
+                                />
+                                {/* Line: Tổng thu nhập */}
+                                {!isMobile && (
+                                    <Line
+                                        type="monotone"
+                                        dataKey="lineValue"
+                                        name="Tổng thu nhập"
+                                        stroke="#10b981"
+                                        strokeWidth={2.5}
+                                        dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
+                                        activeDot={{ r: 6, fill: '#10b981', strokeWidth: 3, stroke: '#fff' }}
+                                        tooltipType="none"
+                                        isAnimationActive={true}
+                                        animationDuration={1800}
+                                    />
+                                )}
+                            </ComposedChart>
                         </ResponsiveContainer>
                     ) : (
                         <div className="h-full flex flex-col items-center justify-center text-text-muted">

@@ -96,17 +96,30 @@ const ActiveUsersWidget: React.FC = () => {
 
             {/* Avatars Preview */}
             <div className="flex -space-x-3 mb-6 overflow-visible py-2 pl-2 min-h-[50px] relative z-10">
-                {stats.onlineUsers.slice(0, 5).map((u: any, idx: number) => (
-                    <div key={idx} className="relative group/avatar cursor-help hover:z-20 hover:-translate-y-1 transition-all duration-300">
-                        <div className="absolute inset-0 bg-emerald-500 rounded-full blur-md opacity-20 group-hover/avatar:opacity-40 transition-opacity"></div>
-                        <img
-                            src={u.avatar}
-                            className="w-12 h-12 rounded-full border-[3px] border-white dark:border-slate-800 shadow-md object-cover relative z-10"
-                            title={`Online: ${u.name}`}
-                        />
-                        <div className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-slate-800 rounded-full z-20 animate-pulse"></div>
-                    </div>
-                ))}
+                {stats.onlineUsers.slice(0, 5).map((u: any, idx: number) => {
+                    const initials = (u.name || '?').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+                    return (
+                        <div key={idx} className="relative group/avatar cursor-help hover:z-20 hover:-translate-y-1 transition-all duration-300">
+                            <div className="absolute inset-0 bg-emerald-500 rounded-full blur-md opacity-20 group-hover/avatar:opacity-40 transition-opacity"></div>
+                            <img
+                                src={u.avatar}
+                                alt={u.name}
+                                className="w-12 h-12 rounded-full border-[3px] border-white dark:border-slate-800 shadow-md object-cover relative z-10"
+                                title={`Online: ${u.name}`}
+                                onError={(e) => {
+                                    const target = e.currentTarget;
+                                    target.style.display = 'none';
+                                    const fallback = target.nextElementSibling as HTMLElement;
+                                    if (fallback) fallback.style.display = 'flex';
+                                }}
+                            />
+                            <div className="w-12 h-12 rounded-full border-[3px] border-white dark:border-slate-800 shadow-md bg-gradient-to-br from-emerald-400 to-teal-500 items-center justify-center text-white text-xs font-black relative z-10" style={{ display: 'none' }} title={`Online: ${u.name}`}>
+                                {initials}
+                            </div>
+                            <div className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-slate-800 rounded-full z-20 animate-pulse"></div>
+                        </div>
+                    );
+                })}
                 {stats.online > 5 && (
                     <div className="w-12 h-12 rounded-full border-[3px] border-white dark:border-slate-800 bg-slate-100 dark:bg-slate-700/80 backdrop-blur-sm flex items-center justify-center text-xs font-bold text-slate-500 dark:text-slate-300 shadow-inner z-0">
                         +{stats.online - 5}
@@ -132,9 +145,16 @@ const ActiveUsersWidget: React.FC = () => {
                         <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Nghỉ</span>
                     </div>
                     <div className="flex -space-x-1.5">
-                        {stats.leaveUsers.slice(0, 3).map((u: any) => (
-                            <img key={u.id} src={u.avatar} className="w-5 h-5 rounded-full border border-white dark:border-slate-800 grayscale opacity-60" />
-                        ))}
+                        {stats.leaveUsers.slice(0, 3).map((u: any) => {
+                            const initials = (u.name || '?').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+                            return (
+                                <div key={u.id} className="relative">
+                                    <img src={u.avatar} alt={u.name} className="w-5 h-5 rounded-full border border-white dark:border-slate-800 grayscale opacity-60"
+                                        onError={(e) => { e.currentTarget.style.display = 'none'; const f = e.currentTarget.nextElementSibling as HTMLElement; if (f) f.style.display = 'flex'; }} />
+                                    <div className="w-5 h-5 rounded-full border border-white dark:border-slate-800 bg-rose-300 items-center justify-center text-white text-[7px] font-black grayscale opacity-60" style={{ display: 'none' }}>{initials}</div>
+                                </div>
+                            );
+                        })}
                         {stats.leaveUsers.length > 3 && <span className="text-[10px] font-bold text-rose-500 pl-2">+{stats.leaveUsers.length - 3}</span>}
                         {stats.leaveUsers.length === 0 && <span className="text-sm font-bold text-rose-500">0</span>}
                     </div>
