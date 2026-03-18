@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Package, Clock, User, Tag, FileText, Filter, Search, ArrowUpDown, ChevronDown, AlertCircle, CheckCircle2, Loader2, Truck, XCircle, BarChart as BarChartIcon, Calendar, CalendarClock, Copy, Printer } from 'lucide-react';
 import PrintOrdersManager from './PrintOrdersManager';
 import { clsx } from 'clsx';
@@ -13,6 +14,7 @@ import { GlassDatePicker } from '../../components/ui/GlassDatePicker';
 const SHEET_ID = '1mzYT75VEJh-PMYvlwUEQkvVnDIj6p1P2ssS6FXvK5Vs';
 const GID = '485384320';
 const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9KkabbjikHf61xfeXfxgNlbjRn4TozZu58xGrF58Ys8swvyA7lG-QpEfPms9C9TvF/exec';
 
 interface Order {
     id: string;
@@ -195,7 +197,41 @@ const Orders: React.FC = () => {
     const [editingDelivery, setEditingDelivery] = useState<string | null>(null);
     const [tempDeliveryDate, setTempDeliveryDate] = useState<Date>(new Date());
     const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'orders' | 'print'>('orders');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const activeTab = (searchParams.get('tab') === 'print' ? 'print' : 'orders') as 'orders' | 'print';
+    const setActiveTab = useCallback((tab: 'orders' | 'print') => {
+        setSearchParams((prev: URLSearchParams) => {
+            const next = new URLSearchParams(prev);
+            if (tab === 'orders') next.delete('tab'); else next.set('tab', tab);
+            return next;
+        }, { replace: true });
+    }, [setSearchParams]);
+    const [printProcessingCount, setPrintProcessingCount] = useState(0);
+
+    // Fetch print orders count (only 'Chưa xử lý')
+    useEffect(() => {
+        const fetchPrintCount = async () => {
+            try {
+                const res = await fetch(`https://docs.google.com/spreadsheets/d/16GLyiZLdBknve7P_JO9ly-Luy5vIgdizNmQH985zPeo/gviz/tq?tqx=out:csv&gid=0`);
+                const text = await res.text();
+                const rows = parseCSV(text);
+                let count = 0;
+                for (let i = 1; i < rows.length; i++) {
+                    const c = rows[i];
+                    if (!c[0] && !c[1] && !c[3]) continue;
+                    const status = (c[16] || 'Chưa xử lý').trim().toLowerCase(); // Q: Trạng thái
+                    // Only count 'Chưa xử lý' (pending/unprocessed)
+                    if (status === 'chưa xử lý' || status === '') {
+                        count++;
+                    }
+                }
+                setPrintProcessingCount(count);
+            } catch { /* silent */ }
+        };
+        fetchPrintCount();
+        const interval = setInterval(fetchPrintCount, 60 * 1000);
+        return () => clearInterval(interval);
+    }, []);
 
     // Check if current user can edit orders
     const canEdit = useMemo(() => {
@@ -219,24 +255,48 @@ const Orders: React.FC = () => {
         return () => unsub();
     }, []);
 
-    // Save order meta to Firestore
+    // Sync to Google Sheet via Apps Script (fire-and-forget)
+    // NOTE: POST body bị mất do Google 302 redirect (POST→GET), nên dùng GET với URL params
+    const syncToSheet = useCallback((action: string, payload: Record<string, string>) => {
+        const params = new URLSearchParams({ action, ...payload });
+        const url = `${APPS_SCRIPT_URL}?${params.toString()}`;
+        
+        // Primary: GET with no-cors (fire-and-forget, luôn hoạt động)
+        fetch(url, { mode: 'no-cors', redirect: 'follow' })
+            .then(() => console.log('[SheetSync] ✅ GET request sent:', action, payload))
+            .catch(err => console.warn('[SheetSync] ❌ GET error:', err));
+    }, []);
+
+    // Save order meta to Firestore + sync to Sheet
     const saveOrderMeta = useCallback(async (orderId: string, data: Partial<OrderMeta>) => {
         if (!canEdit || !orderId) return;
         setSavingMeta(orderId);
         try {
             const currentAppUser = users.find(u => u.email === currentUser?.email);
-            await setDoc(doc(db, 'order_metas', orderId), {
+            const updatedBy = currentAppUser?.name || currentUser?.email || 'Unknown';
+            
+            // 1. Save to Firestore (fire-and-forget for instant UI)
+            setDoc(doc(db, 'order_metas', orderId), {
                 ...orderMetas[orderId],
                 ...data,
-                updatedBy: currentAppUser?.name || currentUser?.email || 'Unknown',
+                updatedBy,
                 updatedAt: new Date().toISOString(),
-            }, { merge: true });
+            }, { merge: true }).catch(err => console.warn('[Firestore] Write error:', err));
+
+            // 2. Sync to Google Sheet via Apps Script
+            if (data.statusOverride && data.deliveryDate) {
+                syncToSheet('updateBoth', { orderId, status: data.statusOverride, deliveryDate: data.deliveryDate, updatedBy });
+            } else if (data.statusOverride) {
+                syncToSheet('updateStatus', { orderId, status: data.statusOverride, updatedBy });
+            } else if (data.deliveryDate) {
+                syncToSheet('updateDelivery', { orderId, deliveryDate: data.deliveryDate, updatedBy });
+            }
         } catch (err) {
             console.error('Error saving order meta:', err);
         } finally {
             setSavingMeta(null);
         }
-    }, [canEdit, currentUser, users, orderMetas]);
+    }, [canEdit, currentUser, users, orderMetas, syncToSheet]);
 
     const handleStatusChange = useCallback(async (orderId: string, newStatus: string) => {
         await saveOrderMeta(orderId, { statusOverride: newStatus });
@@ -271,15 +331,19 @@ const Orders: React.FC = () => {
             const rows = parseCSV(text);
             if (rows.length < 2) throw new Error('Không có dữ liệu');
 
+            // New column mapping (after Sheet reorganization):
+            // A(0)=Timestamp, B(1)=Person, C(2)=Brand, D(3)=Request,
+            // E(4)=Description, F(5)=Qty, G(6)=DeliveryEst,
+            // H(7)=Handler, I(8)=Status, J(9)=LeaderCheck, K(10)=CompletionTime
             const parsedOrders: Order[] = [];
             for (let i = 1; i < rows.length; i++) {
                 const cols = rows[i];
-                const time = (cols[1] || '').trim();
-                const person = (cols[2] || '').trim();
-                const brand = (cols[3] || '').trim();
-                const request = (cols[4] || '').trim();
-                const description = (cols[5] || '').trim();
-                const rawStatus = (cols[7] || '').trim();
+                const time = (cols[0] || '').trim();        // A: Dấu thời gian
+                const person = (cols[1] || '').trim();      // B: Bạn là ai?
+                const brand = (cols[2] || '').trim();       // C: Tên thương hiệu
+                const request = (cols[3] || '').trim();     // D: Yêu cầu
+                const description = (cols[4] || '').trim(); // E: Mô tả, Ghi chú
+                const rawStatus = (cols[8] || '').trim();   // I: Trạng thái
                 // Normalize: empty or N/A → "Đang xử lý"
                 const sTrim = (rawStatus || '').trim();
                 const status = (!sTrim || sTrim.toUpperCase() === 'N/A') ? 'Đang xử lý' : sTrim;
@@ -287,9 +351,8 @@ const Orders: React.FC = () => {
                 // Skip empty rows
                 if (!time && !person && !brand && !request) continue;
 
-                // Ensure id is safe for firestore (no slashes or invalid chars)
-                const rawId = cols[0]?.trim() || `row-${i}`;
-                const safeId = rawId.replace(/[\/\s:]/g, '-');
+                // Generate safe ID from row index (no STT column anymore)
+                const safeId = `row-${i}`;
 
                 parsedOrders.push({
                     id: safeId,
@@ -538,6 +601,16 @@ const Orders: React.FC = () => {
                     )}
                 >
                     <Printer size={16} /> In ấn
+                    {printProcessingCount > 0 && (
+                        <span className={clsx(
+                            'ml-1 min-w-[20px] h-5 flex items-center justify-center rounded-full text-[11px] font-bold px-1.5',
+                            activeTab === 'print'
+                                ? 'bg-white/25 text-white'
+                                : 'bg-cyan-500 text-white animate-pulse'
+                        )}>
+                            {printProcessingCount}
+                        </span>
+                    )}
                 </button>
             </div>
 

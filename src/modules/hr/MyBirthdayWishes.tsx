@@ -5,8 +5,7 @@ import { Heart, MessageCircle, Sparkles, Users, Send, ThumbsUp, Clock, Gift, Tra
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import HeroBanner from '../../components/HeroBanner';
-import { storage } from '../../lib/firebase';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { uploadToDrive, DriveUploadResult } from '../../services/driveUploadService';
 
 // 🎨 Emoji categories for the picker
 const EMOJI_CATEGORIES: { label: string; icon: string; emojis: string[] }[] = [
@@ -375,12 +374,16 @@ const MyBirthdayWishes: React.FC<MyBirthdayWishesProps> = ({ asWidget }) => {
         try {
             const confessionId = `conf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-            // Upload image if attached
+            // Upload image if attached (with timeout)
             let imageUrl: string | undefined;
             if (imageFile) {
-                const imgRef = storageRef(storage, `confessions/${confessionId}_${imageFile.name}`);
-                await uploadBytes(imgRef, imageFile);
-                imageUrl = await getDownloadURL(imgRef);
+                const uploadPromise = uploadToDrive(imageFile, 'confessions', `${confessionId}_${imageFile.name}`);
+                const timeoutPromise = new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('Upload hình ảnh quá lâu (30s). Vui lòng thử lại.')), 30000)
+                );
+                const result = await Promise.race([uploadPromise, timeoutPromise]) as DriveUploadResult;
+                if (!result.success || !result.url) throw new Error(result.error || 'Upload failed');
+                imageUrl = result.url;
             }
 
             // Build message object conditionally to avoid undefined keys
@@ -405,9 +408,14 @@ const MyBirthdayWishes: React.FC<MyBirthdayWishesProps> = ({ asWidget }) => {
             }
 
             console.log('📤 Sending confession:', msg);
-            await addConfession(msg);
 
-            // Success cleanup
+            // Fire-and-forget: Firestore will queue & sync via offline persistence
+            // onSnapshot listener will pick up the local cache change immediately
+            addConfession(msg)
+                .then(() => console.log('✅ Confession synced:', confessionId))
+                .catch((err) => console.error('❌ Confession sync error:', err));
+
+            // Success cleanup — immediate, no waiting for server
             setNewMessage('');
             setReplyingTo(null);
             setShowEmojiPicker(false);
@@ -417,8 +425,9 @@ const MyBirthdayWishes: React.FC<MyBirthdayWishesProps> = ({ asWidget }) => {
             if (inputRef.current) inputRef.current.style.height = 'auto';
             if (inputRefDesktop.current) inputRefDesktop.current.style.height = 'auto';
             focusInput();
-        } catch (e) {
+        } catch (e: any) {
             console.error('❌ Send confession error:', e);
+            alert(`Lỗi gửi tin nhắn: ${e?.message || 'Không xác định'}. Vui lòng thử lại.`);
         } finally {
             setIsSending(false);
         }

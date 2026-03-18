@@ -3,20 +3,20 @@ import {
     Sun, Bell, Shield, Database,
     Smartphone, Mail, Lock,
     HardDrive, RefreshCw, Save,
-    User, Loader2, Camera, Fingerprint
+    User, Loader2, Camera, Fingerprint, UploadCloud
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { askPermission, registerServiceWorker, subscribeToPush } from '../../utils/pushManager';
-import { backupDataToSupabase } from '../../services/backupService';
+import { fullBackupToDrive, parseBackupFile, restoreFromBackup } from '../../services/backupService';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Language } from '../../i18n/translations';
-import { db, storage } from '../../lib/firebase';
+import { db } from '../../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes } from 'firebase/storage';
+import { uploadToDrive } from '../../services/driveUploadService';
 import {
     isWebAuthnSupported,
     isPlatformAuthenticatorAvailable,
@@ -199,21 +199,22 @@ const SettingsPage: React.FC = () => {
         try {
             // Process Image (Crop Square + Max 1000px)
             const processedBlob = await processImage(file);
-            const processedFile = new File([processedBlob], "avatar.jpg", { type: "image/jpeg" });
 
-            // Upload to Firebase
-            // Path: avatars/{ID}_{timestamp}.jpg
+            // Upload to Google Drive
             const fileName = `${currentAppUser.id}_${Date.now()}.jpg`;
-            const storagePath = `avatars/${fileName}`;
-            const storageRef = ref(storage, storagePath);
+            const result = await uploadToDrive(
+                new File([processedBlob], fileName, { type: 'image/jpeg' }),
+                'avatars',
+                fileName
+            );
 
-            await uploadBytes(storageRef, processedFile);
-            // Build public URL (no token needed - storage rules allow public read for avatars)
-            const publicUrl = `https://firebasestorage.googleapis.com/v0/b/avgflow-dd822.firebasestorage.app/o/avatars%2F${encodeURIComponent(fileName)}?alt=media`;
+            if (!result.success || !result.url) {
+                throw new Error(result.error || 'Upload failed');
+            }
 
-            // Update Firestore directly
+            // Update Firestore with Drive URL
             await updateDoc(doc(db, 'users', currentAppUser.id), {
-                avatar: publicUrl
+                avatar: result.url
             });
 
             alert("Cập nhật ảnh đại diện thành công!");
@@ -550,14 +551,14 @@ const SettingsPage: React.FC = () => {
 
                         <button
                             onClick={async () => {
-                                if (confirm('Sao lưu toàn bộ dữ liệu lên Supabase ngay lập tức?')) {
+                                if (confirm('Sao lưu toàn bộ dữ liệu lên Google Drive ngay lập tức?')) {
                                     setIsSaving(true);
                                     try {
-                                        const res = await backupDataToSupabase();
+                                        const res = await fullBackupToDrive();
                                         if (res.success) {
-                                            alert(`✅ Sao lưu thành công!\nTime: ${res.timestamp}`);
+                                            alert(`✅ Sao lưu thành công!\nFile: ${res.fileName}\nSố collection: ${res.collections}\nTổng documents: ${res.totalDocuments}`);
                                         } else {
-                                            alert('❌ Sao lưu thất bại. Kiểm tra console.');
+                                            alert('❌ Sao lưu thất bại: ' + (res.error || 'Unknown error'));
                                         }
                                     } catch (e) {
                                         alert('Lỗi: ' + e);
@@ -569,7 +570,63 @@ const SettingsPage: React.FC = () => {
                             className="w-full flex items-center justify-center gap-2 py-2 mt-4 border border-blue-500/20 bg-blue-500/10 rounded-xl text-blue-500 hover:bg-blue-500/20 transition-all font-bold"
                         >
                             <Database size={16} />
-                            <span className="text-sm">Sao lưu ngay (Backup Supabase)</span>
+                            <span className="text-sm">Sao lưu ngay (Google Drive)</span>
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = '.json';
+                                input.onchange = async (e: any) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+
+                                    setIsSaving(true);
+                                    try {
+                                        const text = await file.text();
+                                        const parsed = parseBackupFile(text);
+
+                                        if (!parsed.valid || !parsed.data) {
+                                            alert('❌ ' + (parsed.error || 'File không hợp lệ'));
+                                            return;
+                                        }
+
+                                        const s = parsed.summary!;
+                                        const confirmMsg = `📋 Thông tin backup:\n` +
+                                            `• Ngày backup: ${new Date(s.date).toLocaleString('vi-VN')}\n` +
+                                            `• Số collection: ${s.collections}\n` +
+                                            `• Tổng documents: ${s.documents}\n` +
+                                            `• Realtime paths: ${s.realtimePaths}\n\n` +
+                                            `⚠️ Dữ liệu hiện tại sẽ được GHI ĐÈ bởi backup.\n` +
+                                            `Bạn có chắc chắn muốn khôi phục?`;
+
+                                        if (!confirm(confirmMsg)) return;
+
+                                        const result = await restoreFromBackup(parsed.data);
+
+                                        if (result.success) {
+                                            alert(
+                                                `✅ Khôi phục thành công!\n` +
+                                                `• Collections: ${result.collectionsRestored}\n` +
+                                                `• Documents: ${result.documentsRestored}\n` +
+                                                `• Realtime paths: ${result.realtimePathsRestored}`
+                                            );
+                                        } else {
+                                            alert('❌ Khôi phục thất bại: ' + (result.error || 'Unknown'));
+                                        }
+                                    } catch (err) {
+                                        alert('Lỗi: ' + err);
+                                    } finally {
+                                        setIsSaving(false);
+                                    }
+                                };
+                                input.click();
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2 mt-2 border border-amber-500/20 bg-amber-500/10 rounded-xl text-amber-500 hover:bg-amber-500/20 transition-all font-bold"
+                        >
+                            <UploadCloud size={16} />
+                            <span className="text-sm">Khôi phục từ Backup (.json)</span>
                         </button>
 
                         <button

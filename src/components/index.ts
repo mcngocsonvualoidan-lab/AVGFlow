@@ -18,6 +18,7 @@ export { default as UpdateNotification } from './UpdateNotification';
 export { default as ActiveUsersWidget } from './ActiveUsersWidget';
 export { default as BiometricSetupPrompt } from './BiometricSetupPrompt';
 export { default as ErrorBoundary } from './ErrorBoundary';
+export { default as FileViewer } from './FileViewer';
 export { default as InvitationModal } from './InvitationModal';
 export { default as SmartIdentityPicker } from './SmartIdentityPicker';
 export { default as TetDecorations } from './TetDecorations';

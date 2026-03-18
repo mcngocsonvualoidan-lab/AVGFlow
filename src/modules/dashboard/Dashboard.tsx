@@ -471,14 +471,18 @@ const Dashboard: React.FC = () => {
                 const parsed: { id: string; status: string }[] = [];
                 for (let i = 1; i < rows.length; i++) {
                     const cols = rows[i];
-                    const time = (cols[1] || '').trim();
-                    const person = (cols[2] || '').trim();
-                    const brand = (cols[3] || '').trim();
-                    const request = (cols[4] || '').trim();
+                    // New column mapping (matches Orders.tsx):
+                    // A(0)=Timestamp, B(1)=Person, C(2)=Brand, D(3)=Request,
+                    // E(4)=Description, F(5)=Qty, G(6)=DeliveryEst,
+                    // H(7)=Handler, I(8)=Status
+                    const time = (cols[0] || '').trim();
+                    const person = (cols[1] || '').trim();
+                    const brand = (cols[2] || '').trim();
+                    const request = (cols[3] || '').trim();
                     if (!time && !person && !brand && !request) continue;
-                    const rawId = cols[0]?.trim() || `row-${i}`;
-                    const safeId = rawId.replace(/[\/\s:]/g, '-');
-                    const rawStatus = (cols[7] || '').trim();
+                    // Match ID format from Orders.tsx
+                    const safeId = `row-${i}`;
+                    const rawStatus = (cols[8] || '').trim();
                     const sTrim = (rawStatus || '').trim();
                     const status = (!sTrim || sTrim.toUpperCase() === 'N/A') ? 'Đang xử lý' : sTrim;
                     parsed.push({ id: safeId, status });

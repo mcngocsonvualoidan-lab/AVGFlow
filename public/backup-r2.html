@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>AVGFlow - Backup Images to R2</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; min-height: 100vh; }
+        h1 { font-size: 1.5rem; margin-bottom: 8px; color: #60a5fa; }
+        .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.9rem; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+        .status { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot.ok { background: #22c55e; }
+        .dot.err { background: #ef4444; }
+        .dot.wait { background: #f59e0b; animation: pulse 1s infinite; }
+        @keyframes pulse { 50% { opacity: 0.4; } }
+        .progress-bar { width: 100%; height: 8px; background: #334155; border-radius: 4px; overflow: hidden; margin: 12px 0; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); border-radius: 4px; transition: width 0.3s; }
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0; }
+        .stat { text-align: center; }
+        .stat-num { font-size: 2rem; font-weight: 700; color: #60a5fa; }
+        .stat-label { font-size: 0.75rem; color: #94a3b8; }
+        .stat.ok .stat-num { color: #22c55e; }
+        .stat.err .stat-num { color: #ef4444; }
+        .stat.skip .stat-num { color: #f59e0b; }
+        #log { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; max-height: 400px; overflow-y: auto; font-family: 'Cascadia Code', monospace; font-size: 0.8rem; line-height: 1.6; }
+        .log-ok { color: #22c55e; }
+        .log-err { color: #ef4444; }
+        .log-info { color: #60a5fa; }
+        .log-warn { color: #f59e0b; }
+        button { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; border: none; padding: 12px 32px; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        button:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(59,130,246,0.4); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+    </style>
+</head>
+<body>
+    <h1>🔄 AVGFlow Image Backup</h1>
+    <p class="subtitle">Firestore → Cloudflare R2 (avgflow bucket)</p>
+
+    <div class="card">
+        <div class="status" id="statusR2"><span class="dot wait"></span> R2: Chờ kiểm tra...</div>
+        <div class="status" id="statusFS"><span class="dot wait"></span> Firestore: Chờ kiểm tra...</div>
+    </div>
+
+    <div class="card">
+        <div class="stats">
+            <div class="stat"><div class="stat-num" id="numFound">0</div><div class="stat-label">Tìm thấy</div></div>
+            <div class="stat ok"><div class="stat-num" id="numUploaded">0</div><div class="stat-label">Upload OK</div></div>
+            <div class="stat skip"><div class="stat-num" id="numSkipped">0</div><div class="stat-label">Bỏ qua</div></div>
+            <div class="stat err"><div class="stat-num" id="numFailed">0</div><div class="stat-label">Thất bại</div></div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="progressBar" style="width:0%"></div></div>
+        <p id="progressText" style="text-align:center; font-size:0.85rem; color:#94a3b8;">Sẵn sàng</p>
+    </div>
+
+    <div style="text-align: center; margin: 16px 0;">
+        <button id="btnStart" onclick="startBackup()">🚀 Bắt đầu Backup</button>
+    </div>
+
+    <div class="card">
+        <div id="log"></div>
+    </div>
+
+<script type="module">
+    // ══════════════════════════════════════════
+    // CONFIG
+    // ══════════════════════════════════════════
+    
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, collection, getDocs, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getStorage, ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDfEtxQTXzxq_4P42VLWgoeZViD1C9Xw-E",
+        authDomain: "avgflow-dd822.firebaseapp.com",
+        projectId: "avgflow-dd822",
+        storageBucket: "avgflow-dd822.firebasestorage.app",
+        messagingSenderId: "210885567448",
+        appId: "1:210885567448:web:c9b7d5a1471ad06565c8ad",
+    };
+
+    const CF_ACCOUNT  = 'eecb965137b1db283e6e9cff0efec8ae';
+    const CF_TOKEN    = 'liBh8-IYt3g7j9Ea32SE98TBxFDfriIinFygj5T2';
+    const R2_BUCKET   = 'avgflow';
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const storage = getStorage(app);
+    const auth = getAuth(app);
+
+    // ══════════════════════════════════════════
+    // UI HELPERS
+    // ══════════════════════════════════════════
+    
+    const $ = id => document.getElementById(id);
+    const stats = { found: 0, uploaded: 0, skipped: 0, failed: 0, total: 0 };
+
+    function log(msg, cls = '') {
+        const el = $('log');
+        const line = document.createElement('div');
+        line.className = cls;
+        line.textContent = `[${new Date().toLocaleTimeString('vi-VN')}] ${msg}`;
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+    }
+
+    function updateStats() {
+        $('numFound').textContent = stats.found;
+        $('numUploaded').textContent = stats.uploaded;
+        $('numSkipped').textContent = stats.skipped;
+        $('numFailed').textContent = stats.failed;
+        const pct = stats.total ? Math.round(((stats.uploaded + stats.skipped + stats.failed) / stats.total) * 100) : 0;
+        $('progressBar').style.width = pct + '%';
+        $('progressText').textContent = `${pct}% — ${stats.uploaded + stats.skipped + stats.failed}/${stats.total}`;
+    }
+
+    function setStatus(id, ok, msg) {
+        const el = $(id);
+        el.innerHTML = `<span class="dot ${ok ? 'ok' : 'err'}"></span> ${msg}`;
+    }
+
+    // ══════════════════════════════════════════
+    // CHECK URL TYPE
+    // ══════════════════════════════════════════
+
+    function isImageUrl(url) {
+        if (!url || typeof url !== 'string') return false;
+        return url.includes('googleusercontent.com/d/') ||
+               url.includes('drive.google.com/') ||
+               url.includes('firebasestorage.googleapis.com');
+    }
+
+    /** Extract storage path from Firebase Storage URL */
+    function extractStoragePath(url) {
+        // https://firebasestorage.googleapis.com/v0/b/BUCKET/o/PATH?alt=media&token=...
+        const m = url.match(/\/o\/([^?]+)/);
+        if (m) return decodeURIComponent(m[1]);
+        return null;
+    }
+
+    /** Extract drive file ID */
+    function driveFileId(url) {
+        let m = url.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/);
+        if (m) return m[1];
+        m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (m) return m[1];
+        m = url.match(/drive\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/);
+        if (m) return m[1];
+        return null;
+    }
+
+    // ══════════════════════════════════════════
+    // UPLOAD TO R2
+    // ══════════════════════════════════════════
+
+    async function uploadToR2(key, blob, contentType) {
+        const url = `/cf-api/client/v4/accounts/${CF_ACCOUNT}/r2/buckets/${R2_BUCKET}/objects/${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${CF_TOKEN}`,
+                'Content-Type': contentType,
+            },
+            body: blob,
+        });
+        if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(`R2 ${res.status}: ${txt.substring(0, 200)}`);
+        }
+    }
+
+    // ══════════════════════════════════════════
+    // SCAN FIRESTORE
+    // ══════════════════════════════════════════
+
+    async function scanCollection(colPath, prefix) {
+        const allImages = [];
+        try {
+            const snap = await getDocs(collection(db, colPath));
+            for (const doc of snap.docs) {
+                const data = doc.data();
+                for (const [field, value] of Object.entries(data)) {
+                    if (typeof value === 'string' && isImageUrl(value)) {
+                        allImages.push({ docId: doc.id, field, url: value, prefix, collection: colPath });
+                    }
+                }
+            }
+            if (snap.size > 0 || allImages.length > 0) {
+                log(`📂 ${colPath}: ${snap.size} docs, ${allImages.length} images`, 'log-info');
+            }
+        } catch (e) {
+            // Collection might not exist
+        }
+        return allImages;
+    }
+
+    async function scanSubCollection(parentCol, subCol, prefix) {
+        const allImages = [];
+        try {
+            const parentSnap = await getDocs(collection(db, parentCol));
+            for (const parentDoc of parentSnap.docs) {
+                try {
+                    const subSnap = await getDocs(collection(db, parentCol, parentDoc.id, subCol));
+                    for (const subDoc of subSnap.docs) {
+                        const data = subDoc.data();
+                        for (const [field, value] of Object.entries(data)) {
+                            if (typeof value === 'string' && isImageUrl(value)) {
+                                allImages.push({
+                                    docId: subDoc.id, field, url: value,
+                                    prefix: `${prefix}/${parentDoc.id}`,
+                                    collection: `${parentCol}/${parentDoc.id}/${subCol}`,
+                                });
+                            }
+                        }
+                    }
+                } catch {}
+            }
+            if (allImages.length > 0) {
+                log(`📂 ${parentCol}/*/${subCol}: ${allImages.length} images`, 'log-info');
+            }
+        } catch {}
+        return allImages;
+    }
+
+    // ══════════════════════════════════════════
+    // DOWNLOAD IMAGE
+    // ══════════════════════════════════════════
+
+    async function downloadImage(url) {
+        const storagePath = extractStoragePath(url);
+        
+        if (storagePath) {
+            // Step 1: Get a fresh download URL via SDK (no CORS needed, just metadata)
+            let freshUrl;
+            try {
+                const storageRef = ref(storage, storagePath);
+                freshUrl = await getDownloadURL(storageRef);
+            } catch (sdkErr) {
+                // File might not exist or permission denied
+                // Try original URL as fallback
+                freshUrl = url;
+                console.warn(`getDownloadURL failed for ${storagePath}:`, sdkErr.message);
+            }
+
+            // Step 2: Download via Vite proxy (bypasses CORS)
+            const proxyUrl = freshUrl.replace('https://firebasestorage.googleapis.com', '/fb-storage');
+            const res = await fetch(proxyUrl);
+            if (res.ok) {
+                const blob = await res.blob();
+                return { blob, contentType: blob.type || 'application/octet-stream' };
+            }
+            throw new Error(`HTTP ${res.status} via proxy`);
+        }
+        
+        // Google Drive — fetch directly
+        let dlUrl = url;
+        const fid = driveFileId(url);
+        if (fid) dlUrl = `https://lh3.googleusercontent.com/d/${fid}`;
+        
+        const res = await fetch(dlUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        return { blob, contentType: blob.type || 'application/octet-stream' };
+    }
+
+    // ══════════════════════════════════════════
+    // MAIN BACKUP LOGIC
+    // ══════════════════════════════════════════
+
+    window.startBackup = async function() {
+        const btn = $('btnStart');
+        btn.disabled = true;
+        btn.textContent = '⏳ Đang chạy...';
+        
+        log('═══════════════════════════════════════', 'log-info');
+        log('🔄 BẮT ĐẦU BACKUP', 'log-info');
+        log('═══════════════════════════════════════', 'log-info');
+
+        // Step 0: Auth
+        log('🔐 Đăng nhập Google...', 'log-info');
+        try {
+            const result = await signInWithPopup(auth, new GoogleAuthProvider());
+            log(`✅ Đã đăng nhập: ${result.user.email}`, 'log-ok');
+        } catch (e) {
+            log(`❌ Đăng nhập thất bại: ${e.message}`, 'log-err');
+            btn.disabled = false;
+            btn.textContent = '🚀 Thử lại';
+            return;
+        }
+
+        // Step 1: Test R2
+        log('🔗 Kiểm tra R2...', 'log-info');
+        try {
+            const r = await fetch(`/cf-api/client/v4/accounts/${CF_ACCOUNT}/r2/buckets/${R2_BUCKET}`, {
+                headers: { 'Authorization': `Bearer ${CF_TOKEN}` }
+            });
+            const d = await r.json();
+            if (d.success) {
+                setStatus('statusR2', true, `R2: ✅ Bucket "${R2_BUCKET}" OK`);
+                log('✅ R2 OK', 'log-ok');
+            } else throw new Error(JSON.stringify(d.errors));
+        } catch (e) {
+            setStatus('statusR2', false, `R2: ❌ ${e.message}`);
+            log(`❌ R2 thất bại: ${e.message}`, 'log-err');
+            btn.disabled = false;
+            btn.textContent = '🚀 Thử lại';
+            return;
+        }
+
+        // Step 2: Scan Firestore
+        log('🔍 Quét Firestore...', 'log-info');
+        setStatus('statusFS', true, 'Firestore: ✅ Đang quét...');
+        
+        const allImages = [];
+        
+        const cols = [
+            'internal_news', 'users', 'birthday_wishes', 'tasks',
+            'documents', 'conclusion_docs', 'executive_directives',
+            'confessions', 'chat_messages', 'announcements',
+            'print_orders', 'order_metas',
+        ];
+        
+        for (const col of cols) {
+            const imgs = await scanCollection(col, col);
+            allImages.push(...imgs);
+        }
+
+        // Chat sub-collections
+        const chatImgs = await scanSubCollection('chats', 'messages', 'chat');
+        allImages.push(...chatImgs);
+
+        // De-duplicate
+        const seen = new Set();
+        const unique = allImages.filter(img => {
+            if (seen.has(img.url)) return false;
+            seen.add(img.url);
+            return true;
+        });
+
+        stats.found = unique.length;
+        stats.total = unique.length;
+        updateStats();
+
+        log(`📊 Tổng ảnh duy nhất: ${unique.length}`, 'log-info');
+        setStatus('statusFS', true, `Firestore: ✅ ${unique.length} ảnh tìm thấy`);
+
+        if (unique.length === 0) {
+            log('✅ Không có ảnh nào để backup!', 'log-ok');
+            btn.disabled = false;
+            btn.textContent = '✅ Hoàn tất';
+            return;
+        }
+
+        // Step 3: Download & Upload each image
+        log('', '');
+        log('⬇️ Bắt đầu download & upload...', 'log-info');
+
+        const backups = [];
+
+        for (let i = 0; i < unique.length; i++) {
+            const img = unique[i];
+            const tag = `[${i + 1}/${unique.length}]`;
+
+            try {
+                log(`${tag} ⬇️ ${img.prefix}/${img.docId}.${img.field}`, '');
+                const { blob, contentType } = await downloadImage(img.url);
+
+                if (blob.size < 200) {
+                    log(`${tag} ⏭️ Bỏ qua (quá nhỏ: ${blob.size}B)`, 'log-warn');
+                    stats.skipped++;
+                    updateStats();
+                    continue;
+                }
+
+                // Determine extension
+                let ext = '.bin';
+                if (contentType.includes('jpeg') || contentType.includes('jpg')) ext = '.jpg';
+                else if (contentType.includes('png')) ext = '.png';
+                else if (contentType.includes('gif')) ext = '.gif';
+                else if (contentType.includes('webp')) ext = '.webp';
+                else if (contentType.includes('pdf')) ext = '.pdf';
+                else if (contentType.includes('svg')) ext = '.svg';
+
+                const r2Key = `backup/${img.prefix}/${img.docId}_${img.field}${ext}`;
+                
+                log(`${tag} ⬆️ R2: ${r2Key} (${(blob.size / 1024).toFixed(1)}KB)`, '');
+                await uploadToR2(r2Key, blob, contentType);
+
+                log(`${tag} ✅ OK`, 'log-ok');
+                stats.uploaded++;
+                backups.push({
+                    docId: img.docId, field: img.field, collection: img.collection,
+                    originalUrl: img.url, r2Key, size: blob.size, contentType,
+                });
+            } catch (err) {
+                log(`${tag} ❌ ${err.message}`, 'log-err');
+                stats.failed++;
+            }
+
+            updateStats();
+
+            // Small delay
+            if (i > 0 && i % 5 === 0) await new Promise(r => setTimeout(r, 200));
+        }
+
+        // Step 4: Save manifest to R2
+        const manifest = {
+            timestamp: new Date().toISOString(),
+            project: 'avgflow-dd822',
+            bucket: R2_BUCKET,
+            stats, backups,
+        };
+
+        try {
+            await uploadToR2(
+                `backup/_manifest_${new Date().toISOString().slice(0, 10)}.json`,
+                new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }),
+                'application/json'
+            );
+            log('📄 Manifest uploaded to R2', 'log-ok');
+        } catch {}
+
+        // Done!
+        log('', '');
+        log('═══════════════════════════════════════', 'log-ok');
+        log(`✅ BACKUP HOÀN TẤT: ${stats.uploaded} uploaded, ${stats.skipped} skipped, ${stats.failed} failed`, 'log-ok');
+        log('═══════════════════════════════════════', 'log-ok');
+
+        btn.textContent = '✅ Hoàn tất!';
+        $('progressText').textContent = `✅ Hoàn tất: ${stats.uploaded}/${stats.found} ảnh đã backup`;
+    };
+</script>
+</body>
+</html>

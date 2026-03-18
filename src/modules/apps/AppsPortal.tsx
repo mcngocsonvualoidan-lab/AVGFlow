@@ -3,7 +3,8 @@ import {
     Mail, FileText, Globe, Lightbulb,
     ArrowLeft, Send, Copy, Eraser, Sparkles,
     Calculator, MessageSquare, Check, X, Lock,
-    History, Trash2, Clock, Package, ExternalLink, Layers
+    History, Trash2, Clock, Package, ExternalLink, Layers,
+    BookMarked, ShoppingCart
 } from 'lucide-react';
 import HeroBanner from '../../components/HeroBanner';
 import { clsx } from 'clsx';
@@ -12,6 +13,7 @@ import { getGeminiKey, initializeGemini } from '../../lib/gemini';
 import { useAuth } from '../../context/AuthContext';
 import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import NotebookLM from './NotebookLM';
 
 interface ExternalApp {
     id: string;
@@ -19,6 +21,7 @@ interface ExternalApp {
     desc: string;
     icon: React.ElementType;
     color: string;
+    hoverAccent: string;
     url: string;
 }
 
@@ -29,7 +32,17 @@ const EXTERNAL_APPS: ExternalApp[] = [
         desc: 'Công cụ tính toán đóng gói hàng hóa chuyên dụng.',
         icon: Package,
         color: 'text-orange-400 bg-orange-500/20 border-orange-500/30',
+        hoverAccent: 'orange',
         url: 'https://packaging.auvietglobal.com/'
+    },
+    {
+        id: 'avg-public-orders',
+        name: 'Đặt Hàng',
+        desc: 'Gửi yêu cầu đặt hàng trực tuyến nhanh chóng, theo dõi trạng thái đơn hàng.',
+        icon: ShoppingCart,
+        color: 'text-cyan-400 bg-cyan-500/20 border-cyan-500/30',
+        hoverAccent: 'cyan',
+        url: 'https://flow.auvietglobal.com/public/orders'
     }
 ];
 
@@ -140,6 +153,7 @@ interface HistoryItem {
 const AppsPortal: React.FC = () => {
     const { currentUser } = useAuth();
     const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
+    const [showNotebookLM, setShowNotebookLM] = useState(false);
     const [input, setInput] = useState('');
     const [output, setOutput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -259,6 +273,11 @@ const AppsPortal: React.FC = () => {
         alert("Đã sao chép kết quả!");
     };
 
+    // ── NotebookLM Full-Screen View ──
+    if (showNotebookLM) {
+        return <NotebookLM onBack={() => setShowNotebookLM(false)} />;
+    }
+
     return (
         <div className="flex bg-white dark:bg-[#0f172a] text-slate-900 dark:text-slate-200 md:h-[calc(100vh-8rem)] min-h-[calc(100vh-8rem)] rounded-3xl md:overflow-hidden border border-slate-200 dark:border-white/5 shadow-2xl relative">
 
@@ -321,7 +340,7 @@ const AppsPortal: React.FC = () => {
                             description="Bộ công cụ AI chuyên dụng giúp tối ưu hóa hiệu suất công việc. Soạn email, dịch thuật, chỉnh văn bản và nhiều hơn nữa."
                             badge="AI Powered"
                             badgeIcon={Sparkles}
-                            secondBadge={`${TOOLS.length + EXTERNAL_APPS.length} công cụ`}
+                            secondBadge={`${TOOLS.length + EXTERNAL_APPS.length + 1} công cụ`}
                             stats={[
                                 { icon: Mail, label: 'Email Writer', value: '✓', color: 'from-blue-400 to-indigo-500' },
                                 { icon: Globe, label: 'Translator', value: '✓', color: 'from-indigo-400 to-violet-500' },
@@ -399,27 +418,54 @@ const AppsPortal: React.FC = () => {
                             </div> */}
 
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                                {/* ── NotebookLM App Card ── */}
+                                <button
+                                    onClick={() => setShowNotebookLM(true)}
+                                    className="group relative p-6 rounded-2xl bg-gradient-to-br from-violet-500/5 to-purple-500/5 dark:from-violet-500/10 dark:to-purple-500/10 border border-violet-200 dark:border-violet-500/20 hover:bg-gradient-to-br hover:from-violet-500/10 hover:to-purple-500/10 dark:hover:from-violet-500/20 dark:hover:to-purple-500/20 hover:border-violet-500/50 transition-all duration-300 text-left hover:-translate-y-1 hover:shadow-2xl hover:shadow-violet-500/20 flex flex-col gap-4 overflow-hidden"
+                                >
+                                    <div className="w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 text-violet-400 bg-violet-500/20 border border-violet-500/30">
+                                        <BookMarked size={24} />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-violet-500 dark:group-hover:text-violet-300 transition-colors">NotebookLM</h3>
+                                            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-violet-500/20 text-violet-400 rounded-md border border-violet-500/30">AI</span>
+                                        </div>
+                                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-light">Quản lý notebook, tạo podcast AI, video, báo cáo, quiz & hỏi đáp thông minh từ tài liệu.</p>
+                                    </div>
+                                    <div className="absolute right-4 top-4 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
+                                        <ArrowLeft size={20} className="rotate-180 text-violet-500" />
+                                    </div>
+                                    {/* Decorative glow */}
+                                    <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-violet-500/10 dark:bg-violet-500/5 rounded-full blur-2xl group-hover:bg-violet-500/20 transition-all" />
+                                </button>
+
                                 {/* External Apps */}
-                                {EXTERNAL_APPS.map(app => (
+                                {EXTERNAL_APPS.map(app => {
+                                    const accentClasses = app.hoverAccent === 'cyan'
+                                        ? { border: 'hover:border-cyan-500/50', shadow: 'hover:shadow-cyan-500/10', title: 'group-hover:text-cyan-500 dark:group-hover:text-cyan-300', icon: 'text-cyan-500' }
+                                        : { border: 'hover:border-orange-500/50', shadow: 'hover:shadow-orange-500/10', title: 'group-hover:text-orange-500 dark:group-hover:text-orange-300', icon: 'text-orange-500' };
+                                    return (
                                     <a
                                         key={app.id}
                                         href={app.url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="group relative p-6 rounded-2xl bg-white dark:bg-[#1e293b]/50 border border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-[#1e293b] hover:border-orange-500/50 transition-all duration-300 text-left hover:-translate-y-1 hover:shadow-2xl hover:shadow-orange-500/10 flex flex-col gap-4 overflow-hidden"
+                                        className={clsx("group relative p-6 rounded-2xl bg-white dark:bg-[#1e293b]/50 border border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-[#1e293b] transition-all duration-300 text-left hover:-translate-y-1 hover:shadow-2xl flex flex-col gap-4 overflow-hidden", accentClasses.border, accentClasses.shadow)}
                                     >
                                         <div className={clsx("w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110", app.color)}>
                                             <app.icon size={24} />
                                         </div>
                                         <div>
-                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1 group-hover:text-orange-500 dark:group-hover:text-orange-300 transition-colors">{app.name}</h3>
+                                            <h3 className={clsx("text-lg font-bold text-slate-900 dark:text-white mb-1 transition-colors", accentClasses.title)}>{app.name}</h3>
                                             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-light">{app.desc}</p>
                                         </div>
                                         <div className="absolute right-4 top-4 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
-                                            <ExternalLink size={20} className="text-orange-500" />
+                                            <ExternalLink size={20} className={accentClasses.icon} />
                                         </div>
                                     </a>
-                                ))}
+                                    );
+                                })}
 
                                 {TOOLS.map(tool => (
                                     <button

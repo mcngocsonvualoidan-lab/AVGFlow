@@ -28,7 +28,8 @@ service cloud.firestore {
       allow read, write: if true; 
     }
     match /payroll/{pId} {
-      allow read, write: if true; 
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // Admin-only enforcement in UI layer; Firestore Custom Claims recommended for production
     }
     match /meetings/{mId} {
       allow read, write: if true; 
@@ -54,6 +55,14 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // --- DESIGN TICKETS (Public access for partners) ---
+    match /design_tickets/{ticketId} {
+      allow read, write: if true;
+    }
+    match /design_tickets/{ticketId}/messages/{msgId} {
+      allow read, write: if true;
+    }
+
     match /print_orders/{orderId} {
       allow read, write: if true;
     }
@@ -72,8 +81,7 @@ service cloud.firestore {
     
     // --- INTERNAL NEWS RULES ---
     match /internal_news/{newsId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // UI restricts creation to admins
+      allow read, write: if true; // Admin-only enforcement is done in the UI
     }
 
     // --- INTERNAL CHAT RULES ---
@@ -95,6 +103,13 @@ service cloud.firestore {
        // Allow update for reactions and read status (any participant can update)
        allow update: if isAuthenticated() && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants);
        allow delete: if isAuthenticated() && (request.auth.uid == resource.data.senderId);
+    }
+    // --- NOTEBOOKLM RULES ---
+    match /nlm_notebooks/{notebookId} {
+      allow read, write: if isAuthenticated();
+    }
+    match /nlm_notebooks/{notebookId}/{subcol}/{docId} {
+      allow read, write: if isAuthenticated();
     }
   }
 }

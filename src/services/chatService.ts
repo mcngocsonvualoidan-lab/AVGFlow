@@ -3,8 +3,8 @@ import {
     addDoc, doc, updateDoc, serverTimestamp,
     limit, deleteDoc, arrayUnion
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../lib/firebase';
+import { db } from '../lib/firebase';
+import { uploadToDrive } from './driveUploadService';
 
 // Database Collections
 const CHATS_COLLECTION = 'chats';
@@ -124,9 +124,9 @@ export const ChatService = {
         let msgType: 'text' | 'image' | 'file' = 'text';
 
         if (file) {
-            const storageRef = ref(storage, `internal_chat/${roomId}/${Date.now()}_${file.name}`);
-            await uploadBytes(storageRef, file);
-            fileUrl = await getDownloadURL(storageRef);
+            const result = await uploadToDrive(file, 'chat_files');
+            if (!result.success || !result.url) throw new Error(result.error || 'Upload failed');
+            fileUrl = result.url;
             fileName = file.name;
             msgType = file.type.startsWith('image/') ? 'image' : 'file';
         }

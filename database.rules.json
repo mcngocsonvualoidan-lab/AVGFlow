@@ -29,6 +29,18 @@
             "$roomId": {
                 ".write": "auth != null"
             }
+        },
+        "orders": {
+            ".read": true,
+            ".write": true
+        },
+        "order_metas": {
+            ".read": true,
+            ".write": true
+        },
+        "connection_test": {
+            ".read": true,
+            ".write": true
         }
     }
 }

@@ -3,6 +3,7 @@ import { Package, Clock, User, Tag, FileText, Filter, Search, ArrowUpDown, Chevr
 import { clsx } from 'clsx';
 import HeroBanner from '../../components/HeroBanner';
 import PrintOrderForm from './PrintOrderForm';
+import DesignOrderForm from './DesignOrderForm';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList } from 'recharts';
 import { db } from '../../lib/firebase';
 import { onSnapshot, collection } from 'firebase/firestore';
@@ -231,19 +232,23 @@ const PublicOrders: React.FC = () => {
             const parsedOrders: Order[] = [];
             for (let i = 1; i < rows.length; i++) {
                 const cols = rows[i];
-                const time = (cols[1] || '').trim();
-                const person = (cols[2] || '').trim();
-                const brand = (cols[3] || '').trim();
-                const request = (cols[4] || '').trim();
-                const description = (cols[5] || '').trim();
-                const rawStatus = (cols[7] || '').trim();
+                // Column mapping (matches Orders.tsx):
+                // A(0)=Timestamp, B(1)=Person, C(2)=Brand, D(3)=Request,
+                // E(4)=Description, F(5)=Qty, G(6)=DeliveryEst,
+                // H(7)=Handler, I(8)=Status
+                const time = (cols[0] || '').trim();
+                const person = (cols[1] || '').trim();
+                const brand = (cols[2] || '').trim();
+                const request = (cols[3] || '').trim();
+                const description = (cols[4] || '').trim();
+                const rawStatus = (cols[8] || '').trim();
                 const sTrim = (rawStatus || '').trim();
                 const status = (!sTrim || sTrim.toUpperCase() === 'N/A') ? 'Đang xử lý' : sTrim;
 
                 if (!time && !person && !brand && !request) continue;
 
-                const rawId = cols[0]?.trim() || `row-${i}`;
-                const safeId = rawId.replace(/[\/\s:]/g, '-');
+                // Match ID format from Orders.tsx for Firestore order_metas consistency
+                const safeId = `row-${i}`;
 
                 parsedOrders.push({
                     id: safeId,
@@ -861,10 +866,10 @@ const PublicOrders: React.FC = () => {
                                     <div
                                         key={order.id || idx}
                                         className={clsx(
-                                            "group relative flex flex-col sm:flex-row bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl rounded-3xl transition-all duration-300 z-10 hover:z-20",
+                                            "group relative flex flex-col sm:flex-row bg-white/80 dark:bg-slate-800/70 backdrop-blur-xl rounded-3xl transition-all duration-300 z-10 hover:z-20",
                                             statusInfo.label === 'Đang xử lý'
-                                                ? "border-2 border-amber-300/80 dark:border-amber-500/50 shadow-[0_8px_30px_rgb(251,191,36,0.15)] ring-1 ring-amber-400/20"
-                                                : "border border-white/50 dark:border-white/10 hover:border-violet-300 dark:hover:border-violet-500/30 hover:shadow-xl hover:shadow-violet-500/10 shadow-sm",
+                                                ? "border-2 border-amber-300 dark:border-amber-500/60 shadow-[0_8px_30px_rgb(251,191,36,0.15)] ring-1 ring-amber-400/20"
+                                                : "border border-slate-200 dark:border-slate-600/50 hover:border-violet-400 dark:hover:border-violet-500/40 hover:shadow-xl hover:shadow-violet-500/10 shadow-sm",
                                         )}
                                     >
                                         {/* Glassmorphism shimmer */}
@@ -1115,6 +1120,8 @@ const PublicOrders: React.FC = () => {
                             </div>
                         ) : selectedCategory === 'in-an' ? (
                             <PrintOrderForm />
+                        ) : selectedCategory === 'thiet-ke' ? (
+                            <DesignOrderForm />
                         ) : selectedCategory === 'phap-ly' || selectedCategory === 'tai-chinh' || selectedCategory === 'truyen-thong' ? (() => {
                             const comingSoonMeta = {
                                 'phap-ly':       { label: 'Pháp lý',      icon: Scale,     gradient: 'from-amber-400 to-orange-500',   glow: 'from-amber-400/10 via-orange-400/10 to-yellow-400/10',   shadow: 'shadow-amber-500/30',   text: 'text-amber-600 dark:text-amber-400' },
@@ -1146,7 +1153,7 @@ const PublicOrders: React.FC = () => {
                                     <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Gửi yêu cầu thành công! 🎉</h3>
                                     <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 max-w-md mx-auto">Team Design & Media đã nhận được yêu cầu. Chúng tôi sẽ xử lý sớm nhất!</p>
                                     <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                                        <button onClick={() => { setFormSubmitted(false); setCurrentStep(0); }} className="px-6 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-violet-500/30 hover:shadow-xl hover:scale-105 transition-all">
+                                        <button onClick={() => { setFormSubmitted(false); setCurrentStep(0); setFormData(initialFormData); setSelectedCategory(null); setFormError(''); }} className="px-6 py-3 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-violet-500/30 hover:shadow-xl hover:scale-105 transition-all">
                                             <PenLine size={14} className="inline mr-2" />Tạo yêu cầu mới
                                         </button>
                                         <button onClick={() => setActiveTab('orders')} className="px-6 py-3 rounded-xl bg-white/80 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-600 transition-all">

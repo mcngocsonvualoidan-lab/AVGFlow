@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useMeetingSchedule, Meeting, MEETING_ARCHIVES } from '../../hooks/useMeetingSchedule';
-import { db, storage } from '../../lib/firebase';
+import { db } from '../../lib/firebase';
 import { collection, addDoc, query, onSnapshot, orderBy, doc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { uploadToDrive } from '../../services/driveUploadService';
 import {
     Loader2, Upload, FileText, BarChart2, Clock, Eye, X, Search,
     Edit2, Trash2, Archive, CheckCircle2, Sparkles, Files
@@ -30,8 +30,9 @@ interface ConclusionDoc {
     viewLogs?: { userId: string, userName: string, startTime: string, durationSeconds: number }[];
 }
 
-// --- Sub-Component: Ticking Timer ---
-const MeetingTimer = ({ deadline }: { deadline: Date }) => {
+// --- Sub-Component: Ticking Timer (temporarily hidden) ---
+// @ts-ignore: Temporarily unused - will restore when countdown is re-enabled
+const _MeetingTimer = ({ deadline }: { deadline: Date }) => {
     const [timeLeft, setTimeLeft] = useState<{ d: number, h: number, m: number, s: number, status: 'ontime' | 'warning' | 'overdue' }>({ d: 0, h: 0, m: 0, s: 0, status: 'ontime' });
 
     useEffect(() => {
@@ -383,10 +384,7 @@ const ConclusionDocs = () => {
 
         try {
             if (isHardDelete) {
-                // 1. Delete from Storage
-                const fileRef = ref(storage, document.url);
-                await deleteObject(fileRef).catch(err => console.warn("File storage delete warn:", err));
-                // 2. Delete from Firestore
+                // Delete from Firestore (file on Google Drive is managed separately)
                 await deleteDoc(doc(db, 'conclusion_docs', document.id));
                 addNotification({
                     id: Date.now().toString(),
@@ -541,12 +539,9 @@ const ConclusionDocs = () => {
             const meeting = meetings.find(m => m.id === selectedMeetingId);
             const fileName = meeting ? `KL_${meeting.date?.replace(/\//g, '-')}_${file.name}` : file.name;
 
-            const storageRef = ref(storage, `conclusion-docs/${user.id}/${Date.now()}_${fileName}`);
-            const snapshot = await uploadBytes(storageRef, file, {
-                contentType: 'application/pdf',
-                customMetadata: { 'uploadedBy': user.id }
-            });
-            const downloadURL = await getDownloadURL(snapshot.ref);
+            const driveResult = await uploadToDrive(file, 'conclusion_docs', `${Date.now()}_${fileName}`);
+            if (!driveResult.success || !driveResult.url) throw new Error(driveResult.error || 'Upload failed');
+            const downloadURL = driveResult.url;
 
             await addDoc(collection(db, 'conclusion_docs'), {
                 name: fileName,
@@ -832,12 +827,12 @@ const ConclusionDocs = () => {
 
                         {/* RIGHT: Countdown & Quick Actions */}
                         <div className="lg:col-span-4 flex flex-col gap-4 sticky top-4">
-                            {/* Timer Card */}
-                            <div className="bg-gradient-to-r from-[#FF7E5F] to-[#FEB47B] p-6 rounded-2xl shadow-xl text-center relative overflow-hidden border border-white/20">
+                            {/* Timer Card - Temporarily Hidden */}
+                            {/* <div className="bg-gradient-to-r from-[#FF7E5F] to-[#FEB47B] p-6 rounded-2xl shadow-xl text-center relative overflow-hidden border border-white/20">
                                 <div className="relative z-10">
                                     <MeetingTimer deadline={new Date('2026-02-05T23:59:59')} />
                                 </div>
-                            </div>
+                            </div> */}
 
                             {/* Quick Submit Card */}
                             <div className="bg-indigo-600 p-5 rounded-2xl shadow-lg shadow-indigo-500/20 text-white relative overflow-hidden group">

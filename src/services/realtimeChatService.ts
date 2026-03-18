@@ -2,8 +2,8 @@ import {
     ref, push, set, update, onValue, off, query, orderByChild, limitToLast,
     remove, get
 } from 'firebase/database';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { realtimeDb, storage } from '../lib/firebase';
+import { realtimeDb } from '../lib/firebase';
+import { uploadToDrive } from './driveUploadService';
 
 // --- TYPES ---
 export interface RTChatRoom {
@@ -248,9 +248,9 @@ export const RealtimeChatService = {
         let msgType: 'text' | 'image' | 'file' = 'text';
 
         if (file) {
-            const fileRef = storageRef(storage, `internal_chat/${roomId}/${Date.now()}_${file.name}`);
-            await uploadBytes(fileRef, file);
-            fileUrl = await getDownloadURL(fileRef);
+            const result = await uploadToDrive(file, 'chat_files');
+            if (!result.success || !result.url) throw new Error(result.error || 'Upload failed');
+            fileUrl = result.url;
             fileName = file.name;
             msgType = file.type.startsWith('image/') ? 'image' : 'file';
         }

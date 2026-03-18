@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { storage } from '../../lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { uploadToDrive } from '../../services/driveUploadService';
 import {
     Calendar, Plus, Search,
     Bold, Italic, List, ChevronDown,
@@ -213,11 +212,10 @@ const TaskManager: React.FC = () => {
 
                 setIsUploading(true);
                 try {
-                    // Create storage ref
-                    const storageRef = ref(storage, `attachments/${Date.now()}_${file.name}`);
-                    await uploadBytes(storageRef, file);
-                    const url = await getDownloadURL(storageRef);
-                    setAttachments(prev => [...prev, { type: 'file', url, name: file.name }]);
+                    // Upload to Google Drive
+                    const result = await uploadToDrive(file, 'attachments');
+                    if (!result.success || !result.url) throw new Error(result.error || 'Upload failed');
+                    setAttachments(prev => [...prev, { type: 'file', url: result.url!, name: file.name }]);
                 } catch (error) {
                     console.error("Upload failed", error);
                     alert("Tải file thất bại. Vui lòng thử lại.");

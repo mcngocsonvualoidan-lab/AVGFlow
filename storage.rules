@@ -8,6 +8,12 @@ service firebase.storage {
       allow write: if request.auth != null;
     }
     
+    // News banner images - public read (displayed on internal news board)
+    match /news_banners/{fileName} {
+      allow read;
+      allow write: if request.auth != null;
+    }
+    
     // Existing Chat Uploads (Legacy or General)
     match /chat_uploads/{allPaths=**} {
       allow read, write: if request.auth != null;
@@ -15,8 +21,14 @@ service firebase.storage {
     
     // Internal Chat Files
     match /internal_chat/{chatId}/{fileName} {
-      allow read: if request.auth != null; // Ideally restrict to participants, but difficult in Storage rules without Custom Claims mirroring
+      allow read: if request.auth != null;
       allow write: if request.auth != null;
+    }
+
+    // Design Ticket Uploads (public access for partners)
+    match /design_ticket_uploads/{allPaths=**} {
+      allow read: if true;
+      allow write: if true;
     }
 
     match /{allPaths=**} {

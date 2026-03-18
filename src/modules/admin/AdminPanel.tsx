@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
-import { db, storage } from '../../lib/firebase';
+import { db } from '../../lib/firebase';
 import { supabase } from '../../lib/supabase';
 import { collection, onSnapshot, deleteDoc, doc, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { uploadToDrive } from '../../services/driveUploadService';
 import {
     Users, CheckSquare, FileText, Bell,
     Gift, Calendar, DollarSign, Database, Trash2, Edit2,
@@ -115,15 +115,20 @@ const EditForm = ({ data, onSave, onSilentSave, onCancel }: {
         try {
             // Process Image (Crop Square + Max 1000px)
             const processedBlob = await processImage(file);
-            const processedFile = new File([processedBlob], "avatar.jpg", { type: "image/jpeg" });
 
-            // Upload to Firebase
-            // Path: avatars/{ID}_{timestamp}.jpg to avoid caching issues
-            const storagePath = `avatars/${data.id}_${Date.now()}.jpg`;
-            const storageRef = ref(storage, storagePath);
+            // Upload to Google Drive
+            const fileName = `${data.id}_${Date.now()}.jpg`;
+            const result = await uploadToDrive(
+                new File([processedBlob], fileName, { type: 'image/jpeg' }),
+                'avatars',
+                fileName
+            );
 
-            await uploadBytes(storageRef, processedFile);
-            const url = await getDownloadURL(storageRef);
+            if (!result.success || !result.url) {
+                throw new Error(result.error || 'Upload failed');
+            }
+
+            const url = result.url;
 
             // Auto Update Form
             handleChange(key, url);

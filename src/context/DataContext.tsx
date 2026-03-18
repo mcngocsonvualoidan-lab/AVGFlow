@@ -3,7 +3,7 @@ import { db } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
 import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, orderBy, limit } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
-import { backupDataToSupabase } from '../services/backupService';
+import { fullBackupToDrive } from '../services/backupService';
 
 
 // --- INTERFACES ---
@@ -747,15 +747,19 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
                     for (let i = 1; i < rows.length; i++) {
                         const cols = rows[i];
                         if (cols.length < 4) continue;
-                        const time = (cols[1] || '').trim();
-                        const person = (cols[2] || '').trim();
-                        const brand = (cols[3] || '').trim();
-                        const request = (cols[4] || '').trim();
+                        // New column mapping (matches Orders.tsx):
+                        // A(0)=Timestamp, B(1)=Person, C(2)=Brand, D(3)=Request,
+                        // E(4)=Description, F(5)=Qty, G(6)=DeliveryEst,
+                        // H(7)=Handler, I(8)=Status
+                        const time = (cols[0] || '').trim();
+                        const person = (cols[1] || '').trim();
+                        const brand = (cols[2] || '').trim();
+                        const request = (cols[3] || '').trim();
                         if (!time && !person && !brand && !request) continue;
 
-                        const rawId = cols[0]?.trim() || `row-${i}`;
-                        const safeId = rawId.replace(/[\/\s:]/g, '-');
-                        const rawStatus = (cols[7] || '').trim().toLowerCase();
+                        // Match ID format from Orders.tsx
+                        const safeId = `row-${i}`;
+                        const rawStatus = (cols[8] || '').trim().toLowerCase();
                         let status = (!rawStatus || rawStatus === 'n/a') ? 'đang xử lý' : rawStatus;
 
                         if (metas[safeId] && metas[safeId].statusOverride) {
@@ -1473,12 +1477,26 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
 
 
-    // New helper for direct update by ID
+    // New helper for direct update by ID (Admin only)
     const updatePayrollRecordDirect = async (id: string, data: Partial<PayrollRecord>) => {
+        // Guard: Only admins can modify payroll records
+        const callerUser = usersRef.current.find(u => u.email === currentUser?.email);
+        const isSuperAdmin = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'].includes(currentUser?.email || '');
+        if (!callerUser?.isAdmin && !isSuperAdmin) {
+            console.warn('[Payroll] Write blocked: User is not admin.');
+            return;
+        }
         await updateDoc(doc(db, 'payroll', id), data);
     };
 
     const deletePayrollRecord = async (id: string) => {
+        // Guard: Only admins can delete payroll records
+        const callerUser = usersRef.current.find(u => u.email === currentUser?.email);
+        const isSuperAdmin = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'].includes(currentUser?.email || '');
+        if (!callerUser?.isAdmin && !isSuperAdmin) {
+            console.warn('[Payroll] Delete blocked: User is not admin.');
+            return;
+        }
         await deleteDoc(doc(db, 'payroll', id));
     };
 
@@ -1489,11 +1507,11 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
     const toggleTetDecor = () => setShowTetDecor(prev => !prev);
 
-    // Auto-backup to Supabase every 60 minutes
+    // Auto-backup to Google Drive every 60 minutes
     useEffect(() => {
         const runBackup = async () => {
-            console.log('⏳ Triggering scheduled backup...');
-            await backupDataToSupabase();
+            console.log('⏳ Triggering scheduled backup to Google Drive...');
+            await fullBackupToDrive();
         };
 
         // Schedule every 60 minutes (3600000 ms)

@@ -8,12 +8,14 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 // ===== CONFIG =====
 const PERSON_OPTIONS = ['Ngọc Bích', 'Ánh Mây', 'Thanh Tuyền', 'Đỗ Chiều', 'Trà My'];
 
-// Google Apps Script Web App URL — đẩy dữ liệu vào Google Sheet Đặt hàng In
-const SHEET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyt_spuMfPA4iQ7qvOe-KH7xoh9AehAOD9e_OH3hdvlfQZSUpq2_0NUNbiLnkAZaY2Q/exec';
+// Google Apps Script Web App URL — Unified API v2 (tạo đơn + quản lý đơn)
+const SHEET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx0a0oYMbGcwUBaKB6kV-WHgyw30JwP4WJqM8fZlNcATivnuXxW_ZyjZVdt56_z06UE/exec';
 
 // Google Sheet Danh mục sản phẩm (để gợi ý tự động)
 const CATALOG_SHEET_ID = '1karhpP174qGeQudh3YopY3Zl68f_zXoqlsw8CYd1YhQ';
 const CATALOG_CSV_URL = `https://docs.google.com/spreadsheets/d/${CATALOG_SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`;
+// Apps Script API — ưu tiên sử dụng, trả JSON realtime, không bị cache
+const CATALOG_API_URL = 'https://script.google.com/macros/s/AKfycbzo7AAGf9FdFJ7zZKYBODo_LcZpmiFosnVjvvPAxTdS7uafydpeBzoyRx9Qnwgh6tKI7g/exec';
 
 // ===== TYPES =====
 interface PrintRow {
@@ -402,6 +404,7 @@ const PrintOrderForm: React.FC = () => {
     const [rows, setRows] = useState<PrintRow[]>([createEmptyRow()]);
     const [phase, setPhase] = useState<'form' | 'confirm' | 'submitting' | 'success'>('form');
     const [error, setError] = useState('');
+    const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Catalog state
@@ -412,6 +415,8 @@ const PrintOrderForm: React.FC = () => {
     const nhanHangInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
     const calendarAnchorRefs = useRef<Record<number, HTMLDivElement | null>>({});
     const [tableExpanded, setTableExpanded] = useState(false);
+    // Track which rows were auto-filled from catalog (readonly for first 7 fields)
+    const [catalogFilledRows, setCatalogFilledRows] = useState<Set<number>>(new Set());
     const [isMobileForm, setIsMobileForm] = useState(window.innerWidth <= 768);
 
     useEffect(() => {
@@ -426,6 +431,31 @@ const PrintOrderForm: React.FC = () => {
     const fetchCatalog = useCallback(async () => {
         try {
             setCatalogLoading(true);
+
+            // Strategy 1: Try Apps Script API first (real-time, no cache)
+            if (CATALOG_API_URL) {
+                try {
+                    const apiRes = await fetch(`${CATALOG_API_URL}?action=catalog&t=${Date.now()}`);
+                    const json = await apiRes.json();
+                    if (json.success && Array.isArray(json.items)) {
+                        const items: CatalogItem[] = json.items.map((item: Record<string, string>) => ({
+                            chungLoai: item.chungLoai || '',
+                            nhanHang: item.nhanHang || '',
+                            sku: item.sku || '',
+                            tenSanPham: item.tenSanPham || '',
+                            dvt: item.dvt || '',
+                            kichThuoc: item.kichThuoc || '',
+                            chatLieu: item.chatLieu || '',
+                        }));
+                        setCatalog(items);
+                        return; // Success via API
+                    }
+                } catch (apiErr) {
+                    console.warn('API fetch failed, falling back to CSV:', apiErr);
+                }
+            }
+
+            // Strategy 2: Fallback to CSV (may have Google cache delay)
             const res = await fetch(CATALOG_CSV_URL);
             const text = await res.text();
             const allRows = parseFullCSV(text);
@@ -457,9 +487,17 @@ const PrintOrderForm: React.FC = () => {
 
     useEffect(() => {
         fetchCatalog();
-        // Auto-refresh every 5 minutes
-        const interval = setInterval(fetchCatalog, 5 * 60 * 1000);
-        return () => clearInterval(interval);
+        // Auto-refresh every 30 seconds for near-realtime updates
+        const interval = setInterval(fetchCatalog, 30 * 1000);
+        // Also refresh when user switches back to this tab
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') fetchCatalog();
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
     }, [fetchCatalog]);
 
     const updateRow = (index: number, field: keyof PrintRow, value: string) => {
@@ -483,7 +521,16 @@ const PrintOrderForm: React.FC = () => {
             kichThuoc: item.kichThuoc,
             chatLieu: item.chatLieu,
         } : r));
+        setCatalogFilledRows(prev => { const next = new Set(prev); next.add(rowIndex); return next; });
         setActiveDropdown(null);
+    };
+
+    // The 7 catalog fields that become readonly when auto-filled
+    const CATALOG_FIELDS: (keyof PrintRow)[] = ['nhanHang', 'chungLoai', 'sku', 'tenSanPham', 'kichThuoc', 'dvt', 'chatLieu'];
+
+    const clearCatalogRow = (rowIndex: number) => {
+        setRows(prev => prev.map((r, i) => i === rowIndex ? createEmptyRow() : r));
+        setCatalogFilledRows(prev => { const next = new Set(prev); next.delete(rowIndex); return next; });
     };
 
     const addRow = () => {
@@ -496,19 +543,53 @@ const PrintOrderForm: React.FC = () => {
     const removeRow = (index: number) => {
         if (rows.length <= 1) return;
         setRows(prev => prev.filter((_, i) => i !== index));
+        // Rebuild catalogFilledRows with shifted indices
+        setCatalogFilledRows(prev => {
+            const next = new Set<number>();
+            prev.forEach(ri => {
+                if (ri < index) next.add(ri);
+                else if (ri > index) next.add(ri - 1);
+            });
+            return next;
+        });
+    };
+
+    const triggerShake = (fields: Set<string>) => {
+        setShakeFields(fields);
+        setTimeout(() => setShakeFields(new Set()), 1500);
     };
 
     const handleSubmit = () => {
+        const shake = new Set<string>();
         if (!selectedPerson) {
-            setError('Vui lòng chọn người đặt hàng');
-            return;
+            shake.add('person');
         }
         const validRows = rows.filter(r => r.tenSanPham || r.nhanHang || r.sku);
         if (validRows.length === 0) {
             setError('Vui lòng nhập ít nhất một sản phẩm (Tên SP hoặc Nhãn hàng)');
+            if (shake.size > 0) triggerShake(shake);
+            return;
+        }
+        // Check required fields: slDatIn and ngayCanGiao
+        const missingRows = validRows.filter(r => !r.slDatIn || !r.ngayCanGiao);
+        if (missingRows.length > 0) {
+            const missing: string[] = [];
+            missingRows.forEach(r => {
+                const rowIdx = rows.indexOf(r);
+                if (!r.slDatIn) { missing.push('Số lượng đặt in'); shake.add(`row-${rowIdx}-slDatIn`); }
+                if (!r.ngayCanGiao) { missing.push('Ngày cần giao'); shake.add(`row-${rowIdx}-ngayCanGiao`); }
+            });
+            setError(`Vui lòng nhập đầy đủ: ${[...new Set(missing)].join(', ')} cho tất cả sản phẩm`);
+            triggerShake(shake);
+            return;
+        }
+        if (shake.size > 0) {
+            setError('Vui lòng chọn người đặt hàng');
+            triggerShake(shake);
             return;
         }
         setError('');
+        setShakeFields(new Set());
         setPhase('confirm');
     };
 
@@ -517,67 +598,48 @@ const PrintOrderForm: React.FC = () => {
     };
 
     const handleConfirmSend = async () => {
-        setPhase('submitting');
-        try {
-            const validRows = rows.filter(r => r.tenSanPham || r.nhanHang || r.sku);
-            const payload = {
-                person: selectedPerson,
-                items: validRows,
-                createdAt: new Date().toISOString(),
-            };
+        const validRows = rows.filter(r => r.tenSanPham || r.nhanHang || r.sku);
+        const now = new Date();
+        const timestamp = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-            // Helper: wrap a promise with a timeout
-            const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
-                Promise.race([
-                    promise,
-                    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Timeout')), ms)),
-                ]);
+        const payload = {
+            person: selectedPerson,
+            items: validRows,
+            createdAt: new Date().toISOString(),
+            rowData: validRows.map(row => ([
+                timestamp,              // A(1)  = Thời gian
+                selectedPerson,         // B(2)  = Người đặt hàng
+                row.chungLoai  || '',   // C(3)  = Chủng loại
+                row.nhanHang   || '',   // D(4)  = Nhãn hàng
+                row.sku        || '',   // E(5)  = SKU
+                row.tenSanPham || '',   // F(6)  = Tên sản phẩm
+                row.kichThuoc  || '',   // G(7)  = Kích thước
+                row.dvt        || '',   // H(8)  = ĐVT
+                row.chatLieu   || '',   // I(9)  = Chất liệu
+                row.slDatIn    || '',   // J(10) = SL đặt in
+                '',                     // K(11) = SL giao (trống)
+                row.ngayCanGiao || '',  // L(12) = Ngày cần giao
+                '',                     // M(13) = Dự kiến giao (trống)
+                row.ghiChu     || '',   // N(14) = Ghi chú
+            ])),
+        };
 
-            let sheetOk = false;
-            let firestoreOk = false;
+        // ✅ Hiển thị thành công NGAY LẬP TỨC — không chờ API
+        setPhase('success');
 
-            // 1. Push to Google Sheet (primary) — 15s timeout
-            try {
-                await withTimeout(
-                    fetch(SHEET_SCRIPT_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain' },
-                        body: JSON.stringify(payload),
-                    }),
-                    15000
-                );
-                sheetOk = true;
-            } catch (sheetErr) {
-                console.warn('Sheet sync failed:', sheetErr);
-            }
+        // 🔄 Gửi ngầm — không block UI
+        fetch(SHEET_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload),
+        }).catch(err => console.warn('⚠️ Sheet sync (background):', err));
 
-            // 2. Save to Firestore (secondary) — 10s timeout
-            try {
-                await withTimeout(
-                    addDoc(collection(db, 'print_orders'), {
-                        ...payload,
-                        serverCreatedAt: serverTimestamp(),
-                        status: 'pending',
-                    }),
-                    10000
-                );
-                firestoreOk = true;
-            } catch (fsErr) {
-                console.warn('Firestore save failed:', fsErr);
-            }
-
-            if (sheetOk || firestoreOk) {
-                setPhase('success');
-            } else {
-                setError('Gửi thất bại. Vui lòng kiểm tra kết nối mạng và thử lại.');
-                setPhase('form');
-            }
-        } catch (err) {
-            console.error('Submit failed:', err);
-            setError('Gửi thất bại. Vui lòng thử lại.');
-            setPhase('form');
-        }
+        addDoc(collection(db, 'print_orders'), {
+            ...payload,
+            serverCreatedAt: serverTimestamp(),
+            status: 'pending',
+        }).catch(err => console.warn('⚠️ Firestore save (background):', err));
     };
 
     const handleReset = () => {
@@ -586,6 +648,10 @@ const PrintOrderForm: React.FC = () => {
         setRows([createEmptyRow()]);
         setPhase('form');
         setError('');
+        setCatalogFilledRows(new Set());
+        setActiveDropdown(null);
+        setActiveCalendar(null);
+        setTableExpanded(false);
     };
 
     // ========== RENDER: SUCCESS ==========
@@ -709,7 +775,7 @@ const PrintOrderForm: React.FC = () => {
                         <p className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">Người đặt hàng</p>
                     </div>
                     {/* Person chips */}
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className={clsx("flex flex-wrap gap-1.5 rounded-xl p-1 -m-1 transition-all", shakeFields.has('person') && "animate-shake-red ring-2 ring-red-400/50")}>
                         {PERSON_OPTIONS.map((name) => {
                             const isSelected = person === name;
                             const avatarColorMap: Record<string, string> = {
@@ -819,33 +885,47 @@ const PrintOrderForm: React.FC = () => {
                             {isMobileForm ? (
                                 /* === MOBILE CARD LAYOUT === */
                                 <div className="space-y-3">
-                                    {rows.map((row, i) => (
+                                    {rows.map((row, i) => {
+                                        const isCatalogRow = catalogFilledRows.has(i);
+                                        return (
                                         <div key={i} className="rounded-xl bg-white/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-white/10 p-3 space-y-2">
                                             <div className="flex items-center justify-between mb-1">
                                                 <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 text-xs font-black border border-cyan-200/50 dark:border-cyan-500/20">
                                                     {i + 1}
                                                 </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeRow(i)}
-                                                    disabled={rows.length <= 1}
-                                                    className={clsx(
-                                                        "p-1.5 rounded-lg transition-all",
-                                                        rows.length > 1
-                                                            ? "text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer"
-                                                            : "text-slate-200 dark:text-slate-700 opacity-50 cursor-not-allowed"
+                                                <div className="flex items-center gap-1">
+                                                    {isCatalogRow && (
+                                                        <button type="button" onClick={() => clearCatalogRow(i)} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all" title="Xóa dữ liệu danh mục, nhập thủ công">
+                                                            <RotateCcw size={11} /> Nhập lại
+                                                        </button>
                                                     )}
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeRow(i)}
+                                                        disabled={rows.length <= 1}
+                                                        className={clsx(
+                                                            "p-1.5 rounded-lg transition-all",
+                                                            rows.length > 1
+                                                                ? "text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer"
+                                                                : "text-slate-200 dark:text-slate-700 opacity-50 cursor-not-allowed"
+                                                        )}
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
                                             </div>
-                                            {COLUMNS.map(col => (
+                                            {COLUMNS.map(col => {
+                                                const isFieldLocked = isCatalogRow && CATALOG_FIELDS.includes(col.key);
+                                                const isRequired = col.key === 'slDatIn' || col.key === 'ngayCanGiao';
+                                                return (
                                                 <div key={col.key}>
                                                     <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-1 block">
                                                         {col.label}
-                                                        {col.key === 'nhanHang' && catalog.length > 0 && (
+                                                        {isRequired && <span className="text-red-500 ml-0.5">*</span>}
+                                                        {col.key === 'nhanHang' && catalog.length > 0 && !isFieldLocked && (
                                                             <Search size={9} className="inline ml-1 text-cyan-500" />
                                                         )}
+                                                        {isFieldLocked && <span className="ml-1 text-[9px] text-emerald-500 font-semibold normal-case">✓ Tự động</span>}
                                                     </label>
                                                     {col.type === 'date' ? (
                                                         <div ref={(el: HTMLDivElement | null) => { calendarAnchorRefs.current[i] = el; }} className="relative">
@@ -859,8 +939,10 @@ const PrintOrderForm: React.FC = () => {
                                                                 onClick={() => setActiveCalendar(activeCalendar === i ? null : i)}
                                                                 placeholder={col.placeholder}
                                                                 className={clsx(
-                                                                    "w-full px-3 py-2.5 pr-8 rounded-lg bg-white dark:bg-slate-900/40 border border-slate-200/80 dark:border-white/10 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:font-medium dark:placeholder:text-slate-500 outline-none transition-all cursor-pointer",
-                                                                    activeCalendar === i && "ring-2 ring-cyan-500/30 border-cyan-400"
+                                                                    "w-full px-3 py-2.5 pr-8 rounded-lg bg-white dark:bg-slate-900/40 border text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:font-medium dark:placeholder:text-slate-500 outline-none transition-all cursor-pointer",
+                                                                    activeCalendar === i ? "ring-2 ring-cyan-500/30 border-cyan-400" : "border-slate-200/80 dark:border-white/10",
+                                                                    isRequired && !row[col.key] && "border-red-300 dark:border-red-500/30 bg-red-50/30 dark:bg-red-500/5",
+                                                                    shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red"
                                                                 )}
                                                             />
                                                             <button type="button" onClick={() => setActiveCalendar(activeCalendar === i ? null : i)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-500 transition">
@@ -873,28 +955,35 @@ const PrintOrderForm: React.FC = () => {
                                                     ) : (
                                                         <>
                                                             <input
-                                                                ref={col.key === 'nhanHang' ? (el: HTMLInputElement | null) => { nhanHangInputRefs.current[i] = el; } : undefined}
+                                                                ref={col.key === 'nhanHang' && !isFieldLocked ? (el: HTMLInputElement | null) => { nhanHangInputRefs.current[i] = el; } : undefined}
                                                                 type={col.type}
                                                                 value={row[col.key]}
-                                                                onChange={e => updateRow(i, col.key, e.target.value)}
-                                                                onFocus={() => { if (col.key === 'nhanHang' && row.nhanHang.length > 0) setActiveDropdown(i); }}
+                                                                onChange={e => !isFieldLocked && updateRow(i, col.key, e.target.value)}
+                                                                onFocus={() => { if (col.key === 'nhanHang' && !isFieldLocked && row.nhanHang.length > 0) setActiveDropdown(i); }}
+                                                                readOnly={isFieldLocked}
                                                                 placeholder={col.placeholder}
                                                                 className={clsx(
-                                                                    "w-full px-3 py-2.5 rounded-lg bg-white dark:bg-slate-900/40 border border-slate-200/80 dark:border-white/10 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:font-medium dark:placeholder:text-slate-500 outline-none transition-all",
-                                                                    "focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:bg-white dark:focus:bg-slate-800/60",
-                                                                    col.key === 'nhanHang' && activeDropdown === i && "ring-2 ring-cyan-500/30 border-cyan-400"
+                                                                    "w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-all",
+                                                                    isFieldLocked
+                                                                        ? "bg-slate-50 dark:bg-slate-800/80 border-slate-200/50 dark:border-white/5 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                                                                        : "bg-white dark:bg-slate-900/40 border-slate-200/80 dark:border-white/10 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:font-medium dark:placeholder:text-slate-500 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:bg-white dark:focus:bg-slate-800/60",
+                                                                    !isFieldLocked && col.key === 'nhanHang' && activeDropdown === i && "ring-2 ring-cyan-500/30 border-cyan-400",
+                                                                    isRequired && !row[col.key] && !isFieldLocked && "border-red-300 dark:border-red-500/30 bg-red-50/30 dark:bg-red-500/5",
+                                                                    shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red"
                                                                 )}
                                                                 autoComplete="off"
                                                             />
-                                                            {col.key === 'nhanHang' && (
+                                                            {col.key === 'nhanHang' && !isFieldLocked && (
                                                                 <SuggestionDropdown query={row.nhanHang} catalog={catalog} visible={activeDropdown === i} onSelect={(item) => handleSelectCatalogItem(i, item)} onClose={() => setActiveDropdown(null)} anchorEl={nhanHangInputRefs.current[i] || null} />
                                                             )}
                                                         </>
                                                     )}
                                                 </div>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 /* === DESKTOP TABLE LAYOUT === */
@@ -906,24 +995,30 @@ const PrintOrderForm: React.FC = () => {
                                                 <th key={col.key} className={clsx("text-left px-1 py-2 text-[9px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wide", col.width)}>
                                                     <span className="flex items-center gap-1">
                                                         {col.label}
+                                                        {(col.key === 'slDatIn' || col.key === 'ngayCanGiao') && <span className="text-red-500">*</span>}
                                                         {col.key === 'nhanHang' && catalog.length > 0 && (
                                                             <Search size={9} className="text-cyan-500" />
                                                         )}
                                                     </span>
                                                 </th>
                                             ))}
-                                            <th className="w-8"></th>
+                                            <th className="w-12"></th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {rows.map((row, i) => (
+                                        {rows.map((row, i) => {
+                                            const isCatalogRow = catalogFilledRows.has(i);
+                                            return (
                                             <tr key={i} className="group">
                                                 <td className="text-center">
                                                     <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 text-xs font-black border border-cyan-200/50 dark:border-cyan-500/20">
                                                         {i + 1}
                                                     </span>
                                                 </td>
-                                                {COLUMNS.map(col => (
+                                                {COLUMNS.map(col => {
+                                                    const isFieldLocked = isCatalogRow && CATALOG_FIELDS.includes(col.key);
+                                                    const isRequired = col.key === 'slDatIn' || col.key === 'ngayCanGiao';
+                                                    return (
                                                     <td key={col.key} className={clsx("px-1", col.key === 'nhanHang' && "relative")}>
                                                         {col.type === 'date' ? (
                                                             <div ref={(el: HTMLDivElement | null) => { calendarAnchorRefs.current[i] = el; }} className="relative">
@@ -937,9 +1032,11 @@ const PrintOrderForm: React.FC = () => {
                                                                     onClick={() => setActiveCalendar(activeCalendar === i ? null : i)}
                                                                     placeholder={col.placeholder}
                                                                     className={clsx(
-                                                                        "w-full px-2.5 py-2 pr-8 rounded-lg bg-white/70 dark:bg-slate-900/40 border border-slate-200/80 dark:border-white/10 text-[11px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:text-[10px] placeholder:font-medium dark:placeholder:text-slate-500 outline-none transition-all cursor-pointer",
+                                                                        "w-full px-2.5 py-2 pr-8 rounded-lg bg-white/70 dark:bg-slate-900/40 border text-[11px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:text-[10px] placeholder:font-medium dark:placeholder:text-slate-500 outline-none transition-all cursor-pointer",
                                                                         "hover:border-cyan-300/60 dark:hover:border-cyan-500/20",
-                                                                        activeCalendar === i && "ring-2 ring-cyan-500/30 border-cyan-400"
+                                                                        activeCalendar === i ? "ring-2 ring-cyan-500/30 border-cyan-400" : "border-slate-200/80 dark:border-white/10",
+                                                                        isRequired && !row[col.key] && "border-red-300 dark:border-red-500/30 bg-red-50/30 dark:bg-red-500/5",
+                                                                        shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red"
                                                                     )}
                                                                 />
                                                                 <button type="button" onClick={() => setActiveCalendar(activeCalendar === i ? null : i)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-500 transition">
@@ -952,45 +1049,58 @@ const PrintOrderForm: React.FC = () => {
                                                         ) : (
                                                             <>
                                                                 <input
-                                                                    ref={col.key === 'nhanHang' ? (el: HTMLInputElement | null) => { nhanHangInputRefs.current[i] = el; } : undefined}
+                                                                    ref={col.key === 'nhanHang' && !isFieldLocked ? (el: HTMLInputElement | null) => { nhanHangInputRefs.current[i] = el; } : undefined}
                                                                     type={col.type}
                                                                     value={row[col.key]}
-                                                                    onChange={e => updateRow(i, col.key, e.target.value)}
-                                                                    onFocus={() => { if (col.key === 'nhanHang' && row.nhanHang.length > 0) setActiveDropdown(i); }}
+                                                                    onChange={e => !isFieldLocked && updateRow(i, col.key, e.target.value)}
+                                                                    onFocus={() => { if (col.key === 'nhanHang' && !isFieldLocked && row.nhanHang.length > 0) setActiveDropdown(i); }}
+                                                                    readOnly={isFieldLocked}
                                                                     placeholder={col.placeholder}
                                                                     className={clsx(
-                                                                        "w-full px-2.5 py-2 rounded-lg bg-white/70 dark:bg-slate-900/40 border border-slate-200/80 dark:border-white/10 text-[11px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:text-[10px] placeholder:font-medium dark:placeholder:text-slate-500 outline-none transition-all",
-                                                                        "focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:bg-white dark:focus:bg-slate-800/60",
-                                                                        "hover:border-cyan-300/60 dark:hover:border-cyan-500/20",
-                                                                        col.key === 'nhanHang' && activeDropdown === i && "ring-2 ring-cyan-500/30 border-cyan-400"
+                                                                        "w-full px-2.5 py-2 rounded-lg border text-[11px] outline-none transition-all",
+                                                                        isFieldLocked
+                                                                            ? "bg-slate-50 dark:bg-slate-800/80 border-slate-200/50 dark:border-white/5 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                                                                            : "bg-white/70 dark:bg-slate-900/40 border-slate-200/80 dark:border-white/10 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:text-[10px] placeholder:font-medium dark:placeholder:text-slate-500 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:bg-white dark:focus:bg-slate-800/60 hover:border-cyan-300/60 dark:hover:border-cyan-500/20",
+                                                                        !isFieldLocked && col.key === 'nhanHang' && activeDropdown === i && "ring-2 ring-cyan-500/30 border-cyan-400",
+                                                                        isRequired && !row[col.key] && !isFieldLocked && "border-red-300 dark:border-red-500/30 bg-red-50/30 dark:bg-red-500/5",
+                                                                        shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red"
                                                                     )}
                                                                     autoComplete="off"
                                                                 />
-                                                                {col.key === 'nhanHang' && (
+                                                                {col.key === 'nhanHang' && !isFieldLocked && (
                                                                     <SuggestionDropdown query={row.nhanHang} catalog={catalog} visible={activeDropdown === i} onSelect={(item) => handleSelectCatalogItem(i, item)} onClose={() => setActiveDropdown(null)} anchorEl={nhanHangInputRefs.current[i] || null} />
                                                                 )}
                                                             </>
                                                         )}
                                                     </td>
-                                                ))}
+                                                    );
+                                                })}
                                                 <td className="text-center">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeRow(i)}
-                                                        disabled={rows.length <= 1}
-                                                        className={clsx(
-                                                            "p-1.5 rounded-lg transition-all",
-                                                            rows.length > 1
-                                                                ? "text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer"
-                                                                : "text-slate-200 dark:text-slate-700 opacity-50 cursor-not-allowed"
+                                                    <div className="flex items-center gap-0.5 justify-center">
+                                                        {isCatalogRow && (
+                                                            <button type="button" onClick={() => clearCatalogRow(i)} className="p-1 rounded-lg text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all" title="Nhập lại thủ công">
+                                                                <RotateCcw size={12} />
+                                                            </button>
                                                         )}
-                                                        title="Xóa dòng"
-                                                    >
-                                                        <Trash2 size={13} />
-                                                    </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeRow(i)}
+                                                            disabled={rows.length <= 1}
+                                                            className={clsx(
+                                                                "p-1.5 rounded-lg transition-all",
+                                                                rows.length > 1
+                                                                    ? "text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer"
+                                                                    : "text-slate-200 dark:text-slate-700 opacity-50 cursor-not-allowed"
+                                                            )}
+                                                            title="Xóa dòng"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
-                                        ))}
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             )}

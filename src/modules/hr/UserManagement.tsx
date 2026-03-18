@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { storage, auth } from '../../lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth } from '../../lib/firebase';
+import { uploadToDrive } from '../../services/driveUploadService';
 // import { doc, updateDoc, deleteDoc } from 'firebase/firestore'; // Removed as unused
 import { useAuth } from '../../context/AuthContext'; // Import useAuth
 import { sendInviteEmail } from '../../utils/emailService';
@@ -100,10 +100,11 @@ const UserManagement: React.FC = () => {
 
         setIsUploadingQr(true);
         try {
-            const storageRef = ref(storage, `qrcodes/${Date.now()}_${file.name}`);
-            await uploadBytes(storageRef, file);
-            const url = await getDownloadURL(storageRef);
-            setFormData(prev => ({ ...prev, customQrUrl: url }));
+            const result = await uploadToDrive(file, 'qrcodes');
+            if (!result.success || !result.url) {
+                throw new Error(result.error || 'Upload failed');
+            }
+            setFormData(prev => ({ ...prev, customQrUrl: result.url }));
             alert("Đã tải mã QR lên thành công!");
         } catch (error) {
             console.error("Upload QR error:", error);
@@ -123,15 +124,14 @@ const UserManagement: React.FC = () => {
 
         setIsUploading(true);
         try {
-            // Create a reference with user-specific naming for easy lookup
             const fileName = `${editingId || Date.now()}_${Date.now()}.jpg`;
-            const storageRef = ref(storage, `avatars/${fileName}`);
-            // Upload
-            await uploadBytes(storageRef, file);
-            // Build public URL (no token needed - storage rules allow public read for avatars)
-            const publicUrl = `https://firebasestorage.googleapis.com/v0/b/avgflow-dd822.firebasestorage.app/o/avatars%2F${encodeURIComponent(fileName)}?alt=media`;
+            const result = await uploadToDrive(file, 'avatars', fileName);
 
-            setFormData(prev => ({ ...prev, avatar: publicUrl }));
+            if (!result.success || !result.url) {
+                throw new Error(result.error || 'Upload failed');
+            }
+
+            setFormData(prev => ({ ...prev, avatar: result.url }));
         } catch (error) {
             console.error("Upload error:", error);
             alert("Lỗi khi tải ảnh lên: " + (error as any).message);

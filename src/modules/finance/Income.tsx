@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useData, PayrollRecord } from '../../context/DataContext';
+import { useAuth } from '../../context/AuthContext';
 // import { supabase } from '../../utils/supabaseClient';
-import { Search, DollarSign, Wallet, Calculator, Sparkles } from 'lucide-react';
+import { Search, DollarSign, Wallet, Calculator, Sparkles, ShieldAlert, Lock } from 'lucide-react';
 import HeroBanner from '../../components/HeroBanner';
 import {
     LineChart,
@@ -14,11 +15,17 @@ import {
 } from 'recharts';
 
 const Income = () => {
-    const { payrollRecords, updatePayrollRecord, refreshData } = useData();
+    const { payrollRecords, updatePayrollRecord, refreshData, users } = useData();
+    const { currentUser, isAdminView } = useAuth();
     const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
     const [searchTerm, setSearchTerm] = useState('');
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [_isGenerating, _setIsGenerating] = useState(false);
+
+    // Admin check: only admin users in admin view can edit payroll
+    const appUser = users.find(u => u.email === currentUser?.email);
+    const isSuperAdmin = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'].includes(currentUser?.email || '');
+    const canEditPayroll = (appUser?.isAdmin || isSuperAdmin) && isAdminView;
 
     // Force refresh on mount to ensure data is present
     useEffect(() => {
@@ -169,6 +176,20 @@ const Income = () => {
                 </div>
             </div>
 
+            {/* Read-Only Banner for non-admin users */}
+            {!canEditPayroll && (
+                <div className="flex items-center gap-3 px-5 py-3.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/30 rounded-2xl mb-4 shadow-sm">
+                    <div className="p-2 bg-amber-100 dark:bg-amber-800/40 rounded-xl">
+                        <ShieldAlert size={20} className="text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                        <p className="text-sm font-bold text-amber-800 dark:text-amber-300">Chế độ chỉ xem</p>
+                        <p className="text-xs text-amber-600 dark:text-amber-400/80">Bảng thu nhập chỉ được chỉnh sửa bởi quản trị viên. Liên hệ Admin nếu cần cập nhật.</p>
+                    </div>
+                    <Lock size={16} className="ml-auto text-amber-400 dark:text-amber-600" />
+                </div>
+            )}
+
             {/* spreadsheet Table */}
             <div className="w-full border border-white/20 dark:border-white/10 rounded-[1.5rem] bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl relative overflow-x-auto shadow-inner mb-6">
                 <table className="w-full text-xs text-left border-collapse min-w-[2400px]">
@@ -223,6 +244,7 @@ const Income = () => {
                                     record={record}
                                     idx={idx}
                                     updateRecord={updatePayrollRecord}
+                                    canEdit={canEditPayroll}
                                 />
                             ))
                         )}
@@ -335,47 +357,51 @@ const Income = () => {
     );
 };
 
-function EditableRow({ record, idx, updateRecord }: {
+function EditableRow({ record, idx, updateRecord, canEdit = false }: {
     record: PayrollRecord;
     idx: number;
-    updateRecord: (id: string, data: Partial<PayrollRecord>) => void
+    updateRecord: (id: string, data: Partial<PayrollRecord>) => void;
+    canEdit?: boolean;
 }) {
 
+    // All cells are read-only if user doesn't have edit permission
+    const isReadOnly = !canEdit;
+
     // Helper for number inputs
-    const NumberCell = ({ value, field, readOnly = false, className = '' }: { value: number | undefined, field: keyof PayrollRecord, readOnly?: boolean, className?: string }) => (
-        <td className={`p-0 border-r border-slate-200 dark:border-white/5 relative group ${className}`}>
-            <input
-                type="number"
-                value={value || 0}
-                readOnly={readOnly}
-                onChange={(e) => {
-                    if (readOnly) return;
-                    const val = Number(e.target.value);
+    const NumberCell = ({ value, field, readOnly = false, className = '' }: { value: number | undefined, field: keyof PayrollRecord, readOnly?: boolean, className?: string }) => {
+        const effectiveReadOnly = isReadOnly || readOnly;
+        return (
+            <td className={`p-0 border-r border-slate-200 dark:border-white/5 relative group ${className}`}>
+                <input
+                    type="number"
+                    value={value || 0}
+                    readOnly={effectiveReadOnly}
+                    tabIndex={effectiveReadOnly ? -1 : 0}
+                    onChange={(e) => {
+                        if (effectiveReadOnly) return;
+                        const val = Number(e.target.value);
 
-                    // Create a copy to calculate dependent fields
-                    const next = { ...record, [field]: val };
+                        // Create a copy to calculate dependent fields
+                        const next = { ...record, [field]: val };
 
-                    // Recalculate Formulas
-                    next.totalAllowanceActual = (next.allowanceMeal || 0) + (next.allowanceFuel || 0) + (next.allowancePhone || 0) + (next.allowanceAttendance || 0);
-                    next.totalAdditional = (next.incomeMentalHealth || 0) + (next.incomeOvertime || 0) + (next.incomeQuality || 0) + (next.incomeSpecial || 0) + (next.incomeOfficer || 0) + (next.incomeKPI || 0);
+                        // Recalculate Formulas
+                        next.totalAllowanceActual = (next.allowanceMeal || 0) + (next.allowanceFuel || 0) + (next.allowancePhone || 0) + (next.allowanceAttendance || 0);
+                        next.totalAdditional = (next.incomeMentalHealth || 0) + (next.incomeOvertime || 0) + (next.incomeQuality || 0) + (next.incomeSpecial || 0) + (next.incomeOfficer || 0) + (next.incomeKPI || 0);
 
-                    // Actual Income
-                    next.totalActualIncome = (next.basicSalary || 0) + next.totalAllowanceActual + next.totalAdditional;
+                        // Actual Income
+                        next.totalActualIncome = (next.basicSalary || 0) + next.totalAllowanceActual + next.totalAdditional;
 
-                    // Insurance (Auto-calc only if base salary changes? For now, keep as is or simple recalculate if basic salary changed)
-                    // next.insuranceCompany = next.basicSalary * 0.215;
-                    // next.insuranceEmployee = next.basicSalary * 0.105;
+                        next.totalIncome = next.totalActualIncome + (next.insuranceCompany || 0);
+                        next.netPay = next.totalActualIncome - (next.insuranceEmployee || 0) - (next.advancePayment || 0);
 
-                    next.totalIncome = next.totalActualIncome + (next.insuranceCompany || 0);
-                    next.netPay = next.totalActualIncome - (next.insuranceEmployee || 0) - (next.advancePayment || 0);
-
-                    // Send update
-                    updateRecord(record.id, next);
-                }}
-                className={`w-full h-full bg-transparent px-2 py-3 text-right focus:outline-none focus:bg-indigo-500/10 dark:focus:bg-indigo-500/20 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${readOnly ? 'cursor-default text-slate-400' : 'text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-white/5'}`}
-            />
-        </td>
-    );
+                        // Send update
+                        updateRecord(record.id, next);
+                    }}
+                    className={`w-full h-full bg-transparent px-2 py-3 text-right focus:outline-none transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${effectiveReadOnly ? 'cursor-default text-slate-500 dark:text-slate-400 select-none pointer-events-none' : 'text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 focus:bg-indigo-500/10 dark:focus:bg-indigo-500/20'}`}
+                />
+            </td>
+        );
+    };
 
     const format = (num: number) => num ? new Intl.NumberFormat('vi-VN').format(num) : '0';
 

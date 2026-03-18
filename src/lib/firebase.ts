@@ -2,6 +2,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getDatabase } from "firebase/database";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDfEtxQTXzxq_4P42VLWgoeZViD1C9Xw-E",
@@ -14,7 +15,7 @@ const firebaseConfig = {
     databaseURL: "https://avgflow-dd822-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
-import { getStorage } from "firebase/storage";
+
 import { getMessaging } from "firebase/messaging";
 
 const app = initializeApp(firebaseConfig);
@@ -22,6 +23,7 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
 export const realtimeDb = getDatabase(app);
-export const storage = getStorage(app);
+
 export const messaging = getMessaging(app);
+export const storage = getStorage(app);
 // const analytics = getAnalytics(app);

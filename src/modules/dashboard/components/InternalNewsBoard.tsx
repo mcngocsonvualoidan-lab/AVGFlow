@@ -2,11 +2,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { useData } from '../../../context/DataContext';
-import { db, storage } from '../../../lib/firebase';
+import { db } from '../../../lib/firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, arrayUnion, deleteDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Bell, Plus, X, Eye, Calendar, Trash2, Image as ImageIcon, Upload, ChevronUp, ChevronDown, Archive, RefreshCcw, History } from 'lucide-react';
 import { clsx } from 'clsx';
+import { uploadToDrive } from '../../../services/driveUploadService';
 
 interface NewsItem {
     id: string;
@@ -124,11 +124,14 @@ const InternalNewsBoard = () => {
         try {
             let bannerUrl = '';
 
-            // Upload Banner if exists
+            // Upload Banner to Google Drive if exists
             if (bannerFile) {
-                const storageRef = ref(storage, `news_banners/${Date.now()}_${bannerFile.name}`);
-                const snapshot = await uploadBytes(storageRef, bannerFile);
-                bannerUrl = await getDownloadURL(snapshot.ref);
+                const result = await uploadToDrive(bannerFile, 'news_banners');
+                if (result.success && result.url) {
+                    bannerUrl = result.url;
+                } else {
+                    console.error('Drive upload failed:', result.error);
+                }
             }
 
             const user = users.find(u => u.email === currentUser.email);
@@ -175,31 +178,32 @@ const InternalNewsBoard = () => {
         }
     };
 
-    const handleArchive = async (id: string) => {
-        if (!window.confirm("Bạn muốn chuyển tin này vào mục lưu trữ? (Có thể xem lại trong Kho lưu trữ)")) return;
-        try {
-            await updateDoc(doc(db, 'internal_news', id), { isArchived: true });
-        } catch (error) {
-            console.error(error);
-        }
+    const handleArchive = async (id: string): Promise<boolean> => {
+        console.log('[InternalNews] Archiving...', id);
+        const newsRef = doc(db, 'internal_news', id);
+        // Fire-and-forget: Firestore offline persistence will queue & sync
+        updateDoc(newsRef, { isArchived: true })
+            .then(() => console.log('[InternalNews] Archive synced:', id))
+            .catch((err) => console.error('[InternalNews] Archive sync error:', err));
+        return true; // Return immediately — onSnapshot will update UI from local cache
     }
 
-    const handleRestore = async (id: string) => {
-        if (!window.confirm("Khôi phục tin này về Bảng tin chính?")) return;
-        try {
-            await updateDoc(doc(db, 'internal_news', id), { isArchived: false });
-        } catch (error) {
-            console.error(error);
-        }
+    const handleRestore = async (id: string): Promise<boolean> => {
+        console.log('[InternalNews] Restoring...', id);
+        const newsRef = doc(db, 'internal_news', id);
+        updateDoc(newsRef, { isArchived: false })
+            .then(() => console.log('[InternalNews] Restore synced:', id))
+            .catch((err) => console.error('[InternalNews] Restore sync error:', err));
+        return true;
     }
 
-    const handlePermanentDelete = async (id: string) => {
-        if (!window.confirm("Hành động này không thể hoàn tác! Bạn có chắc chắn muốn xóa vĩnh viễn?")) return;
-        try {
-            await deleteDoc(doc(db, 'internal_news', id));
-        } catch (error) {
-            console.error(error);
-        }
+    const handlePermanentDelete = async (id: string): Promise<boolean> => {
+        console.log('[InternalNews] Deleting...', id);
+        const newsRef = doc(db, 'internal_news', id);
+        deleteDoc(newsRef)
+            .then(() => console.log('[InternalNews] Delete synced:', id))
+            .catch((err) => console.error('[InternalNews] Delete sync error:', err));
+        return true;
     }
 
     const handleRead = async (item: NewsItem) => {
@@ -416,7 +420,7 @@ const InternalNewsBoard = () => {
 
                                                 {item.bannerUrl && (
                                                     <div className="h-16 md:h-20 lg:h-24 aspect-video rounded-lg md:rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 shadow-sm relative group/img">
-                                                        <img src={item.bannerUrl} alt="Banner" className="w-full h-full object-cover group-hover/img:scale-110 transition-transform duration-500" />
+                                                        <img src={item.bannerUrl} alt="Banner" className="w-full h-full object-cover group-hover/img:scale-110 transition-transform duration-500" onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }} />
                                                     </div>
                                                 )}
                                             </div>
@@ -582,13 +586,19 @@ const InternalNewsBoard = () => {
             {
                 viewingItem && (
                     <NewsDetailModal
-                        item={news.find(n => n.id === viewingItem.id) || viewingItem} // Use live data from state
+                        item={news.find(n => n.id === viewingItem.id) || archivedNews.find(n => n.id === viewingItem.id) || viewingItem}
                         onClose={() => setViewingItem(null)}
                         users={users}
                         isAdmin={isAdmin}
-                        onArchive={() => handleArchive(viewingItem.id)}
-                        onRestore={() => handleRestore(viewingItem.id)}
-                        onDeletePermanent={() => handlePermanentDelete(viewingItem.id)}
+                        onArchive={async () => {
+                            const ok = await handleArchive(viewingItem.id); if (ok) setViewingItem(null);
+                        }}
+                        onRestore={async () => {
+                            const ok = await handleRestore(viewingItem.id); if (ok) setViewingItem(null);
+                        }}
+                        onDeletePermanent={async () => {
+                            const ok = await handlePermanentDelete(viewingItem.id); if (ok) setViewingItem(null);
+                        }}
                         getPriorityColor={getPriorityColor}
                         getPriorityLabel={getPriorityLabel}
                     />
@@ -601,6 +611,8 @@ const InternalNewsBoard = () => {
 const NewsDetailModal = ({ item, onClose, users, isAdmin, onArchive, onRestore, onDeletePermanent, getPriorityColor, getPriorityLabel }: any) => {
     const [zoom, setZoom] = useState(1);
     const [isZooming, setIsZooming] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
+    const [confirmAction, setConfirmAction] = useState<'archive' | 'restore' | 'delete' | null>(null);
     const imageRef = useRef<HTMLImageElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -701,6 +713,7 @@ const NewsDetailModal = ({ item, onClose, users, isAdmin, onArchive, onRestore, 
                                     alt="Banner"
                                     className="w-full h-auto max-h-[70vh] object-contain transition-transform duration-100 ease-linear origin-center"
                                     style={{ transform: `scale(${zoom})` }}
+                                    onError={(e) => { (e.currentTarget.closest('.mb-6') as HTMLElement)!.style.display = 'none'; }}
                                 />
                             </div>
 
@@ -762,40 +775,82 @@ const NewsDetailModal = ({ item, onClose, users, isAdmin, onArchive, onRestore, 
 
                 {isAdmin && (
                     <div className="p-5 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/30 flex justify-end gap-3">
-                        {item.isArchived ? (
-                            <>
+                        {confirmAction ? (
+                            /* ── Inline Confirm Step ── */
+                            <div className="flex items-center gap-3 w-full">
+                                <span className="text-sm text-slate-600 dark:text-slate-300 flex-1">
+                                    {confirmAction === 'delete' ? '⚠️ Xóa vĩnh viễn? Không thể hoàn tác!' : confirmAction === 'archive' ? 'Chuyển vào kho lưu trữ?' : 'Khôi phục về bảng tin chính?'}
+                                </span>
                                 <button
-                                    onClick={() => {
-                                        onRestore();
-                                        onClose();
-                                    }}
-                                    className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-emerald-600 hover:text-white hover:bg-emerald-500 rounded-xl transition-all border border-emerald-500/20"
+                                    disabled={actionLoading}
+                                    onClick={() => setConfirmAction(null)}
+                                    className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10 rounded-xl transition-all"
                                 >
-                                    <RefreshCcw size={16} />
-                                    <span>Khôi phục tin</span>
+                                    Hủy
                                 </button>
                                 <button
-                                    onClick={() => {
-                                        onDeletePermanent();
-                                        onClose();
+                                    disabled={actionLoading}
+                                    onClick={async () => {
+                                        try {
+                                            setActionLoading(true);
+                                            if (confirmAction === 'delete') await onDeletePermanent();
+                                            else if (confirmAction === 'archive') await onArchive();
+                                            else if (confirmAction === 'restore') await onRestore();
+                                        } catch (err) {
+                                            console.error('[NewsModal] Action error:', err);
+                                            alert('Lỗi: ' + (err as any)?.message || 'Không xác định');
+                                        } finally {
+                                            setActionLoading(false);
+                                            setConfirmAction(null);
+                                        }
                                     }}
-                                    className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:text-white hover:bg-red-500 rounded-xl transition-all border border-red-500/20"
+                                    className={`flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded-xl transition-all disabled:opacity-50 ${
+                                        confirmAction === 'delete' ? 'bg-red-500 hover:bg-red-600' : confirmAction === 'archive' ? 'bg-slate-500 hover:bg-slate-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                                    }`}
                                 >
-                                    <Trash2 size={16} />
-                                    <span>Xóa vĩnh viễn</span>
+                                    {actionLoading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
+                                    {confirmAction === 'delete' ? 'Xác nhận Xóa' : confirmAction === 'archive' ? 'Xác nhận Lưu trữ' : 'Xác nhận Khôi phục'}
                                 </button>
-                            </>
+                            </div>
                         ) : (
-                            <button
-                                onClick={() => {
-                                    onArchive();
-                                    onClose();
-                                }}
-                                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-500 hover:text-white hover:bg-slate-500 rounded-xl transition-all border border-slate-500/20"
-                            >
-                                <Archive size={16} />
-                                <span>Xóa tin này (Lưu trữ)</span>
-                            </button>
+                            /* ── Normal Action Buttons ── */
+                            <>
+                                {item.isArchived ? (
+                                    <>
+                                        <button
+                                            onClick={() => setConfirmAction('restore')}
+                                            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-emerald-600 hover:text-white hover:bg-emerald-500 rounded-xl transition-all border border-emerald-500/20"
+                                        >
+                                            <RefreshCcw size={16} />
+                                            <span>Khôi phục tin</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setConfirmAction('delete')}
+                                            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:text-white hover:bg-red-500 rounded-xl transition-all border border-red-500/20"
+                                        >
+                                            <Trash2 size={16} />
+                                            <span>Xóa vĩnh viễn</span>
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <button
+                                            onClick={() => setConfirmAction('archive')}
+                                            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-500 hover:text-white hover:bg-slate-500 rounded-xl transition-all border border-slate-500/20"
+                                        >
+                                            <Archive size={16} />
+                                            <span>Lưu trữ</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setConfirmAction('delete')}
+                                            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:text-white hover:bg-red-500 rounded-xl transition-all border border-red-500/20"
+                                        >
+                                            <Trash2 size={16} />
+                                            <span>Xóa vĩnh viễn</span>
+                                        </button>
+                                    </>
+                                )}
+                            </>
                         )}
                     </div>
                 )}
