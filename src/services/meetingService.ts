@@ -108,14 +108,9 @@ export async function fetchMeetings(gid: string): Promise<Meeting[] | null> {
 
 /**
  * Subscribe to Realtime changes for meeting schedule
+ * 🔋 DISABLED in hybrid mode — data comes from Google Sheets
  */
-export function subscribeToMeetingChanges(onUpdate: () => void): () => void {
-    const channel = supabase
-        .channel('meeting-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: SUPABASE_TABLE }, () => {
-            onUpdate();
-        })
-        .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+export function subscribeToMeetingChanges(_onUpdate: () => void): () => void {
+    console.log('[MeetingService] ℹ️ Realtime disabled (hybrid mode — using Google Sheets)');
+    return () => {};
 }

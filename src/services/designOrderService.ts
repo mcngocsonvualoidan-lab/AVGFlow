@@ -254,34 +254,24 @@ export async function fetchDesignOrdersFromCSV(): Promise<string[][]> {
     throw lastErr || new Error('All data sources failed');
 }
 
-// ==================== MAIN FETCH (Cache-first → Supabase → JSONP/CSV) ====================
+// ==================== MAIN FETCH (Cache → Google Sheets — HYBRID MODE) ====================
+// 🔋 Hybrid: Google Sheets is PRIMARY to save Supabase bandwidth (free plan quota exceeded)
 export async function fetchDesignOrders(): Promise<string[][]> {
-    // 1. Try cache FIRST for instant rendering (stale-while-revalidate)
+    // 1. Try cache FIRST for instant rendering
     const cached = getCachedOrders();
     if (cached) {
         console.log(`[DesignOrderService] 📦 Instant load from cache (source: ${cached.source})`);
-        // Fire-and-forget background refresh (with timeout to avoid hanging)
-        fetchDesignOrdersFromSupabase().then(fresh => {
-            if (fresh.length > 0) {
-                console.log('[DesignOrderService] 🔄 Background refresh complete:', fresh.length, 'rows');
+        // Background refresh from Google Sheets (not Supabase — saves bandwidth)
+        fetchDesignOrdersFromCSV().then(fresh => {
+            if (fresh.length > 1) {
+                console.log('[DesignOrderService] 🔄 Background refresh from Sheets:', fresh.length, 'rows');
             }
         }).catch(() => {});
         return cached.data;
     }
 
-    // 2. No cache — try Supabase (first visit, with 5s timeout)
-    try {
-        const supabaseData = await fetchDesignOrdersFromSupabase();
-        if (supabaseData.length > 0) {
-            console.log('[DesignOrderService] ✅ Loaded from Supabase:', supabaseData.length, 'rows');
-            return supabaseData;
-        }
-    } catch (err) {
-        console.warn('[DesignOrderService] ⚠️ Supabase fetch failed:', err);
-    }
-
-    // 3. Fallback to Google Sheets (JSONP → GViz → CSV proxies)
-    console.warn('[DesignOrderService] 🔄 Falling back to Google Sheets...');
+    // 2. No cache — fetch from Google Sheets (JSONP → GViz → CSV)
+    console.log('[DesignOrderService] 📊 Fetching from Google Sheets (hybrid mode)...');
     return fetchDesignOrdersFromCSV();
 }
 
@@ -395,32 +385,14 @@ function parseDate(dateStr: string): Date | null {
     return isNaN(d.getTime()) ? null : d;
 }
 
-// ==================== SUPABASE REALTIME ====================
+// ==================== SUPABASE REALTIME (DISABLED — Hybrid Mode) ====================
+// 🔋 Disabled to save Supabase bandwidth. Data comes from Google Sheets via JSONP.
 export type OrderChangeCallback = (rows: string[][]) => void;
 
-export function subscribeToDesignOrderChanges(callback: OrderChangeCallback) {
-    const channel = supabase
-        .channel('design_orders_realtime')
-        .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: SUPABASE_TABLE },
-            async () => {
-                // On any change, refetch all data
-                try {
-                    const data = await fetchDesignOrdersFromSupabase();
-                    if (data.length > 0) {
-                        callback(data);
-                    }
-                } catch (err) {
-                    console.warn('[DesignOrderService] Realtime refetch failed:', err);
-                }
-            }
-        )
-        .subscribe();
-
-    return () => {
-        supabase.removeChannel(channel);
-    };
+export function subscribeToDesignOrderChanges(_callback: OrderChangeCallback) {
+    // No-op: Realtime disabled in hybrid mode to save Supabase bandwidth
+    console.log('[DesignOrderService] ℹ️ Realtime disabled (hybrid mode — using Google Sheets)');
+    return () => {}; // No cleanup needed
 }
 
 // ==================== SYNC TO SUPABASE (from App-side, emergency) ====================

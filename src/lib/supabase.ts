@@ -6,9 +6,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_RZmqGM8T25niehlC2NgIqg_oTrtnOcR';
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     realtime: {
         params: {
-            eventsPerSecond: 40,
+            eventsPerSecond: 2, // Reduced from 40 to save bandwidth (free plan)
         },
-        heartbeatIntervalMs: 15000,
+        heartbeatIntervalMs: 60000, // 60s heartbeat (was 15s) — saves ~75% realtime egress
         timeout: 10000,
     },
 });

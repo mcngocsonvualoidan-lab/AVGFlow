@@ -114,17 +114,11 @@ export async function fetchCustomers(): Promise<CustomerContact[]> {
 
 /**
  * Subscribe to Realtime changes
+ * 🔋 DISABLED in hybrid mode — data comes from Google Sheets
  */
-export function subscribeToCustomerChanges(onUpdate: () => void): () => void {
-    const channel = supabase
-        .channel('customer-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: SUPABASE_TABLE }, () => {
-            _cache = null;
-            onUpdate();
-        })
-        .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+export function subscribeToCustomerChanges(_onUpdate: () => void): () => void {
+    console.log('[CustomerService] ℹ️ Realtime disabled (hybrid mode — using Google Sheets)');
+    return () => {};
 }
 
 // ── Simple CSV parser ──

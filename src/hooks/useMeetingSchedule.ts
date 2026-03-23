@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchMeetings as fetchMeetingsFromSupabase, subscribeToMeetingChanges, type Meeting } from '../services/meetingService';
+import { type Meeting } from '../services/meetingService';
 
 // Re-export Meeting type from service
 export type { Meeting };
@@ -353,10 +353,10 @@ export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID, filterMonth?
                 setMeetings(applyMonthFilter(cached.data));
                 setLoading(false);
 
-                // Background refresh from Supabase
-                fetchMeetingsFromSupabase(gid).then(fresh => {
+                // 🔋 HYBRID: Background refresh from Google Sheets (not Supabase)
+                fetchFromGoogleSheets(gid).then(fresh => {
                     if (fresh && fresh.length > 0) {
-                        setCachedMeetings(gid, fresh, 'supabase');
+                        setCachedMeetings(gid, fresh, 'csv');
                         setMeetings(applyMonthFilter(fresh));
                         console.log(`[MeetingHook] 🔄 Background refresh: ${fresh.length} meetings`);
                     }
@@ -364,31 +364,10 @@ export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID, filterMonth?
                 return;
             }
 
-            // 2. No cache — try Supabase first
-            let result: Meeting[] | null = null;
-            try {
-                result = await fetchMeetingsFromSupabase(gid);
-                if (result && result.length > 0) {
-                    console.log(`[MeetingHook] ✅ Supabase: ${result.length} meetings`);
-                    setCachedMeetings(gid, result, 'supabase');
-                } else {
-                    console.log('[MeetingHook] Supabase returned empty, trying CSV...');
-                    result = null;
-                }
-            } catch (e) {
-                console.warn('[MeetingHook] Supabase failed:', e);
-            }
-
-            // 3. Fallback to Google Sheets (JSONP → GViz → CSV proxies)
-            if (!result || result.length === 0) {
-                try {
-                    result = await fetchFromGoogleSheets(gid);
-                    setCachedMeetings(gid, result, 'csv');
-                } catch (csvErr: any) {
-                    console.error('[MeetingHook] Google Sheets fallback also failed:', csvErr);
-                    throw csvErr;
-                }
-            }
+            // 2. 🔋 HYBRID MODE: Skip Supabase, go directly to Google Sheets (JSONP → GViz → CSV)
+            const result = await fetchFromGoogleSheets(gid);
+            setCachedMeetings(gid, result, 'csv');
+            console.log(`[MeetingHook] ✅ Google Sheets: ${result.length} meetings`);
 
             setMeetings(applyMonthFilter(result || []));
         } catch (err: any) {
@@ -402,16 +381,11 @@ export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID, filterMonth?
     useEffect(() => {
         fetchData();
 
-        // Subscribe to Realtime changes
-        const unsubscribe = subscribeToMeetingChanges(() => {
-            fetchData();
-        });
-
-        // Auto-refresh every 5 minutes (fallback if Realtime misses)
-        const intervalId = setInterval(fetchData, 5 * 60 * 1000);
+        // Realtime disabled in hybrid mode (saves Supabase bandwidth)
+        // Auto-refresh every 10 minutes from Google Sheets
+        const intervalId = setInterval(fetchData, 10 * 60 * 1000);
 
         return () => {
-            unsubscribe();
             clearInterval(intervalId);
         };
     }, [fetchData]);

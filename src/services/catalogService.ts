@@ -134,17 +134,11 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
 
 /**
  * Subscribe to Realtime changes
+ * 🔋 DISABLED in hybrid mode — data comes from Google Sheets
  */
-export function subscribeToCatalogChanges(onUpdate: () => void): () => void {
-    const channel = supabase
-        .channel('catalog-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: SUPABASE_TABLE }, () => {
-            _cache = null; // Invalidate cache
-            onUpdate();
-        })
-        .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+export function subscribeToCatalogChanges(_onUpdate: () => void): () => void {
+    console.log('[CatalogService] ℹ️ Realtime disabled (hybrid mode — using Google Sheets)');
+    return () => {};
 }
 
 // ── Simple CSV parser ──

@@ -29,9 +29,8 @@
  * =====================================================
  */
 
-import { supabase } from '../lib/supabase';
 
-const SUPABASE_TABLE = 'print_orders';
+// 🔋 HYBRID MODE: Supabase disabled, using Google Sheets directly
 const PRINT_SHEET_ID = '16GLyiZLdBknve7P_JO9ly-Luy5vIgdizNmQH985zPeo';
 const CSV_FALLBACK_URL = `https://docs.google.com/spreadsheets/d/${PRINT_SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`;
 
@@ -66,7 +65,59 @@ export interface PrintOrder {
 }
 
 /**
- * Fetch raw rows from Supabase, fallback to CSV
+ * Parse GViz JSON response to string[][]
+ */
+function parseGVizToRows(responseText: string): string[][] {
+    const jsonMatch = responseText.match(/google\.visualization\.Query\.setResponse\((.+)\);?\s*$/s);
+    if (!jsonMatch) return [];
+    let parsed: any;
+    try { parsed = JSON.parse(jsonMatch[1]); } catch { return []; }
+    if (!parsed?.table?.rows) return [];
+
+    const extractValue = (cell: any): string => {
+        if (!cell) return '';
+        if (cell.f) return cell.f;
+        if (cell.v === null || cell.v === undefined) return '';
+        if (typeof cell.v === 'boolean') return cell.v ? 'TRUE' : 'FALSE';
+        return String(cell.v);
+    };
+
+    const headers = (parsed.table.cols || []).map((col: any) => col.label || '');
+    const rows: string[][] = [headers];
+    for (const row of parsed.table.rows) {
+        rows.push((row.c || []).map((cell: any) => extractValue(cell)));
+    }
+    return rows;
+}
+
+/**
+ * JSONP fetch for print orders (bypasses CORS)
+ */
+function fetchPrintOrdersViaJSONP(): Promise<string[][]> {
+    return new Promise((resolve, reject) => {
+        const cb = `__gviz_print_${Date.now()}`;
+        (window as any)[cb] = (response: any) => {
+            cleanup();
+            try {
+                const fakeText = `google.visualization.Query.setResponse(${JSON.stringify(response)});`;
+                resolve(parseGVizToRows(fakeText));
+            } catch (e) { reject(e); }
+        };
+        const script = document.createElement('script');
+        script.src = `https://docs.google.com/spreadsheets/d/${PRINT_SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${cb}&gid=0`;
+        script.onerror = () => { cleanup(); reject(new Error('JSONP failed')); };
+        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 12000);
+        function cleanup() {
+            clearTimeout(timer);
+            delete (window as any)[cb];
+            if (script.parentNode) script.parentNode.removeChild(script);
+        }
+        document.head.appendChild(script);
+    });
+}
+
+/**
+ * Fetch raw rows — 🔋 HYBRID: Google Sheets first (JSONP → CSV), skip Supabase
  */
 export async function fetchPrintOrderRows(): Promise<string[][]> {
     // Check cache
@@ -75,35 +126,41 @@ export async function fetchPrintOrderRows(): Promise<string[][]> {
         return cachedRows;
     }
 
+    // Strategy 1: JSONP (bypasses CORS)
     try {
-        // 1. Primary: Supabase
-        const { data, error } = await supabase
-            .from(SUPABASE_TABLE)
-            .select('row_index, row_content')
-            .order('row_index', { ascending: true })
-            .limit(5000);
-
-        if (!error && data && data.length > 0) {
-            const rows = data.map((item: { row_content: string[] }) => item.row_content);
+        const rows = await fetchPrintOrdersViaJSONP();
+        if (rows.length > 1) {
             cachedRows = rows;
             cacheTimestamp = Date.now();
-            console.log('[PrintOrderService] ✅ Loaded from Supabase:', rows.length, 'rows');
+            console.log('[PrintOrderService] ✅ JSONP loaded:', rows.length, 'rows');
             return rows;
         }
-
-        console.warn('[PrintOrderService] ⚠️ Supabase empty/error, falling back to CSV...');
-    } catch (err) {
-        console.warn('[PrintOrderService] ⚠️ Supabase fetch error, falling back to CSV...', err);
+    } catch (e) {
+        console.warn('[PrintOrderService] JSONP failed:', e);
     }
 
-    // 2. Fallback: Google Sheets CSV
-    const res = await fetch(CSV_FALLBACK_URL);
-    const text = await res.text();
-    const rows = parseCSV(text);
-    cachedRows = rows;
-    cacheTimestamp = Date.now();
-    console.log('[PrintOrderService] 📄 Loaded from CSV fallback:', rows.length, 'rows');
-    return rows;
+    // Strategy 2: CSV via proxy
+    const proxies = [
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(CSV_FALLBACK_URL)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(CSV_FALLBACK_URL)}`,
+    ];
+    for (const url of proxies) {
+        try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+            if (!res.ok) continue;
+            const text = await res.text();
+            if (!text || text.length < 50) continue;
+            const rows = parseCSV(text);
+            if (rows.length > 1) {
+                cachedRows = rows;
+                cacheTimestamp = Date.now();
+                console.log('[PrintOrderService] ✅ CSV proxy loaded:', rows.length, 'rows');
+                return rows;
+            }
+        } catch { /* try next */ }
+    }
+
+    throw new Error('All print order data sources failed');
 }
 
 /**
@@ -165,20 +222,11 @@ export async function fetchPrintOrders(): Promise<PrintOrder[]> {
 
 /**
  * Subscribe to Supabase Realtime changes on print_orders
+ * 🔋 DISABLED in hybrid mode — data comes from Google Sheets
  */
-export function subscribeToPrintOrderChanges(callback: () => void): () => void {
-    const channel = supabase
-        .channel('print_orders_changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: SUPABASE_TABLE }, () => {
-            console.log('[PrintOrderService] 🔔 Realtime update detected');
-            cachedRows = null; // Invalidate cache
-            callback();
-        })
-        .subscribe();
-
-    return () => {
-        supabase.removeChannel(channel);
-    };
+export function subscribeToPrintOrderChanges(_callback: () => void): () => void {
+    console.log('[PrintOrderService] ℹ️ Realtime disabled (hybrid mode — using Google Sheets)');
+    return () => {};
 }
 
 /**
