@@ -54,6 +54,14 @@ export interface UserPermissions {
     ai_chat?: { view: boolean; edit: boolean };
 }
 
+export interface TaskComment {
+    id: string;
+    userId: string;
+    text: string;
+    attachments: { type: 'image' | 'file'; url: string; name: string }[];
+    timestamp: string;
+}
+
 export interface Task {
     id: string;
     title: string;
@@ -69,6 +77,7 @@ export interface Task {
     acceptedAt?: string; // Timestamp when user clicked 'Receive Task'
     warningSent?: boolean; // To track if low-time warning has been sent
     createdAt: string;
+    comments?: TaskComment[]; // NEW: Task comments
 }
 
 export interface TimelineEvent {
@@ -706,37 +715,11 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         let isMounted = true;
         let unsubscribe: (() => void) | undefined;
 
-        const fetchPending = async () => {
+         const fetchPending = async () => {
             try {
-                const SHEET_ID = '1mzYT75VEJh-PMYvlwUEQkvVnDIj6p1P2ssS6FXvK5Vs';
-                const GID = '485384320';
-                const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
-                const res = await fetch(url);
-                if (!res.ok) return;
-                const text = await res.text();
-
-                // Simple parser that handles basic Google Sheets CSV output
-                const rows: string[][] = [];
-                let row: string[] = [];
-                let cell = '';
-                let inQuotes = false;
-                for (let i = 0; i < text.length; i++) {
-                    const ch = text[i];
-                    if (inQuotes) {
-                        if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-                        else if (ch === '"') { inQuotes = false; }
-                        else { cell += ch; }
-                    } else {
-                        if (ch === '"') { inQuotes = true; }
-                        else if (ch === ',') { row.push(cell); cell = ''; }
-                        else if (ch === '\n' || (ch === '\r' && text[i + 1] === '\n')) {
-                            if (ch === '\r') i++;
-                            row.push(cell); cell = '';
-                            rows.push(row); row = [];
-                        } else { cell += ch; }
-                    }
-                }
-                if (cell || row.length) { row.push(cell); rows.push(row); }
+                // 🛡️ Supabase-first fetch (protected data)
+                const { fetchDesignOrders } = await import('../services/designOrderService');
+                const rows = await fetchDesignOrders();
 
                 unsubscribe = onSnapshot(collection(db, 'order_metas'), (snap) => {
                     const metas: Record<string, { statusOverride?: string }> = {};
@@ -744,6 +727,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
                     if (!isMounted) return;
 
                     let count = 0;
+                    // 📅 Cutoff: chỉ đếm đơn hàng từ tháng 1/2025
+                    const CUTOFF = new Date(2025, 0, 1);
                     for (let i = 1; i < rows.length; i++) {
                         const cols = rows[i];
                         if (cols.length < 4) continue;
@@ -756,6 +741,20 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
                         const brand = (cols[2] || '').trim();
                         const request = (cols[3] || '').trim();
                         if (!time && !person && !brand && !request) continue;
+
+                        // 🔒 Ẩn đơn hàng trước 01/2025 (khớp với designOrderService)
+                        if (time) {
+                            const parts = time.split(' ');
+                            const dateParts = (parts[0] || '').split('/');
+                            if (dateParts.length === 3) {
+                                const d = new Date(
+                                    parseInt(dateParts[2], 10),
+                                    parseInt(dateParts[1], 10) - 1,
+                                    parseInt(dateParts[0], 10)
+                                );
+                                if (!isNaN(d.getTime()) && d < CUTOFF) continue;
+                            }
+                        }
 
                         // Match ID format from Orders.tsx
                         const safeId = `row-${i}`;

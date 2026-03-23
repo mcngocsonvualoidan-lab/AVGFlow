@@ -63,6 +63,87 @@ const AccessDenied = () => {
   )
 };
 
+// Admin emails allowed to access public orders without being in the customer list
+const PUBLIC_ADMIN_EMAILS = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com', 'ngochandepzai22@gmail.com', 'thientam@ccmartech.com', 'cambridgeorg.209@gmail.com', 'trolitct@gmail.com', 'sondesigner0704@gmail.com', 'sonbithu@gmail.com', 'obitamm09@gmail.com'];
+
+const CustomerAuth = ({ children }: { children: React.ReactNode }) => {
+  const { currentUser, loading, logout } = useAuth();
+  const [validating, setValidating] = useState(true);
+  const [isAuthorized, setIsAuthorized] = useState(false);
+
+  useEffect(() => {
+    const validateAccess = async () => {
+      if (!currentUser?.email) {
+        setValidating(false);
+        setIsAuthorized(false);
+        return;
+      }
+      const email = currentUser.email.toLowerCase().trim();
+      // Admin emails are always authorized
+      if (PUBLIC_ADMIN_EMAILS.includes(email)) {
+        setIsAuthorized(true);
+        setValidating(false);
+        return;
+      }
+      // Check against customer list from Sheet
+      try {
+        const { isCustomerEmail } = await import('./services/customerService');
+        const found = await isCustomerEmail(email);
+        setIsAuthorized(found);
+      } catch (err) {
+        console.error('[CustomerAuth] Email validation failed:', err);
+        setIsAuthorized(false);
+      }
+      setValidating(false);
+    };
+    if (currentUser) {
+      setValidating(true);
+      validateAccess();
+    } else {
+      setValidating(false);
+      setIsAuthorized(false);
+    }
+  }, [currentUser]);
+
+  if (loading || validating) {
+    return (
+      <div className="h-screen w-full bg-[#0f172a] flex flex-col items-center justify-center">
+        <Loader2 size={40} className="text-indigo-500 animate-spin" />
+        {validating && <p className="mt-4 text-sm text-slate-500">Đang xác thực quyền truy cập...</p>}
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <Login />;
+  }
+
+  if (!isAuthorized) {
+    return (
+      <div className="h-screen w-full bg-[#0f172a] flex flex-col items-center justify-center text-white p-4">
+        <ShieldAlert size={64} className="text-red-500 mb-6" />
+        <h1 className="text-2xl font-bold mb-2 text-center text-red-400">Truy cập bị từ chối</h1>
+        <p className="text-slate-400 mb-2 text-center max-w-md">
+          Email của bạn không có trong danh sách được phép truy cập hệ thống đặt hàng.
+        </p>
+        <div className="mb-8 p-3 bg-white/5 rounded-lg border border-white/10 text-center">
+          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Tài khoản hiện tại</p>
+          <p className="font-mono text-emerald-400">{currentUser?.email}</p>
+          <p className="text-[10px] text-slate-500 mt-2">Vui lòng liên hệ Admin để được cấp quyền truy cập.</p>
+        </div>
+        <button
+          onClick={logout}
+          className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-500/20 transition-all font-bold border border-indigo-500/50 flex items-center gap-2"
+        >
+          Đăng nhập bằng tài khoản khác
+        </button>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+};
+
 const MainContent = () => {
   const { currentUser, loading } = useAuth();
   const { users, isLoaded } = useData();
@@ -184,8 +265,8 @@ function App() {
                 <Route path="/admin-login" element={<AdminLogin />} />
                 <Route path="/admin-panel/*" element={<AdminPanel />} />
 
-                {/* Public Routes (no authentication required) */}
-                <Route path="/public/orders" element={<PublicOrders />} />
+                {/* Public Routes (authentication required through CustomerAuth) */}
+                <Route path="/public/orders" element={<CustomerAuth><PublicOrders /></CustomerAuth>} />
 
                 {/* Main App Route - Catch All */}
                 <Route path="/*" element={<MainContent />} />

@@ -4,6 +4,18 @@ import { clsx } from 'clsx';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, PieChart, Pie, Legend } from 'recharts';
 import { Timestamp } from 'firebase/firestore';
 
+// Safe date parser for both Firebase Timestamp and ISO string
+function parseDate(val: any): Date | null {
+    if (!val) return null;
+    if (val instanceof Timestamp) return val.toDate();
+    if (typeof val === 'string' || typeof val === 'number') {
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof val?.toDate === 'function') return val.toDate();
+    return null;
+}
+
 interface DesignTicket {
     id: string;
     ticketCode: string;
@@ -13,8 +25,8 @@ interface DesignTicket {
     contactName: string;
     status: string;
     revisionRound: number;
-    createdAt: Timestamp | null;
-    updatedAt: Timestamp | null;
+    createdAt: Timestamp | string | null;
+    updatedAt: Timestamp | string | null;
 }
 
 const COLORS = ['#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#10b981', '#6366f1'];
@@ -23,8 +35,8 @@ const DesignTicketStats: React.FC<{ tickets: DesignTicket[] }> = ({ tickets }) =
     const stats = useMemo(() => {
         const now = new Date();
         const thisMonth = tickets.filter(t => {
-            if (!t.createdAt) return false;
-            const d = t.createdAt.toDate();
+            const d = parseDate(t.createdAt);
+            if (!d) return false;
             return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
         });
 
@@ -60,9 +72,10 @@ const DesignTicketStats: React.FC<{ tickets: DesignTicket[] }> = ({ tickets }) =
         let totalProcessingHours = 0;
         const processingTimes: { code: string; hours: number }[] = [];
         completedTickets.forEach(t => {
-            const start = t.createdAt!.toDate().getTime();
-            const end = t.updatedAt!.toDate().getTime();
-            const hours = Math.max(0, (end - start) / (1000 * 60 * 60));
+            const startD = parseDate(t.createdAt);
+            const endD = parseDate(t.updatedAt);
+            if (!startD || !endD) return;
+            const hours = Math.max(0, (endD.getTime() - startD.getTime()) / (1000 * 60 * 60));
             totalProcessingHours += hours;
             processingTimes.push({ code: t.ticketCode, hours: Math.round(hours * 10) / 10 });
         });
@@ -71,8 +84,8 @@ const DesignTicketStats: React.FC<{ tickets: DesignTicket[] }> = ({ tickets }) =
         // Monthly trend
         const monthlyData: Record<string, { new: number; edit: number }> = {};
         tickets.forEach(t => {
-            if (!t.createdAt) return;
-            const d = t.createdAt.toDate();
+            const d = parseDate(t.createdAt);
+            if (!d) return;
             const key = `${d.getMonth() + 1}/${d.getFullYear()}`;
             if (!monthlyData[key]) monthlyData[key] = { new: 0, edit: 0 };
             monthlyData[key][t.action]++;

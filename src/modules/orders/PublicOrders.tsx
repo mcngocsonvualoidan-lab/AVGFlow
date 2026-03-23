@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Package, Clock, User, Tag, FileText, Filter, Search, ArrowUpDown, ChevronDown, AlertCircle, CheckCircle2, Loader2, Truck, XCircle, BarChart as BarChartIcon, Calendar, CalendarClock, Shield, Eye, PenLine, ClipboardList, Sparkles, ShoppingBag, Users, Printer, Palette, Scale, Coins, Megaphone, MousePointerClick, ListChecks, Send } from 'lucide-react';
+import { Package, Clock, User, Tag, FileText, Filter, Search, ArrowUpDown, ChevronDown, AlertCircle, CheckCircle2, Loader2, Truck, XCircle, BarChart as BarChartIcon, Calendar, CalendarClock, Shield, Eye, PenLine, ClipboardList, Sparkles, ShoppingBag, Users, Printer, Palette, Scale, Coins, Megaphone, MousePointerClick, ListChecks, Send, RefreshCw, LogOut } from 'lucide-react';
 import { clsx } from 'clsx';
 import HeroBanner from '../../components/HeroBanner';
 import PrintOrderForm from './PrintOrderForm';
 import DesignOrderForm from './DesignOrderForm';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList } from 'recharts';
 import { db } from '../../lib/firebase';
-import { onSnapshot, collection } from 'firebase/firestore';
-
-const SHEET_ID = '1mzYT75VEJh-PMYvlwUEQkvVnDIj6p1P2ssS6FXvK5Vs';
-const GID = '485384320';
-const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
+import { onSnapshot, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth } from '../../context/AuthContext';
+import { fetchDesignOrders, parseDesignOrders, subscribeToDesignOrderChanges } from '../../services/designOrderService';
+import { findCustomerByEmail, fetchCompanyNames, type CustomerContact } from '../../services/customerService';
 
 interface Order {
     id: string;
@@ -31,74 +30,6 @@ interface OrderMeta {
 }
 
 
-
-/** Parse full CSV text into rows, correctly handling multi-line quoted fields */
-function parseCSV(text: string): string[][] {
-    const rows: string[][] = [];
-    let current = '';
-    let inQuotes = false;
-    const row: string[] = [];
-
-    for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-        if (inQuotes) {
-            if (ch === '"') {
-                if (i + 1 < text.length && text[i + 1] === '"') {
-                    current += '"';
-                    i++;
-                } else {
-                    inQuotes = false;
-                }
-            } else {
-                current += ch;
-            }
-        } else {
-            if (ch === '"') {
-                inQuotes = true;
-            } else if (ch === ',') {
-                row.push(current);
-                current = '';
-            } else if (ch === '\n' || ch === '\r') {
-                if (ch === '\r' && i + 1 < text.length && text[i + 1] === '\n') {
-                    i++;
-                }
-                row.push(current);
-                current = '';
-                if (row.length > 0) {
-                    rows.push([...row]);
-                }
-                row.length = 0;
-            } else {
-                current += ch;
-            }
-        }
-    }
-    row.push(current);
-    if (row.some(c => c.trim())) {
-        rows.push(row);
-    }
-    return rows;
-}
-
-function parseDate(dateStr: string): Date | null {
-    if (!dateStr || !dateStr.trim()) return null;
-    const parts = dateStr.trim().split(' ');
-    if (parts.length < 1) return null;
-    const dateParts = parts[0].split('/');
-    if (dateParts.length !== 3) return null;
-    const day = parseInt(dateParts[0], 10);
-    const month = parseInt(dateParts[1], 10) - 1;
-    const year = parseInt(dateParts[2], 10);
-    let hours = 0, minutes = 0, seconds = 0;
-    if (parts[1]) {
-        const timeParts = parts[1].split(':');
-        hours = parseInt(timeParts[0], 10) || 0;
-        minutes = parseInt(timeParts[1], 10) || 0;
-        seconds = parseInt(timeParts[2], 10) || 0;
-    }
-    const d = new Date(year, month, day, hours, minutes, seconds);
-    return isNaN(d.getTime()) ? null : d;
-}
 
 function getStatusInfo(status: string): { color: string; bg: string; border: string; icon: React.FC<any>; label: string } {
     const s = (status || '').toLowerCase().trim();
@@ -173,6 +104,26 @@ interface FormData { person: string; personOther: string; brand: string; request
 const initialFormData: FormData = { person: '', personOther: '', brand: '', request: '', requestOther: '', description: '', loveDesigner: '' };
 
 const PublicOrders: React.FC = () => {
+    const { currentUser, logout } = useAuth();
+    const userEmail = currentUser?.email || '';
+    // Admin emails that can see ALL orders
+    const ADMIN_EMAILS = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com', 'ngochandepzai22@gmail.com', 'thientam@ccmartech.com', 'cambridgeorg.209@gmail.com', 'trolitct@gmail.com', 'sondesigner0704@gmail.com'];
+    const isAdmin = ADMIN_EMAILS.includes(userEmail.toLowerCase());
+
+    // 🔒 Customer profile from Sheet (auto-filled on login)
+    const [customerProfile, setCustomerProfile] = useState<CustomerContact | null>(null);
+
+    // 🏢 Company names from Sheet column B (for dropdown)
+    const [companyNames, setCompanyNames] = useState<string[]>([]);
+    const [brandDropdownOpen, setBrandDropdownOpen] = useState(false);
+    const [brandSearch, setBrandSearch] = useState('');
+
+    // Dynamic customer name for order scoping (replaces hardcoded CUSTOMER_EMAIL_TO_NAMES)
+    const customerNames = useMemo<string[]>(() => {
+        if (!customerProfile) return [];
+        return [customerProfile.name];
+    }, [customerProfile]);
+
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -182,13 +133,41 @@ const PublicOrders: React.FC = () => {
     const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
     const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
     const [sortNewestFirst, setSortNewestFirst] = useState(true);
-    const [activeTab, setActiveTab] = useState<'orders' | 'form' | 'products' | 'customers'>('orders');
+    // --- URL hash persistence for tab/category ---
+    const VALID_TABS = ['orders', 'form', 'products', 'customers'] as const;
+    const VALID_CATS = ['in-an', 'thiet-ke', 'phap-ly', 'tai-chinh', 'truyen-thong'] as const;
+    type TabKey = typeof VALID_TABS[number];
+
+    const parseHash = useCallback(() => {
+        const hash = window.location.hash.replace(/^#/, '');
+        const params = new URLSearchParams(hash);
+        const tab = params.get('tab') as TabKey | null;
+        const cat = params.get('cat');
+        return {
+            tab: tab && VALID_TABS.includes(tab) ? tab : 'orders' as TabKey,
+            cat: cat && (VALID_CATS as readonly string[]).includes(cat) ? cat : null,
+        };
+    }, []);
+
+    const [activeTab, setActiveTab] = useState<TabKey>(() => parseHash().tab);
     const [formData, setFormData] = useState<FormData>(initialFormData);
     const [formSubmitting, setFormSubmitting] = useState(false);
     const [formSubmitted, setFormSubmitted] = useState(false);
     const [formError, setFormError] = useState('');
     const [currentStep, setCurrentStep] = useState(0);
-    const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+    const [selectedCategory, setSelectedCategory] = useState<string | null>(() => parseHash().cat);
+
+    // Sync state → URL hash (without triggering reload)
+    useEffect(() => {
+        const params = new URLSearchParams();
+        if (activeTab !== 'orders') params.set('tab', activeTab);
+        if (selectedCategory) params.set('cat', selectedCategory);
+        const newHash = params.toString();
+        const currentHash = window.location.hash.replace(/^#/, '');
+        if (newHash !== currentHash) {
+            window.history.replaceState(null, '', newHash ? `#${newHash}` : window.location.pathname + window.location.search);
+        }
+    }, [activeTab, selectedCategory]);
     const [isDark, setIsDark] = useState(() => {
         if (typeof window !== 'undefined') {
             return window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -220,62 +199,79 @@ const PublicOrders: React.FC = () => {
         }
     }, [isDark]);
 
-    const fetchData = async () => {
-        setLoading(true);
-        setError('');
-        try {
-            const res = await fetch(CSV_URL);
-            const text = await res.text();
-            const rows = parseCSV(text);
-            if (rows.length < 2) throw new Error('Không có dữ liệu');
+    // 🚀 Load ALL data in parallel on mount (customer profile + company names + design orders)
+    useEffect(() => {
+        const loadAll = async () => {
+            setLoading(true);
+            setError('');
 
-            const parsedOrders: Order[] = [];
-            for (let i = 1; i < rows.length; i++) {
-                const cols = rows[i];
-                // Column mapping (matches Orders.tsx):
-                // A(0)=Timestamp, B(1)=Person, C(2)=Brand, D(3)=Request,
-                // E(4)=Description, F(5)=Qty, G(6)=DeliveryEst,
-                // H(7)=Handler, I(8)=Status
-                const time = (cols[0] || '').trim();
-                const person = (cols[1] || '').trim();
-                const brand = (cols[2] || '').trim();
-                const request = (cols[3] || '').trim();
-                const description = (cols[4] || '').trim();
-                const rawStatus = (cols[8] || '').trim();
-                const sTrim = (rawStatus || '').trim();
-                const status = (!sTrim || sTrim.toUpperCase() === 'N/A') ? 'Đang xử lý' : sTrim;
+            // Fire all fetches concurrently
+            const [profileResult, companiesResult, ordersResult] = await Promise.allSettled([
+                // 1. Customer profile (only for non-admins)
+                (!isAdmin && userEmail)
+                    ? findCustomerByEmail(userEmail)
+                    : Promise.resolve(null),
+                // 2. Company names for dropdown
+                fetchCompanyNames(),
+                // 3. Design orders data
+                fetchDesignOrders(),
+            ]);
 
-                if (!time && !person && !brand && !request) continue;
-
-                // Match ID format from Orders.tsx for Firestore order_metas consistency
-                const safeId = `row-${i}`;
-
-                parsedOrders.push({
-                    id: safeId,
-                    time,
-                    person,
-                    brand,
-                    request,
-                    description,
-                    status,
-                    parsedDate: parseDate(time),
-                });
+            // Process profile
+            if (profileResult.status === 'fulfilled' && profileResult.value) {
+                const profile = profileResult.value;
+                setCustomerProfile(profile);
+                setFormData(prev => ({
+                    ...prev,
+                    person: profile.name,
+                    brand: profile.company || prev.brand,
+                }));
             }
-            setOrders(parsedOrders);
-        } catch (e: any) {
-            setError(e.message || 'Lỗi tải dữ liệu');
-        } finally {
-            setLoading(false);
-        }
-    };
 
-    useEffect(() => { fetchData(); }, []);
+            // Process company names
+            if (companiesResult.status === 'fulfilled') {
+                setCompanyNames(companiesResult.value);
+            }
+
+            // Process orders
+            if (ordersResult.status === 'fulfilled') {
+                const rows = ordersResult.value;
+                if (rows.length < 2) {
+                    setError('Không có dữ liệu');
+                } else {
+                    setOrders(parseDesignOrders(rows));
+                }
+            } else {
+                setError(ordersResult.reason?.message || 'Lỗi tải dữ liệu');
+            }
+
+            setLoading(false);
+        };
+        loadAll();
+
+        // 🔄 Realtime subscription for auto-updates
+        const unsubRealtime = subscribeToDesignOrderChanges((rows) => {
+            const parsedOrders = parseDesignOrders(rows);
+            setOrders(parsedOrders);
+        });
+        return () => unsubRealtime();
+    }, [userEmail, isAdmin]);
+
+    // 🔒 Scope orders to the current user (admin sees all, customer sees only their own)
+    const userOrders = useMemo(() => {
+        if (isAdmin) return orders;
+        if (!userEmail || customerNames.length === 0) return [];
+        return orders.filter(o => {
+            const personTrimmed = (o.person || '').trim();
+            return customerNames.some(name => name.toLowerCase() === personTrimmed.toLowerCase());
+        });
+    }, [orders, isAdmin, userEmail, customerNames]);
 
     // Unique statuses
     const uniqueStatuses = useMemo(() => {
-        const set = new Set(orders.map(o => o.status).filter(Boolean));
+        const set = new Set(userOrders.map(o => o.status).filter(Boolean));
         return Array.from(set);
-    }, [orders]);
+    }, [userOrders]);
 
     // Helper: get effective status (considering overrides)
     const getEffectiveStatus = useCallback((order: Order): string => {
@@ -285,7 +281,9 @@ const PublicOrders: React.FC = () => {
 
     // Filtered and sorted
     const filteredOrders = useMemo(() => {
-        let result = [...orders];
+        let result = [...userOrders];
+
+        // 🔒 User scoping is already done in userOrders — no need to re-filter here
 
         if (statusFilter !== 'all') {
             result = result.filter(o => {
@@ -334,36 +332,36 @@ const PublicOrders: React.FC = () => {
         });
 
         return result;
-    }, [orders, statusFilter, searchQuery, sortNewestFirst, selectedMonth, selectedBrand, getEffectiveStatus]);
+    }, [userOrders, statusFilter, searchQuery, sortNewestFirst, selectedMonth, selectedBrand, getEffectiveStatus]);
 
-    // Stats (uses effective status)
+    // Stats (uses effective status, scoped to user's accessible orders)
     const stats = useMemo(() => {
         const getStatus = (o: Order) => getEffectiveStatus(o).toLowerCase();
         const isCompleted = (s: string) => s.includes('hoàn thành');
         const isCancelled = (s: string) => s.includes('hủy');
         const isPrinting = (s: string) => s.includes('đặt in') || s.includes('in ấn');
         return {
-            total: orders.length,
-            completed: orders.filter(o => isCompleted(getStatus(o))).length,
-            printing: orders.filter(o => isPrinting(getStatus(o))).length,
-            pending: orders.filter(o => { const s = getStatus(o); return !isCompleted(s) && !isPrinting(s) && !isCancelled(s); }).length,
-            cancelled: orders.filter(o => isCancelled(getStatus(o))).length,
+            total: userOrders.length,
+            completed: userOrders.filter(o => isCompleted(getStatus(o))).length,
+            printing: userOrders.filter(o => isPrinting(getStatus(o))).length,
+            pending: userOrders.filter(o => { const s = getStatus(o); return !isCompleted(s) && !isPrinting(s) && !isCancelled(s); }).length,
+            cancelled: userOrders.filter(o => isCancelled(getStatus(o))).length,
         };
-    }, [orders, getEffectiveStatus]);
+    }, [userOrders, getEffectiveStatus]);
 
     const availableYears = useMemo(() => {
         const years = new Set(
-            orders
+            userOrders
                 .map(o => o.parsedDate?.getFullYear()?.toString())
                 .filter(Boolean) as string[]
         );
         return Array.from(years).sort((a, b) => b.localeCompare(a));
-    }, [orders]);
+    }, [userOrders]);
 
     // Monthly stats for chart
     const monthlyStats = useMemo(() => {
         const counts: Record<string, number> = {};
-        orders.forEach(o => {
+        userOrders.forEach(o => {
             if (o.parsedDate) {
                 const year = o.parsedDate.getFullYear().toString();
                 if (selectedYear === 'all' || year === selectedYear) {
@@ -383,12 +381,12 @@ const PublicOrders: React.FC = () => {
             };
         }).sort((a, b) => a.fullMonth.localeCompare(b.fullMonth));
         return data;
-    }, [orders, selectedYear]);
+    }, [userOrders, selectedYear]);
 
     const brandStats = useMemo(() => {
         const groups: Record<string, { count: number; originalNames: Record<string, number> }> = {};
 
-        orders.forEach(o => {
+        userOrders.forEach(o => {
             const b = (o.brand || 'Khác').trim();
             const normalized = normalizeBrandName(b);
 
@@ -418,7 +416,7 @@ const PublicOrders: React.FC = () => {
                 };
             })
             .sort((a, b) => b.value - a.value);
-    }, [orders]);
+    }, [userOrders]);
 
     const formatTimeAgo = (date: Date | null) => {
         if (!date) return '';
@@ -495,9 +493,22 @@ const PublicOrders: React.FC = () => {
             setFormSubmitted(true);
             setFormData(initialFormData);
             setCurrentStep(0);
+
+            // 🔒 Also save to Firestore with customerEmail for access control
+            addDoc(collection(db, 'customer_orders'), {
+                person: personVal,
+                brand: formData.brand,
+                request: requestVal,
+                description: formData.description,
+                loveDesigner: formData.loveDesigner,
+                customerEmail: userEmail,
+                status: 'Đang xử lý',
+                serverCreatedAt: serverTimestamp(),
+            }).catch(err => console.warn('⚠️ Firestore customer_orders save:', err));
+
         } catch { setFormError('Có lỗi xảy ra, vui lòng thử lại'); }
         finally { setFormSubmitting(false); }
-    }, [formData]);
+    }, [formData, userEmail]);
 
 
     return (
@@ -524,6 +535,29 @@ const PublicOrders: React.FC = () => {
                             <Eye size={14} className="text-emerald-600 dark:text-emerald-400" />
                             <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">Chỉ xem</span>
                         </div>
+                        {/* Reload & Clear Cache */}
+                        <button
+                            onClick={async () => {
+                                try {
+                                    // Unregister all service workers
+                                    if ('serviceWorker' in navigator) {
+                                        const registrations = await navigator.serviceWorker.getRegistrations();
+                                        await Promise.all(registrations.map(r => r.unregister()));
+                                    }
+                                    // Clear all caches
+                                    if ('caches' in window) {
+                                        const names = await caches.keys();
+                                        await Promise.all(names.map(n => caches.delete(n)));
+                                    }
+                                } catch (e) { console.warn('Cache clear error:', e); }
+                                // Hard reload
+                                window.location.reload();
+                            }}
+                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center hover:bg-violet-100 dark:hover:bg-violet-500/20 hover:border-violet-300 dark:hover:border-violet-500/30 transition-all group active:scale-90"
+                            title="Tải lại trang & xóa cache"
+                        >
+                            <RefreshCw size={16} className="text-slate-500 dark:text-slate-400 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors" />
+                        </button>
                         {/* Dark Mode Toggle */}
                         <button
                             onClick={() => setIsDark(!isDark)}
@@ -536,6 +570,28 @@ const PublicOrders: React.FC = () => {
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
                             )}
                         </button>
+                        {/* User Info + Logout */}
+                        {currentUser && (
+                            <div className="flex items-center gap-2">
+                                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200/60 dark:border-indigo-500/20">
+                                    {currentUser.photoURL ? (
+                                        <img src={currentUser.photoURL} alt="" className="w-5 h-5 rounded-full" />
+                                    ) : (
+                                        <User size={14} className="text-indigo-600 dark:text-indigo-400" />
+                                    )}
+                                    <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-400 max-w-[120px] truncate">
+                                        {currentUser.displayName || currentUser.email}
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={() => { if (confirm('Bạn muốn đăng xuất?')) logout(); }}
+                                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200/60 dark:border-red-500/20 flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-500/20 transition-all group active:scale-90"
+                                    title="Đăng xuất"
+                                >
+                                    <LogOut size={16} className="text-red-500 dark:text-red-400 group-hover:text-red-600 dark:group-hover:text-red-300 transition-colors" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </header>
@@ -798,7 +854,7 @@ const PublicOrders: React.FC = () => {
                     {/* Results count & Month Filter Indicator */}
                     <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-medium text-slate-500 dark:text-slate-400">
                         <div>
-                            Hiển thị {filteredOrders.length} / {orders.length} đơn hàng
+                            Hiển thị {filteredOrders.length} / {userOrders.length} đơn hàng
                         </div>
                         {(selectedMonth || selectedBrand) && (
                             <div className="flex items-center gap-2">
@@ -1171,7 +1227,7 @@ const PublicOrders: React.FC = () => {
                                 { key: 'love', label: 'Gửi yêu cầu', icon: CheckCircle2, color: 'pink', emoji: '💖' },
                             ];
                             const isStepDone = (i: number) => {
-                                if (i === 0) return !!formData.person && (formData.person !== '__other__' || !!formData.personOther);
+                                if (i === 0) return (customerProfile && !isAdmin) ? true : (!!formData.person && (formData.person !== '__other__' || !!formData.personOther));
                                 if (i === 1) return !!formData.brand;
                                 if (i === 2) return !!formData.request && (formData.request !== '__other__' || !!formData.requestOther);
                                 if (i === 3) return !!formData.description;
@@ -1189,7 +1245,56 @@ const PublicOrders: React.FC = () => {
 
                             // ========== STEP CONTENT RENDERER ==========
                             const renderStepContent = (stepIdx: number) => {
-                                if (stepIdx === 0) return (
+                                if (stepIdx === 0) {
+                                    // 🔒 Customer: Show auto-filled profile (read-only)
+                                    if (customerProfile && !isAdmin) {
+                                        return (
+                                            <div className="space-y-4">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <Shield size={14} className="text-emerald-500" />
+                                                    <p className="text-sm text-emerald-600 dark:text-emerald-400 font-bold">Thông tin đã được tự động điền từ tài khoản của bạn</p>
+                                                </div>
+                                                <div className="rounded-2xl border-2 border-emerald-300 dark:border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-500/5 p-5 space-y-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-lg font-black shadow-lg shadow-emerald-500/30">
+                                                            {customerProfile.name.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-base font-black text-slate-800 dark:text-white">{customerProfile.name}</p>
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400">{customerProfile.position} — {customerProfile.department}</p>
+                                                        </div>
+                                                        <div className="ml-auto">
+                                                            <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg">
+                                                                <CheckCircle2 size={14} className="text-white" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-emerald-200/50 dark:border-emerald-500/20">
+                                                        <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                                                            <span className="text-slate-400">📧</span> {customerProfile.email}
+                                                        </div>
+                                                        {customerProfile.phone && (
+                                                            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                                                                <span className="text-slate-400">📱</span> {customerProfile.phone}
+                                                            </div>
+                                                        )}
+                                                        {customerProfile.company && (
+                                                            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 sm:col-span-2">
+                                                                <span className="text-slate-400">🏢</span> {customerProfile.company}
+                                                            </div>
+                                                        )}
+                                                        {customerProfile.address && (
+                                                            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 sm:col-span-2">
+                                                                <span className="text-slate-400">📍</span> {customerProfile.address}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    // Admin / fallback: Show standard person selection
+                                    return (
                                     <div className="space-y-4">
                                         <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Chọn tên của bạn để chúng tôi biết ai gửi yêu cầu:</p>
                                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -1222,15 +1327,74 @@ const PublicOrders: React.FC = () => {
                                                 className="w-full px-4 py-3 rounded-2xl bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border border-violet-300 dark:border-violet-500/30 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-violet-500/40 outline-none transition-all" />
                                         )}
                                     </div>
-                                );
-                                if (stepIdx === 1) return (
+                                    );
+                                }
+                                if (stepIdx === 1) {
+                                    const filteredCompanies = companyNames.filter(name =>
+                                        name.toLowerCase().includes(brandSearch.toLowerCase())
+                                    );
+                                    return (
                                     <div className="space-y-4">
-                                        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Nhập tên thương hiệu hoặc nhãn hàng cần thiết kế:</p>
-                                        <input type="text" value={formData.brand} onChange={e => setFormData(p => ({ ...p, brand: e.target.value }))} placeholder="VD: ABC Cosmetics, XYZ Foods..."
-                                            className="w-full px-5 py-4 rounded-2xl bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-2 border-blue-200 dark:border-blue-500/30 text-base text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition-all shadow-sm" />
-                                        <div className="flex items-center gap-2 text-[11px] text-slate-400"><Tag size={12} />Tên này sẽ được dùng để gắn nhãn cho yêu cầu</div>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Chọn hoặc nhập tên đơn vị / thương hiệu:</p>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={brandDropdownOpen ? brandSearch : formData.brand}
+                                                onChange={e => {
+                                                    setBrandSearch(e.target.value);
+                                                    setFormData(p => ({ ...p, brand: e.target.value }));
+                                                    if (!brandDropdownOpen) setBrandDropdownOpen(true);
+                                                }}
+                                                onFocus={() => {
+                                                    setBrandDropdownOpen(true);
+                                                    setBrandSearch(formData.brand);
+                                                }}
+                                                onBlur={() => {
+                                                    // Delay to allow click on dropdown item
+                                                    setTimeout(() => setBrandDropdownOpen(false), 200);
+                                                }}
+                                                placeholder="Nhập hoặc chọn tên đơn vị..."
+                                                className="w-full px-5 py-4 rounded-2xl bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-2 border-blue-200 dark:border-blue-500/30 text-base text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition-all shadow-sm pr-12"
+                                            />
+                                            <ChevronDown size={18} className={clsx("absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition-transform", brandDropdownOpen && "rotate-180")} />
+                                            {brandDropdownOpen && filteredCompanies.length > 0 && (
+                                                <div className="absolute z-50 w-full mt-2 max-h-52 overflow-y-auto rounded-2xl bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-500/30 shadow-xl shadow-blue-500/10 backdrop-blur-xl">
+                                                    {filteredCompanies.map((name) => (
+                                                        <button
+                                                            type="button"
+                                                            key={name}
+                                                            onMouseDown={e => e.preventDefault()}
+                                                            onClick={() => {
+                                                                setFormData(p => ({ ...p, brand: name }));
+                                                                setBrandSearch(name);
+                                                                setBrandDropdownOpen(false);
+                                                            }}
+                                                            className={clsx(
+                                                                "w-full px-5 py-3 text-left text-sm transition-colors flex items-center gap-3 first:rounded-t-2xl last:rounded-b-2xl",
+                                                                formData.brand === name
+                                                                    ? "bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 font-bold"
+                                                                    : "text-slate-700 dark:text-slate-300 hover:bg-blue-50/60 dark:hover:bg-blue-500/10"
+                                                            )}
+                                                        >
+                                                            <div className={clsx(
+                                                                "w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0",
+                                                                formData.brand === name
+                                                                    ? "bg-blue-500 text-white"
+                                                                    : "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400"
+                                                            )}>
+                                                                {name.charAt(0)}
+                                                            </div>
+                                                            <span className="truncate">{name}</span>
+                                                            {formData.brand === name && <CheckCircle2 size={14} className="ml-auto text-blue-500 shrink-0" />}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[11px] text-slate-400"><Tag size={12} />Chọn từ danh sách hoặc nhập tên mới nếu chưa có</div>
                                     </div>
-                                );
+                                    );
+                                }
                                 if (stepIdx === 2) return (
                                     <div className="space-y-4">
                                         <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Chọn loại yêu cầu phù hợp:</p>

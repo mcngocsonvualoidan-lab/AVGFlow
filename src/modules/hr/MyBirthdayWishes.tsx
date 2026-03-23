@@ -293,7 +293,11 @@ const MyBirthdayWishes: React.FC<MyBirthdayWishesProps> = ({ asWidget }) => {
 
     // Build dynamic staff category from users list + extra names
     const staffCategory = useMemo(() => {
-        const nameEmojis = ['👤', '🙋', '🧑‍💼', '👨‍💻', '👩‍💻', '🧑‍🏭', '👷', '👨‍🚀', '👩‍🎨', '🧑‍🔬'];
+        const nameEmojis = [
+            '🦊', '🐼', '🦋', '🌸', '🌻', '🍀', '🎯', '🎸', '🌈', '🦄',
+            '🐬', '🦁', '🌺', '🍒', '🎭', '🔮', '🦢', '🐝', '🌙', '🎪',
+            '🦩', '🐨', '🌷', '🍓', '🎨', '💎', '🦌', '🐳', '🌟', '🎵',
+        ];
         const extraNames = ['Nguyễn Công Thoại', 'Lê Trần Thiện Tâm', 'Đinh Hoàng Ngọc Hân'];
         const userNames = users.filter(u => u.name && u.name.trim()).map(u => u.name);
         const allNames = [...new Set([...userNames, ...extraNames])].sort((a, b) => a.localeCompare(b, 'vi'));

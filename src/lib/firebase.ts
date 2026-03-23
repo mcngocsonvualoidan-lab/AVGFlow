@@ -1,8 +1,9 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 import { getDatabase } from "firebase/database";
 import { getStorage } from "firebase/storage";
+import { getMessaging } from "firebase/messaging";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDfEtxQTXzxq_4P42VLWgoeZViD1C9Xw-E",
@@ -15,15 +16,19 @@ const firebaseConfig = {
     databaseURL: "https://avgflow-dd822-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
-
-import { getMessaging } from "firebase/messaging";
-
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
 export const realtimeDb = getDatabase(app);
-
 export const messaging = getMessaging(app);
 export const storage = getStorage(app);
-// const analytics = getAnalytics(app);
+
+// Enable Firestore offline persistence — cached data works even when quota is exceeded
+enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+        console.warn('[Firestore] Persistence failed: multiple tabs open.');
+    } else if (err.code === 'unimplemented') {
+        console.warn('[Firestore] Persistence not available in this browser.');
+    }
+});

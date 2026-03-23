@@ -12,6 +12,7 @@ import { useData, Task } from '../../context/DataContext';
 import { useLanguage } from '../../context/LanguageContext';
 import HeroBanner from '../../components/HeroBanner';
 import { GlassDatePicker } from '../../components/ui/GlassDatePicker';
+import { TaskComments } from './TaskComments';
 
 import { DEPARTMENTS } from '../../constants/common';
 const departments = ['All', ...DEPARTMENTS];
@@ -1108,6 +1109,9 @@ const TaskManager: React.FC = () => {
                                                                         <span>TẠO LÚC: {new Date(task.createdAt || 0).toLocaleString('vi-VN')}</span>
                                                                     </div>
                                                                 </div>
+
+                                                                {/* Task Comments */}
+                                                                <TaskComments task={task} />
                                                             </div>
                                                         </motion.div>
                                                     )}

@@ -5,10 +5,9 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { clsx } from 'clsx';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { fetchPrintOrders, subscribeToPrintOrderChanges, type PrintOrder } from '../../services/printOrderService';
 
 // ===== CONFIG =====
-const PRINT_SHEET_ID = '16GLyiZLdBknve7P_JO9ly-Luy5vIgdizNmQH985zPeo';
-const PRINT_CSV_URL = `https://docs.google.com/spreadsheets/d/${PRINT_SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`;
 const PRINT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx0a0oYMbGcwUBaKB6kV-WHgyw30JwP4WJqM8fZlNcATivnuXxW_ZyjZVdt56_z06UE/exec';
 
 const ALLOWED_EDITOR_EMAILS = [
@@ -215,58 +214,7 @@ const MiniCalendar: React.FC<MiniCalendarProps> = ({ value, onChange, onClose, a
     );
 };
 
-interface PrintOrder {
-    id: string;
-    rowIndex: number;
-    timestamp: string;
-    person: string;
-    category: string;
-    brand: string;
-    sku: string;
-    productName: string;
-    size: string;
-    unit: string;
-    material: string;
-    quantity: string;
-    deliveryQuantity: string;
-    deliveryDate: string;
-    expectedDelivery: string;
-    note: string;
-    unitPrice: number;
-    totalPrice: number;
-    status: string;
-    cancelReason: string;
-    updatedBy: string;
-    updatedAt: string;
-}
-
-function parseCSV(text: string): string[][] {
-    const rows: string[][] = [];
-    let current = '';
-    let inQuotes = false;
-    const row: string[] = [];
-    for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-        if (inQuotes) {
-            if (ch === '"') {
-                if (i + 1 < text.length && text[i + 1] === '"') { current += '"'; i++; }
-                else inQuotes = false;
-            } else current += ch;
-        } else {
-            if (ch === '"') inQuotes = true;
-            else if (ch === ',') { row.push(current.trim()); current = ''; }
-            else if (ch === '\n' || ch === '\r') {
-                if (ch === '\r' && i + 1 < text.length && text[i + 1] === '\n') i++;
-                row.push(current.trim()); current = '';
-                if (row.length > 0 && row.some(c => c)) rows.push([...row]);
-                row.length = 0;
-            } else current += ch;
-        }
-    }
-    row.push(current.trim());
-    if (row.some(c => c)) rows.push(row);
-    return rows;
-}
+// PrintOrder type imported from printOrderService
 
 function formatVNDateTime(d: Date): string {
     const dd = String(d.getDate()).padStart(2, '0');
@@ -457,57 +405,12 @@ const PrintOrdersManager: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const fetchPrintOrders = useCallback(async () => {
+    const loadPrintOrders = useCallback(async () => {
         setLoading(true);
         setError('');
         try {
-            const res = await fetch(PRINT_CSV_URL);
-            const text = await res.text();
-            const rows = parseCSV(text);
-            if (rows.length < 2) { setPrintOrders([]); setLoading(false); return; }
-
-            const parsed: PrintOrder[] = [];
-            for (let i = 1; i < rows.length; i++) {
-                const c = rows[i];
-                if (!c[0] && !c[1] && !c[3]) continue;
-                parsed.push({
-                    id: `po-${i}`,
-                    rowIndex: i + 1, // 1-based, row 1 = header
-                    timestamp: (c[0] || '').trim(),       // A: Thời gian
-                    person: (c[1] || '').trim(),           // B: Người đặt hàng
-                    category: (c[2] || '').trim(),         // C: Chủng loại
-                    brand: (c[3] || '').trim(),            // D: Nhãn hàng
-                    sku: (c[4] || '').trim(),              // E: SKU
-                    productName: (c[5] || '').trim(),      // F: Tên sản phẩm
-                    size: (c[6] || '').trim(),             // G: Kích thước
-                    unit: (c[7] || '').trim(),             // H: ĐVT
-                    material: (c[8] || '').trim(),         // I: Chất liệu
-                    quantity: (c[9] || '').trim(),         // J: SL đặt in
-                    deliveryQuantity: (c[10] || '').trim(),// K: SL giao (MỚI)
-                    deliveryDate: (c[11] || '').trim(),    // L: Ngày cần giao
-                    expectedDelivery: (c[12] || '').trim(),// M: Dự kiến giao
-                    note: (c[13] || '').trim(),            // N: Ghi chú
-                    unitPrice: parseFloat((c[14] || '0').replace(/[.,\s]/g, '')) || 0, // O: Đơn giá
-                    totalPrice: parseFloat((c[15] || '0').replace(/[.,\s]/g, '')) || 0, // P: Thành tiền
-                    status: (c[16] || 'Chưa xử lý').trim(), // Q: Trạng thái
-                    cancelReason: (c[17] || '').trim(),    // R: Lý do hủy (nếu có)
-                    updatedBy: (c[18] || '').trim(),       // S: Người xử lý
-                    updatedAt: (c[19] || '').trim(),       // T: Thời gian xử lý
-                });
-            }
-
-            // ── Auto-fix dữ liệu cũ bị mapping sai ──
-            // Bug cũ: ngayCanGiao bị ghi vào cột K (SL giao) thay vì L (Ngày cần giao)
-            // Detect: nếu deliveryQuantity trông giống ngày (YYYY-MM-DD hoặc DD/MM/YYYY) 
-            //         và deliveryDate trống → hoán đổi
-            const datePattern = /^\d{4}-\d{2}-\d{2}$|^\d{2}\/\d{2}\/\d{4}/;
-            for (const order of parsed) {
-                if (order.deliveryQuantity && datePattern.test(order.deliveryQuantity) && !order.deliveryDate) {
-                    order.deliveryDate = order.deliveryQuantity;
-                    order.deliveryQuantity = '';
-                }
-            }
-
+            // 🛡️ Supabase-first fetch (protected data)
+            const parsed = await fetchPrintOrders();
             setPrintOrders(parsed.reverse()); // newest first
         } catch (e: any) {
             setError(e.message || 'Lỗi tải dữ liệu đơn in');
@@ -516,7 +419,14 @@ const PrintOrdersManager: React.FC = () => {
         }
     }, []);
 
-    useEffect(() => { fetchPrintOrders(); }, [fetchPrintOrders]);
+    useEffect(() => {
+        loadPrintOrders();
+        // 🔔 Subscribe to Realtime updates
+        const unsubscribe = subscribeToPrintOrderChanges(() => {
+            loadPrintOrders();
+        });
+        return () => unsubscribe();
+    }, [loadPrintOrders]);
 
     const getPrintStatusInfo = (status: string) => {
         const s = (status || '').toLowerCase().trim();
@@ -647,23 +557,39 @@ const PrintOrdersManager: React.FC = () => {
                         Đơn đặt in ({printOrders.length})
                     </h3>
                 </div>
-                <div className="flex gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                    <button
-                        onClick={() => setViewMode('card')}
-                        className={clsx("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                            viewMode === 'card' ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-                        )}
-                    >
-                        <LayoutGrid size={13} /> Thẻ
-                    </button>
-                    <button
-                        onClick={() => setViewMode('table')}
-                        className={clsx("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                            viewMode === 'table' ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-                        )}
-                    >
-                        <Table size={13} /> Bảng
-                    </button>
+                <div className="flex items-center gap-2">
+                    {/* View Toggle - Prominent */}
+                    <div className="flex gap-1 p-1 rounded-xl bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border border-slate-200/60 dark:border-white/10 shadow-md">
+                        <button
+                            onClick={() => setViewMode('card')}
+                            className={clsx("flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all duration-200",
+                                viewMode === 'card'
+                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/30'
+                                    : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/10'
+                            )}
+                        >
+                            <LayoutGrid size={14} /> Thẻ
+                        </button>
+                        <button
+                            onClick={() => setViewMode('table')}
+                            className={clsx("flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all duration-200",
+                                viewMode === 'table'
+                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/30'
+                                    : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/10'
+                            )}
+                        >
+                            <Table size={14} /> Bảng
+                        </button>
+                    </div>
+                    {/* Phóng to button - only in table mode */}
+                    {viewMode === 'table' && !isTableFullscreen && (
+                        <button
+                            onClick={() => { setIsTableFullscreen(true); setShowTableFilters(true); }}
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-200/60 dark:border-cyan-500/20 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 hover:shadow-md hover:shadow-cyan-500/15 text-xs font-bold transition-all duration-200"
+                        >
+                            <Maximize2 size={13} /> Phóng to
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -2100,16 +2026,7 @@ const PrintOrdersManager: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
-                    {!isTableFullscreen && (
-                        <div className="flex justify-end px-4 py-2 border-t border-slate-100 dark:border-slate-800">
-                            <button
-                                onClick={() => { setIsTableFullscreen(true); setShowTableFilters(true); }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-cyan-50 hover:text-cyan-600 dark:hover:bg-cyan-500/10 dark:hover:text-cyan-400 text-xs font-bold transition-all"
-                            >
-                                <Maximize2 size={13} /> Phóng to
-                            </button>
-                        </div>
-                    )}
+
                 </div>
                 </>
             ) : (

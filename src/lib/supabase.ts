@@ -1,7 +1,48 @@
-
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://hqekfvfarxscxozpxouh.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhxZWtmdmZhcnhzY3hvenB4b3VoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4Njk1OTEsImV4cCI6MjA4MzQ0NTU5MX0.DUqLFwf1UwdTurHy2gd5SE-l9NhUQ6F19G5YTzUE4ik';
+const SUPABASE_URL = 'https://hbcfslgxosdzlfuljxxn.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_RZmqGM8T25niehlC2NgIqg_oTrtnOcR';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    realtime: {
+        params: {
+            eventsPerSecond: 40,
+        },
+        heartbeatIntervalMs: 15000,
+        timeout: 10000,
+    },
+});
+
+// Types matching our Supabase tables
+export interface SupabaseDesignTicket {
+    id: string;
+    ticket_code: string;
+    category: string;
+    action: string;
+    brand_name: string;
+    contact_name: string;
+    contact_phone: string;
+    contact_email: string;
+    contact_address: string;
+    form_data: Record<string, string>;
+    image_urls: string[];
+    description: string;
+    status: 'open' | 'in-progress' | 'review' | 'revision' | 'completed' | 'cancelled';
+    revision_round: number;
+    assigned_to: string | null;
+    cancel_reason: string | null;
+    created_at: string;
+    updated_at: string;
+    completed_at: string | null;
+}
+
+export interface SupabaseTicketMessage {
+    id: string;
+    ticket_id: string;
+    text: string;
+    sender: string;
+    sender_role: 'customer' | 'admin';
+    sender_email: string | null;
+    image_url: string | null;
+    created_at: string;
+}

@@ -60,18 +60,21 @@ export interface WerewolfChatMessage {
 export interface WerewolfState {
     phase: string; // 'waiting' | 'roles-assigned' | 'night-wolf' | 'night-seer' | 'night-guard' | 'night-witch' | 'night-resolve' | 'day-discussion' | 'day-vote' | 'day-defense' | 'day-revote' | 'day-result' | 'gameover'
     night: number;
+    originalHostId?: string | null; // who started the game (to restore host at gameover)
     roles: { [encodedEmail: string]: { role: string; icon: string; alive: boolean } };
+    previousRoles?: { [encodedEmail: string]: { role: string; icon: string; alive: boolean } } | null;
     // Night actions
     wolfVotes?: { [wolfUid: string]: string }; // wolf uid -> target uid
     wolfTarget?: string | null; // resolved wolf target
-    seerTarget?: string | null; // who seer checked
-    seerResults?: { [uid: string]: string }; // uid -> role (accumulated results for the seer)
     guardTarget?: string | null; // who guard is protecting this night
     guardLastTarget?: string | null; // who guard protected last night (can't repeat)
     witchSaveUsed?: boolean;
     witchKillUsed?: boolean;
     witchSaveThisNight?: boolean; // did witch use save this night
     witchKillTarget?: string | null; // witch poison target this night
+    // Seer (Tiên tri)
+    seerTarget?: string | null; // who the seer peeked at this night
+    seerResult?: 'wolf' | 'village' | null; // result of seer peek
     // Night resolution
     nightKilled?: string | null; // who died this night (after resolving guard/witch)
     nightLog?: string;
@@ -96,6 +99,21 @@ export interface WerewolfState {
         guard?: boolean;
         witch?: boolean;
     };
+    // Accumulated game event log for end-game summary
+    gameLog?: Array<{
+        night: number;
+        type: 'night' | 'day';
+        wolfTarget?: string | null;
+        hunterTarget?: string | null;
+        guardTarget?: string | null;
+        witchSave?: boolean;
+        witchKill?: string | null;
+        killed?: string[];
+        saved?: boolean;
+        votes?: { [voter: string]: string };
+        voteResult?: string | null;
+        skipVotes?: string[];
+    }>;
 }
 
 // ==================== GAME HISTORY ====================

@@ -4,18 +4,14 @@ import { Plus, Trash2, Send, CheckCircle2, AlertCircle, Loader2, RotateCcw, User
 import { clsx } from 'clsx';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth } from '../../context/AuthContext';
+import { fetchCatalog as fetchCatalogService, subscribeToCatalogChanges, type CatalogItem } from '../../services/catalogService';
 
 // ===== CONFIG =====
 const PERSON_OPTIONS = ['Ngọc Bích', 'Ánh Mây', 'Thanh Tuyền', 'Đỗ Chiều', 'Trà My'];
 
 // Google Apps Script Web App URL — Unified API v2 (tạo đơn + quản lý đơn)
 const SHEET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx0a0oYMbGcwUBaKB6kV-WHgyw30JwP4WJqM8fZlNcATivnuXxW_ZyjZVdt56_z06UE/exec';
-
-// Google Sheet Danh mục sản phẩm (để gợi ý tự động)
-const CATALOG_SHEET_ID = '1karhpP174qGeQudh3YopY3Zl68f_zXoqlsw8CYd1YhQ';
-const CATALOG_CSV_URL = `https://docs.google.com/spreadsheets/d/${CATALOG_SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`;
-// Apps Script API — ưu tiên sử dụng, trả JSON realtime, không bị cache
-const CATALOG_API_URL = 'https://script.google.com/macros/s/AKfycbzo7AAGf9FdFJ7zZKYBODo_LcZpmiFosnVjvvPAxTdS7uafydpeBzoyRx9Qnwgh6tKI7g/exec';
 
 // ===== TYPES =====
 interface PrintRow {
@@ -31,15 +27,8 @@ interface PrintRow {
     chatLieu: string;
 }
 
-interface CatalogItem {
-    chungLoai: string;
-    nhanHang: string;
-    sku: string;
-    tenSanPham: string;
-    dvt: string;
-    kichThuoc: string;
-    chatLieu: string;
-}
+// CatalogItem type imported from catalogService
+
 
 const createEmptyRow = (): PrintRow => ({
     chungLoai: '',
@@ -67,47 +56,6 @@ const COLUMNS: { key: keyof PrintRow; label: string; width: string; type: 'text'
     { key: 'ghiChu', label: 'Ghi chú', width: 'w-full', type: 'text', placeholder: 'Ghi chú...' },
 ];
 
-// ===== CSV PARSER =====
-function parseFullCSV(text: string): string[][] {
-    const rows: string[][] = [];
-    let current = '';
-    let inQuotes = false;
-    const row: string[] = [];
-
-    for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-        if (inQuotes) {
-            if (ch === '"') {
-                if (i + 1 < text.length && text[i + 1] === '"') {
-                    current += '"';
-                    i++;
-                } else {
-                    inQuotes = false;
-                }
-            } else {
-                current += ch;
-            }
-        } else {
-            if (ch === '"') {
-                inQuotes = true;
-            } else if (ch === ',') {
-                row.push(current.trim());
-                current = '';
-            } else if (ch === '\n' || ch === '\r') {
-                if (ch === '\r' && i + 1 < text.length && text[i + 1] === '\n') i++;
-                row.push(current.trim());
-                current = '';
-                if (row.length > 0 && row.some(c => c)) rows.push([...row]);
-                row.length = 0;
-            } else {
-                current += ch;
-            }
-        }
-    }
-    row.push(current.trim());
-    if (row.some(c => c)) rows.push(row);
-    return rows;
-}
 
 // ===== SUGGESTION DROPDOWN COMPONENT =====
 interface SuggestionDropdownProps {
@@ -399,6 +347,7 @@ const MiniCalendar: React.FC<MiniCalendarProps> = ({ value, onChange, onClose, a
 
 // ===== COMPONENT =====
 const PrintOrderForm: React.FC = () => {
+    const { currentUser } = useAuth();
     const [person, setPerson] = useState('');
     const [personOther, setPersonOther] = useState('');
     const [rows, setRows] = useState<PrintRow[]>([createEmptyRow()]);
@@ -427,56 +376,11 @@ const PrintOrderForm: React.FC = () => {
 
     const selectedPerson = person === '__other__' ? personOther.trim() : person;
 
-    // ===== FETCH CATALOG FROM GOOGLE SHEET =====
-    const fetchCatalog = useCallback(async () => {
+    // ===== FETCH CATALOG (from Supabase via service) =====
+    const loadCatalog = useCallback(async () => {
         try {
             setCatalogLoading(true);
-
-            // Strategy 1: Try Apps Script API first (real-time, no cache)
-            if (CATALOG_API_URL) {
-                try {
-                    const apiRes = await fetch(`${CATALOG_API_URL}?action=catalog&t=${Date.now()}`);
-                    const json = await apiRes.json();
-                    if (json.success && Array.isArray(json.items)) {
-                        const items: CatalogItem[] = json.items.map((item: Record<string, string>) => ({
-                            chungLoai: item.chungLoai || '',
-                            nhanHang: item.nhanHang || '',
-                            sku: item.sku || '',
-                            tenSanPham: item.tenSanPham || '',
-                            dvt: item.dvt || '',
-                            kichThuoc: item.kichThuoc || '',
-                            chatLieu: item.chatLieu || '',
-                        }));
-                        setCatalog(items);
-                        return; // Success via API
-                    }
-                } catch (apiErr) {
-                    console.warn('API fetch failed, falling back to CSV:', apiErr);
-                }
-            }
-
-            // Strategy 2: Fallback to CSV (may have Google cache delay)
-            const res = await fetch(CATALOG_CSV_URL);
-            const text = await res.text();
-            const allRows = parseFullCSV(text);
-            if (allRows.length <= 1) { setCatalogLoading(false); return; }
-
-            // Skip header row (row 0)
-            const items: CatalogItem[] = [];
-            for (let i = 1; i < allRows.length; i++) {
-                const r = allRows[i];
-                if (r.length < 6) continue;
-                const item: CatalogItem = {
-                    chungLoai: r[0] || '',   // Col A
-                    nhanHang: r[1] || '',     // Col B
-                    sku: r[3] || '',          // Col D (skip C = Hình ảnh)
-                    tenSanPham: r[4] || '',   // Col E
-                    dvt: r[5] || '',          // Col F
-                    kichThuoc: r[8] || '',    // Col I = Kích thước
-                    chatLieu: r[9] || '',     // Col J = Chất liệu
-                };
-                if (item.nhanHang || item.tenSanPham) items.push(item);
-            }
+            const items = await fetchCatalogService();
             setCatalog(items);
         } catch (err) {
             console.warn('Failed to load catalog:', err);
@@ -486,19 +390,13 @@ const PrintOrderForm: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        fetchCatalog();
-        // Auto-refresh every 30 seconds for near-realtime updates
-        const interval = setInterval(fetchCatalog, 30 * 1000);
-        // Also refresh when user switches back to this tab
-        const handleVisibility = () => {
-            if (document.visibilityState === 'visible') fetchCatalog();
-        };
-        document.addEventListener('visibilitychange', handleVisibility);
-        return () => {
-            clearInterval(interval);
-            document.removeEventListener('visibilitychange', handleVisibility);
-        };
-    }, [fetchCatalog]);
+        loadCatalog();
+        // 🔔 Subscribe to Realtime updates
+        const unsubscribe = subscribeToCatalogChanges(() => {
+            loadCatalog();
+        });
+        return () => unsubscribe();
+    }, [loadCatalog]);
 
     const updateRow = (index: number, field: keyof PrintRow, value: string) => {
         setRows(prev => prev.map((r, i) => i === index ? { ...r, [field]: value } : r));
@@ -637,6 +535,7 @@ const PrintOrderForm: React.FC = () => {
 
         addDoc(collection(db, 'print_orders'), {
             ...payload,
+            customerEmail: currentUser?.email || '',
             serverCreatedAt: serverTimestamp(),
             status: 'pending',
         }).catch(err => console.warn('⚠️ Firestore save (background):', err));

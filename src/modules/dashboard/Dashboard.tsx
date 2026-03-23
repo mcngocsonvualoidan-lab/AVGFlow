@@ -16,38 +16,7 @@ import InternalNewsBoard from './components/InternalNewsBoard';
 import { useMeetingSchedule } from '../../hooks/useMeetingSchedule';
 import { db } from '../../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
-
-// Google Sheets order data source (same as Orders module)
-const ORDER_SHEET_ID = '1mzYT75VEJh-PMYvlwUEQkvVnDIj6p1P2ssS6FXvK5Vs';
-const ORDER_GID = '485384320';
-const ORDER_CSV_URL = `https://docs.google.com/spreadsheets/d/${ORDER_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${ORDER_GID}`;
-
-function parseCSVSimple(text: string): string[][] {
-    const rows: string[][] = [];
-    let current = '';
-    let inQuotes = false;
-    const row: string[] = [];
-    for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-        if (inQuotes) {
-            if (ch === '"') {
-                if (i + 1 < text.length && text[i + 1] === '"') { current += '"'; i++; } else { inQuotes = false; }
-            } else { current += ch; }
-        } else {
-            if (ch === '"') { inQuotes = true; }
-            else if (ch === ',') { row.push(current); current = ''; }
-            else if (ch === '\n' || ch === '\r') {
-                if (ch === '\r' && i + 1 < text.length && text[i + 1] === '\n') i++;
-                row.push(current); current = '';
-                if (row.length > 0) rows.push([...row]);
-                row.length = 0;
-            } else { current += ch; }
-        }
-    }
-    row.push(current);
-    if (row.some(c => c.trim())) rows.push(row);
-    return rows;
-}
+import { fetchDesignOrders } from '../../services/designOrderService';
 
 const COLORS = ['#10b981', '#3b82f6', '#ef4444'];
 const COLORS_LIGHT = ['#059669', '#2563eb', '#dc2626']; // Darker shades for light mode legibility
@@ -328,7 +297,7 @@ const MeetingAlerts: React.FC = () => {
 
 const Dashboard: React.FC = () => {
     const navigate = useNavigate();
-    const { logs, payrollRecords, users } = useData();
+    const { logs, payrollRecords, users, pendingOrdersCount } = useData();
     const { currentUser } = useAuth();
     const { t } = useLanguage();
     const { theme } = useTheme();
@@ -463,15 +432,16 @@ const Dashboard: React.FC = () => {
             setOrderStats({ processing: processingCount, completed: completedCount + printingCount, total: rawOrders.length, rework: reworkCount });
         };
 
-        // Fetch CSV
-        fetch(ORDER_CSV_URL)
-            .then(res => res.text())
-            .then(text => {
-                const rows = parseCSVSimple(text);
+        // 🛡️ Fetch from Supabase-protected service
+        // 📅 Cutoff: chỉ đếm đơn hàng từ tháng 1/2025 (đồng bộ với DataContext badge)
+        const CUTOFF = new Date(2025, 0, 1);
+
+        fetchDesignOrders()
+            .then(rows => {
                 const parsed: { id: string; status: string }[] = [];
                 for (let i = 1; i < rows.length; i++) {
                     const cols = rows[i];
-                    // New column mapping (matches Orders.tsx):
+                    // Column mapping (matches Orders.tsx):
                     // A(0)=Timestamp, B(1)=Person, C(2)=Brand, D(3)=Request,
                     // E(4)=Description, F(5)=Qty, G(6)=DeliveryEst,
                     // H(7)=Handler, I(8)=Status
@@ -480,7 +450,21 @@ const Dashboard: React.FC = () => {
                     const brand = (cols[2] || '').trim();
                     const request = (cols[3] || '').trim();
                     if (!time && !person && !brand && !request) continue;
-                    // Match ID format from Orders.tsx
+
+                    // 🔒 Ẩn đơn hàng trước 01/2025 (khớp với DataContext)
+                    if (time) {
+                        const parts = time.split(' ');
+                        const dateParts = (parts[0] || '').split('/');
+                        if (dateParts.length === 3) {
+                            const d = new Date(
+                                parseInt(dateParts[2], 10),
+                                parseInt(dateParts[1], 10) - 1,
+                                parseInt(dateParts[0], 10)
+                            );
+                            if (!isNaN(d.getTime()) && d < CUTOFF) continue;
+                        }
+                    }
+
                     const safeId = `row-${i}`;
                     const rawStatus = (cols[8] || '').trim();
                     const sTrim = (rawStatus || '').trim();
@@ -504,7 +488,8 @@ const Dashboard: React.FC = () => {
     }, []);
 
     const totalOrders = orderStats.total;
-    const activeCount = orderStats.processing;
+    // 🔗 Đồng bộ: Dùng pendingOrdersCount từ DataContext (= sidebar badge)
+    const activeCount = pendingOrdersCount;
     const completedCount = orderStats.completed;
     const reworkCount = orderStats.rework;
     const reworkRate = totalOrders > 0 ? ((reworkCount / totalOrders) * 100).toFixed(1) : '0.0';

@@ -426,6 +426,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                     <button
                         onClick={() => {
                             setIsRefreshing(true);
+                            // Mark manual reload so update popup won't show after reload
+                            sessionStorage.setItem('avgflow-manual-reload', Date.now().toString());
                             // Reload after animation starts
                             setTimeout(() => {
                                 window.location.reload();

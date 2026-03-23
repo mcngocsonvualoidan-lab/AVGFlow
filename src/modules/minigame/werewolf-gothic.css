@@ -491,12 +491,18 @@
 
     0%,
     100% {
+        filter: drop-shadow(0 0 6px rgba(232, 213, 163, 0.4)) drop-shadow(0 0 12px rgba(201, 135, 58, 0.2));
         text-shadow: 0 0 10px rgba(232, 213, 163, 0.3);
     }
 
     50% {
+        filter: drop-shadow(0 0 14px rgba(232, 213, 163, 0.8)) drop-shadow(0 0 28px rgba(201, 135, 58, 0.5)) drop-shadow(0 0 40px rgba(201, 135, 58, 0.2));
         text-shadow: 0 0 30px rgba(232, 213, 163, 0.7);
     }
+}
+
+.ww-moon-glow {
+    animation: ww-moon-glow 3s ease-in-out infinite;
 }
 
 @keyframes ww-pulse-glow {
@@ -517,10 +523,6 @@
 
 .ww-blood-pulse {
     animation: ww-blood-pulse 2s ease-in-out infinite;
-}
-
-.ww-moon-glow {
-    animation: ww-moon-glow 3s ease-in-out infinite;
 }
 
 .ww-pulse-glow {
@@ -570,4 +572,504 @@
 /* Gothic texture overlay */
 .ww-texture::before {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cpath d='M40 0L80 40L40 80L0 40Z' fill='none' stroke='rgba(139,92,58,0.04)' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+/* ==================== SPOOKY AVATAR EFFECTS ==================== */
+
+/* Base spooky avatar wrapper */
+.ww-avatar-spooky {
+    position: relative;
+    border-radius: 50%;
+    overflow: visible;
+}
+
+/* Dark vignette overlay on the image */
+.ww-avatar-spooky::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 30%,
+        transparent 40%,
+        rgba(10, 0, 0, 0.35) 70%,
+        rgba(10, 0, 0, 0.6) 100%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Eerie pulsing glow ring */
+.ww-avatar-spooky::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: conic-gradient(
+        from 0deg,
+        rgba(139, 26, 26, 0.6),
+        rgba(201, 135, 58, 0.3),
+        rgba(139, 26, 26, 0.1),
+        rgba(26, 26, 62, 0.4),
+        rgba(139, 26, 26, 0.6)
+    );
+    animation: ww-avatar-ring-spin 8s linear infinite;
+    z-index: 0;
+    opacity: 0.7;
+}
+
+/* Apply eerie filter to the avatar image */
+.ww-avatar-spooky img,
+.ww-avatar-spooky .av-fb {
+    filter: saturate(0.45) sepia(0.25) brightness(0.8) contrast(1.15);
+    transition: filter 0.4s ease, transform 0.4s ease;
+    position: relative;
+    z-index: 1;
+}
+
+/* Hover: reveal true face briefly */
+.ww-avatar-spooky:hover img,
+.ww-avatar-spooky:hover .av-fb {
+    filter: saturate(0.7) sepia(0.1) brightness(0.95) contrast(1.1);
+    transform: scale(1.08);
+}
+
+.ww-avatar-spooky:hover::after {
+    background: radial-gradient(circle at 50% 30%,
+        transparent 50%,
+        rgba(139, 26, 26, 0.2) 80%,
+        rgba(10, 0, 0, 0.4) 100%);
+}
+
+.ww-avatar-spooky:hover::before {
+    opacity: 1;
+    animation-duration: 3s;
+}
+
+/* Ghostly orbiting particle */
+@keyframes ww-avatar-ring-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes ww-avatar-ghost-float {
+    0%, 100% {
+        transform: translateY(0) scale(1);
+        opacity: 0.6;
+    }
+    50% {
+        transform: translateY(-3px) scale(1.05);
+        opacity: 1;
+    }
+}
+
+/* Subtle breathing glow on the whole card */
+@keyframes ww-avatar-breathe {
+    0%, 100% {
+        box-shadow:
+            0 0 8px rgba(139, 26, 26, 0.15),
+            0 0 20px rgba(139, 26, 26, 0.05);
+    }
+    50% {
+        box-shadow:
+            0 0 15px rgba(139, 26, 26, 0.3),
+            0 0 35px rgba(139, 26, 26, 0.1),
+            0 0 6px rgba(201, 135, 58, 0.15);
+    }
+}
+
+.ww-avatar-spooky {
+    animation: ww-avatar-breathe 4s ease-in-out infinite;
+}
+
+/* --- DEAD PLAYER VARIANT --- */
+.ww-avatar-dead {
+    position: relative;
+    border-radius: 50%;
+}
+
+.ww-avatar-dead img,
+.ww-avatar-dead .av-fb {
+    filter: grayscale(1) brightness(0.4) contrast(0.8);
+    position: relative;
+    z-index: 1;
+}
+
+.ww-avatar-dead::after {
+    content: '💀';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
+    z-index: 3;
+    opacity: 0.7;
+    filter: drop-shadow(0 0 6px rgba(139, 26, 26, 0.6));
+}
+
+/* --- WOLF VARIANT (for revealed wolves) --- */
+.ww-avatar-wolf::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: conic-gradient(
+        from 0deg,
+        rgba(139, 26, 26, 0.8),
+        rgba(80, 10, 10, 0.4),
+        rgba(139, 26, 26, 0.2),
+        rgba(80, 10, 10, 0.6),
+        rgba(139, 26, 26, 0.8)
+    );
+    animation: ww-avatar-ring-spin 4s linear infinite;
+    z-index: 0;
+}
+
+.ww-avatar-wolf img,
+.ww-avatar-wolf .av-fb {
+    filter: saturate(0.3) sepia(0.4) brightness(0.7) contrast(1.3) hue-rotate(-10deg);
+}
+
+/* --- WAITING ROOM: Mystical entrance glow --- */
+@keyframes ww-avatar-entrance {
+    0% {
+        opacity: 0;
+        transform: scale(0.6) rotate(-10deg);
+        filter: blur(8px);
+    }
+    60% {
+        opacity: 1;
+        transform: scale(1.05) rotate(2deg);
+        filter: blur(0);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) rotate(0deg);
+        filter: blur(0);
+    }
+}
+
+.ww-avatar-entrance {
+    animation: ww-avatar-entrance 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Stagger for grid items */
+.ww-avatar-entrance:nth-child(1) { animation-delay: 0.05s; }
+.ww-avatar-entrance:nth-child(2) { animation-delay: 0.12s; }
+.ww-avatar-entrance:nth-child(3) { animation-delay: 0.19s; }
+.ww-avatar-entrance:nth-child(4) { animation-delay: 0.26s; }
+.ww-avatar-entrance:nth-child(5) { animation-delay: 0.33s; }
+.ww-avatar-entrance:nth-child(6) { animation-delay: 0.40s; }
+.ww-avatar-entrance:nth-child(7) { animation-delay: 0.47s; }
+.ww-avatar-entrance:nth-child(8) { animation-delay: 0.54s; }
+.ww-avatar-entrance:nth-child(9) { animation-delay: 0.61s; }
+.ww-avatar-entrance:nth-child(10) { animation-delay: 0.68s; }
+
+
+/* ==================== ATMOSPHERIC MOTION EFFECTS ==================== */
+
+/* --- FOG / MIST WISPS --- */
+.ww-atmosphere {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+    border-radius: inherit;
+}
+
+@keyframes ww-fog-drift-1 {
+    0%   { transform: translateX(-30%) translateY(10%) scale(1.2); opacity: 0; }
+    15%  { opacity: 0.12; }
+    50%  { transform: translateX(20%) translateY(-5%) scale(1.4); opacity: 0.08; }
+    85%  { opacity: 0.12; }
+    100% { transform: translateX(70%) translateY(10%) scale(1.2); opacity: 0; }
+}
+
+@keyframes ww-fog-drift-2 {
+    0%   { transform: translateX(80%) translateY(-10%) scale(1.1); opacity: 0; }
+    20%  { opacity: 0.1; }
+    50%  { transform: translateX(30%) translateY(5%) scale(1.5); opacity: 0.06; }
+    80%  { opacity: 0.1; }
+    100% { transform: translateX(-20%) translateY(-10%) scale(1.1); opacity: 0; }
+}
+
+@keyframes ww-fog-drift-3 {
+    0%   { transform: translateX(10%) translateY(50%) scale(1.3); opacity: 0; }
+    20%  { opacity: 0.07; }
+    60%  { transform: translateX(60%) translateY(30%) scale(1.6); opacity: 0.04; }
+    100% { transform: translateX(110%) translateY(50%) scale(1.3); opacity: 0; }
+}
+
+.ww-fog-wisp {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(40px);
+}
+
+.ww-fog-wisp:nth-child(1) {
+    width: 300px; height: 150px;
+    top: 20%; left: -10%;
+    background: radial-gradient(ellipse, rgba(232, 213, 163, 0.15), transparent 70%);
+    animation: ww-fog-drift-1 25s ease-in-out infinite;
+}
+
+.ww-fog-wisp:nth-child(2) {
+    width: 400px; height: 200px;
+    top: 60%; right: -15%;
+    background: radial-gradient(ellipse, rgba(139, 26, 26, 0.12), transparent 70%);
+    animation: ww-fog-drift-2 30s ease-in-out infinite;
+    animation-delay: -10s;
+}
+
+.ww-fog-wisp:nth-child(3) {
+    width: 250px; height: 120px;
+    bottom: 10%; left: 20%;
+    background: radial-gradient(ellipse, rgba(26, 26, 62, 0.18), transparent 70%);
+    animation: ww-fog-drift-3 20s ease-in-out infinite;
+    animation-delay: -5s;
+}
+
+/* --- SPIRIT ORBS (Floating magical particles) --- */
+@keyframes ww-orb-float {
+    0%   { transform: translateY(100%) translateX(0) scale(0); opacity: 0; }
+    10%  { opacity: 1; transform: translateY(80%) translateX(5px) scale(1); }
+    50%  { transform: translateY(30%) translateX(-10px) scale(0.8); opacity: 0.7; }
+    90%  { transform: translateY(-10%) translateX(8px) scale(0.4); opacity: 0.3; }
+    100% { transform: translateY(-20%) translateX(0) scale(0); opacity: 0; }
+}
+
+.ww-spirit-orb {
+    position: absolute;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(232, 213, 163, 0.9), rgba(201, 135, 58, 0.4), transparent);
+    box-shadow: 0 0 8px rgba(232, 213, 163, 0.6), 0 0 20px rgba(201, 135, 58, 0.3);
+    animation: ww-orb-float linear infinite;
+}
+
+.ww-spirit-orb:nth-child(4)  { left: 10%; animation-duration: 12s; animation-delay: 0s; width: 3px; height: 3px; }
+.ww-spirit-orb:nth-child(5)  { left: 25%; animation-duration: 15s; animation-delay: -3s; width: 5px; height: 5px; }
+.ww-spirit-orb:nth-child(6)  { left: 45%; animation-duration: 10s; animation-delay: -7s; width: 3px; height: 3px; }
+.ww-spirit-orb:nth-child(7)  { left: 65%; animation-duration: 18s; animation-delay: -2s; width: 4px; height: 4px; }
+.ww-spirit-orb:nth-child(8)  { left: 80%; animation-duration: 13s; animation-delay: -9s; width: 3px; height: 3px; }
+.ww-spirit-orb:nth-child(9)  { left: 92%; animation-duration: 16s; animation-delay: -5s; width: 5px; height: 5px; }
+
+/* Night variant — blood-red orbs */
+.ww-atmosphere-night .ww-spirit-orb {
+    background: radial-gradient(circle, rgba(198, 40, 40, 0.8), rgba(139, 26, 26, 0.4), transparent);
+    box-shadow: 0 0 8px rgba(198, 40, 40, 0.5), 0 0 20px rgba(139, 26, 26, 0.2);
+}
+
+/* --- BAT SILHOUETTES (Night phase only) --- */
+@keyframes ww-bat-fly-1 {
+    0%   { transform: translateX(-50px) translateY(0) scaleX(1); opacity: 0; }
+    5%   { opacity: 0.3; }
+    25%  { transform: translateX(30vw) translateY(-30px) scaleX(-1); }
+    50%  { transform: translateX(55vw) translateY(-10px) scaleX(1); opacity: 0.2; }
+    75%  { transform: translateX(80vw) translateY(-40px) scaleX(-1); }
+    95%  { opacity: 0.25; }
+    100% { transform: translateX(110vw) translateY(-20px) scaleX(1); opacity: 0; }
+}
+
+@keyframes ww-bat-fly-2 {
+    0%   { transform: translateX(110vw) translateY(0) scaleX(-1); opacity: 0; }
+    5%   { opacity: 0.2; }
+    30%  { transform: translateX(70vw) translateY(-25px) scaleX(1); }
+    60%  { transform: translateX(35vw) translateY(-5px) scaleX(-1); opacity: 0.15; }
+    100% { transform: translateX(-50px) translateY(-30px) scaleX(1); opacity: 0; }
+}
+
+@keyframes ww-bat-wing {
+    0%, 100% { transform: scaleY(1); }
+    50%      { transform: scaleY(0.6); }
+}
+
+.ww-bat {
+    position: absolute;
+    font-size: 14px;
+    filter: drop-shadow(0 0 4px rgba(0,0,0,0.8));
+    opacity: 0;
+}
+
+.ww-bat:nth-child(10) {
+    top: 8%;
+    animation: ww-bat-fly-1 18s ease-in-out infinite;
+    font-size: 16px;
+}
+
+.ww-bat:nth-child(11) {
+    top: 15%;
+    animation: ww-bat-fly-2 22s ease-in-out infinite;
+    animation-delay: -8s;
+    font-size: 12px;
+}
+
+.ww-bat:nth-child(12) {
+    top: 5%;
+    animation: ww-bat-fly-1 15s ease-in-out infinite;
+    animation-delay: -12s;
+    font-size: 10px;
+}
+
+/* --- PHASE TRANSITION FLASH --- */
+@keyframes ww-phase-flash {
+    0%   { opacity: 0.8; }
+    100% { opacity: 0; }
+}
+
+.ww-phase-flash {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    animation: ww-phase-flash 1.2s ease-out forwards;
+}
+
+.ww-phase-flash-night {
+    background: radial-gradient(ellipse at center, rgba(26, 26, 62, 0.9), rgba(0, 0, 0, 0.95));
+}
+
+.ww-phase-flash-day {
+    background: radial-gradient(ellipse at center, rgba(232, 213, 163, 0.4), rgba(255, 255, 255, 0.1));
+}
+
+.ww-phase-flash-blood {
+    background: radial-gradient(ellipse at center, rgba(139, 26, 26, 0.7), rgba(80, 10, 10, 0.3));
+}
+
+/* --- FLICKERING CANDLE FLAMES --- */
+@keyframes ww-candle-1 {
+    0%, 100% { opacity: 0.5; transform: scale(1) translateY(0); }
+    15%      { opacity: 0.7; transform: scale(1.1) translateY(-2px); }
+    30%      { opacity: 0.4; transform: scale(0.95) translateY(1px); }
+    50%      { opacity: 0.8; transform: scale(1.05) translateY(-1px); }
+    70%      { opacity: 0.3; transform: scale(0.9) translateY(2px); }
+    85%      { opacity: 0.6; transform: scale(1.08) translateY(-1px); }
+}
+
+@keyframes ww-candle-2 {
+    0%, 100% { opacity: 0.4; transform: scale(0.95) translateY(1px); }
+    20%      { opacity: 0.6; transform: scale(1.05) translateY(-2px); }
+    40%      { opacity: 0.35; transform: scale(0.9) translateY(0); }
+    60%      { opacity: 0.75; transform: scale(1.1) translateY(-1px); }
+    80%      { opacity: 0.45; transform: scale(0.98) translateY(1px); }
+}
+
+.ww-candle {
+    position: absolute;
+    width: 6px; height: 12px;
+    border-radius: 50% 50% 20% 20%;
+    background: radial-gradient(ellipse at center bottom, #ffd700, #ff8c00 50%, transparent 100%);
+    box-shadow: 0 0 10px rgba(255, 165, 0, 0.4), 0 0 25px rgba(255, 140, 0, 0.2), 0 -4px 15px rgba(255, 200, 0, 0.15);
+    filter: blur(0.5px);
+}
+
+.ww-candle:nth-child(13) {
+    bottom: 5%; left: 3%;
+    animation: ww-candle-1 3s ease-in-out infinite;
+}
+
+.ww-candle:nth-child(14) {
+    bottom: 8%; right: 5%;
+    animation: ww-candle-2 2.5s ease-in-out infinite;
+    animation-delay: -1s;
+    width: 5px; height: 10px;
+}
+
+.ww-candle:nth-child(15) {
+    bottom: 3%; left: 50%;
+    animation: ww-candle-1 3.5s ease-in-out infinite;
+    animation-delay: -2s;
+    width: 4px; height: 8px;
+    opacity: 0.4;
+}
+
+/* --- BLOOD DRIP (for dramatic moments) --- */
+@keyframes ww-blood-drip {
+    0%   { transform: translateY(-100%) scaleY(0.3); opacity: 0; }
+    10%  { opacity: 0.6; transform: translateY(0) scaleY(1); }
+    70%  { opacity: 0.5; transform: translateY(80vh) scaleY(1.5); }
+    100% { opacity: 0; transform: translateY(105vh) scaleY(2); }
+}
+
+.ww-blood-drip {
+    position: absolute;
+    width: 2px;
+    height: 20px;
+    border-radius: 0 0 50% 50%;
+    background: linear-gradient(to bottom, rgba(139, 26, 26, 0.8), rgba(80, 10, 10, 0.3));
+    opacity: 0;
+}
+
+.ww-blood-drip:nth-child(16) { left: 12%; animation: ww-blood-drip 4s ease-in infinite; animation-delay: 0s; height: 25px; }
+.ww-blood-drip:nth-child(17) { left: 35%; animation: ww-blood-drip 5s ease-in infinite; animation-delay: -2s; height: 18px; }
+.ww-blood-drip:nth-child(18) { left: 58%; animation: ww-blood-drip 3.5s ease-in infinite; animation-delay: -1s; height: 22px; }
+.ww-blood-drip:nth-child(19) { left: 78%; animation: ww-blood-drip 4.5s ease-in infinite; animation-delay: -3s; height: 15px; }
+.ww-blood-drip:nth-child(20) { left: 93%; animation: ww-blood-drip 6s ease-in infinite; animation-delay: -4s; height: 20px; }
+
+/* --- GHOSTLY TEXT REVEAL --- */
+@keyframes ww-ghostly-reveal {
+    0%   { opacity: 0; transform: translateY(15px) scale(0.95); filter: blur(8px); letter-spacing: 0.2em; }
+    40%  { opacity: 0.7; filter: blur(2px); }
+    100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); letter-spacing: normal; }
+}
+
+.ww-ghostly-reveal {
+    animation: ww-ghostly-reveal 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* --- SCREEN VIGNETTE (always-on subtle darkening at edges) --- */
+.ww-vignette {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    border-radius: inherit;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.35) 100%);
+}
+
+/* Night variant — deeper vignette */
+.ww-vignette-night {
+    background: radial-gradient(ellipse at center, transparent 35%, rgba(0, 0, 15, 0.55) 100%);
+}
+
+/* --- EERIE SCAN LINE (retro horror) --- */
+@keyframes ww-scanline {
+    0%   { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
+}
+
+.ww-scanline {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        transparent 48%,
+        rgba(232, 213, 163, 0.03) 49%,
+        rgba(232, 213, 163, 0.03) 51%,
+        transparent 52%,
+        transparent 100%
+    );
+    animation: ww-scanline 8s linear infinite;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* --- MOON HALO (waiting room) --- */
+@keyframes ww-moon-halo-pulse {
+    0%, 100% {
+        box-shadow: 0 0 30px rgba(232, 213, 163, 0.2), 0 0 60px rgba(201, 135, 58, 0.1);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 50px rgba(232, 213, 163, 0.35), 0 0 90px rgba(201, 135, 58, 0.15);
+        transform: scale(1.03);
+    }
+}
+
+.ww-moon-halo {
+    animation: ww-moon-halo-pulse 4s ease-in-out infinite;
+    border-radius: 50%;
+    display: inline-flex;
 }

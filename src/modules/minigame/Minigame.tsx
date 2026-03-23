@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import {
-    Gamepad2, RotateCcw, X, Circle, ArrowLeft, Target, Sparkles, Moon,
+    Gamepad2, RotateCcw, X, Circle, ArrowLeft, Target, Sparkles,
     ZoomIn, ZoomOut, Trash2, ArrowRightLeft,
     Plus, Users, Wifi, Crown, Check, Loader2, LogOut, Search, Monitor
 } from 'lucide-react';
@@ -19,7 +19,7 @@ interface GameInfo { id: GameId; name: string; desc: string; icon: React.ReactNo
 const GAMES: GameInfo[] = [
     { id: 'tic-tac-toe', name: 'Tic Tac Toe', desc: 'Cờ caro 3x3 kinh điển.', icon: <Target size={28} />, gradient: 'from-blue-500 to-cyan-500', category: 'Đối kháng', players: '2 người', thumbnail: '/game-tictactoe.png' },
     { id: 'gomoku', name: 'Cờ Caro', desc: 'Cờ caro 5 quân liên tiếp, bàn cờ không giới hạn!', icon: <Circle size={28} />, gradient: 'from-emerald-500 to-teal-500', category: 'Đối kháng', players: '2 người', thumbnail: '/game-caro.png' },
-    { id: 'werewolf', name: 'Ma Sói', desc: 'Game tập thể. App làm quản trò!', icon: <Moon size={28} />, gradient: 'from-violet-600 to-purple-700', category: 'Tập thể', players: '5-15 người', thumbnail: '/game-werewolf.png' },
+    { id: 'werewolf', name: 'Ma Sói', desc: 'Game tập thể. App làm quản trò!', icon: <span className="text-2xl">🐺</span>, gradient: 'from-violet-600 to-purple-700', category: 'Tập thể', players: '5-15 người', thumbnail: '/game-werewolf.png' },
 ];
 
 // ==================== HANDWRITTEN X & O SVG ====================
@@ -558,14 +558,38 @@ const OnlineTicTacToe: React.FC<{ room: GameRoom; myUid: string }> = ({ room, my
     };
 
     const reset = async () => {
+        // Loser goes first (becomes X) in the next round; on draw, swap sides
+        const lastWinner = gs.winner; // 'X' or 'O' or null
+        let newPlayerX = gs.playerX;
+        let newPlayerO = gs.playerO;
+        let newScoreX = gs.scoreX || 0;
+        let newScoreO = gs.scoreO || 0;
+
+        if (lastWinner === 'X') {
+            // X won → O (loser) goes first → swap
+            newPlayerX = gs.playerO;
+            newPlayerO = gs.playerX;
+            newScoreX = gs.scoreO || 0;
+            newScoreO = gs.scoreX || 0;
+        } else if (lastWinner === 'O') {
+            // O won → X (loser) goes first → keep same
+            // X already lost and is already playerX, no swap needed
+        } else if (gs.isDraw) {
+            // Draw → swap sides for fairness
+            newPlayerX = gs.playerO;
+            newPlayerO = gs.playerX;
+            newScoreX = gs.scoreO || 0;
+            newScoreO = gs.scoreX || 0;
+        }
+
         const cleanState: any = {
-            playerX: gs.playerX,
-            playerO: gs.playerO,
+            playerX: newPlayerX,
+            playerO: newPlayerO,
             board: Array(9).fill(''),
             isXNext: true,
             isDraw: false,
-            scoreX: gs.scoreX || 0,
-            scoreO: gs.scoreO || 0,
+            scoreX: newScoreX,
+            scoreO: newScoreO,
             scoreDraw: gs.scoreDraw || 0,
         };
         await MinigameService.updateGameState(room.id, cleanState);
@@ -760,13 +784,36 @@ const OnlineGomoku: React.FC<{ room: GameRoom; myUid: string }> = ({ room, myUid
     };
 
     const reset = async () => {
+        // Loser goes first (becomes X) in the next round; on draw, swap sides
+        const lastWinner = gs.winner; // { player: 'X'|'O', line: ... } or null
+        let newPlayerX = gs.playerX;
+        let newPlayerO = gs.playerO;
+        let newScoreX = gs.scoreX || 0;
+        let newScoreO = gs.scoreO || 0;
+
+        if (lastWinner?.player === 'X') {
+            // X won → O (loser) goes first → swap
+            newPlayerX = gs.playerO;
+            newPlayerO = gs.playerX;
+            newScoreX = gs.scoreO || 0;
+            newScoreO = gs.scoreX || 0;
+        } else if (lastWinner?.player === 'O') {
+            // O won → X (loser) goes first → keep same
+        } else {
+            // No winner (draw or first reset) → swap for fairness
+            newPlayerX = gs.playerO;
+            newPlayerO = gs.playerX;
+            newScoreX = gs.scoreO || 0;
+            newScoreO = gs.scoreX || 0;
+        }
+
         const cleanState: any = {
-            playerX: gs.playerX,
-            playerO: gs.playerO,
+            playerX: newPlayerX,
+            playerO: newPlayerO,
             isXNext: true,
             moveCount: 0,
-            scoreX: gs.scoreX || 0,
-            scoreO: gs.scoreO || 0,
+            scoreX: newScoreX,
+            scoreO: newScoreO,
             scoreDraw: gs.scoreDraw || 0,
             stones: { _init: true },
         };
@@ -1135,12 +1182,14 @@ const Minigame: React.FC = () => {
                     <button onClick={() => setActiveRoom(null)} className={clsx("flex items-center gap-2 text-sm mb-4 font-semibold", isWerewolf ? "text-[#a89b85] hover:text-[#c9873a]" : "text-slate-500 hover:text-indigo-500 transition-colors")}>
                         <ArrowLeft size={16} /> Quay lại
                     </button>
+                    {!isWerewolf && (
                     <div className="flex items-center gap-3 mb-5">
                         <div className={clsx("w-12 h-12 rounded-2xl bg-gradient-to-br flex items-center justify-center text-white shadow-lg", game.gradient)}>{game.icon}</div>
-                        <div><h2 className={clsx("font-bold text-xl", isWerewolf ? "text-[#e8dcc8]" : "text-slate-800 dark:text-white")}>{game.name}</h2>
+                        <div><h2 className={clsx("font-bold text-xl", "text-slate-800 dark:text-white")}>{game.name}</h2>
                             <div className="flex items-center gap-2 text-xs"><Wifi size={10} className="text-emerald-500" /><span className="text-emerald-500 font-bold">Trực tuyến</span></div>
                         </div>
                     </div>
+                    )}
                     {isWerewolf ? (
                         <OnlineWerewolfNew room={activeRoom} myUid={myUid} myName={myName} myAvatar={myAvatar} />
                     ) : (

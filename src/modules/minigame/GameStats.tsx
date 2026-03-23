@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
-import { Trophy, History, BarChart3, Crown, Medal, ArrowLeft, Flame, Target, Moon, Circle, Gamepad2, Clock } from 'lucide-react';
+import { Trophy, History, BarChart3, Crown, Medal, ArrowLeft, Flame, Target, Circle, Gamepad2, Clock } from 'lucide-react';
 import { MinigameService, GameHistory } from '../../services/minigameService';
 
 // ==================== GAME STATS COMPONENT ====================
@@ -102,7 +102,7 @@ const GameStats: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     const gameIcons: Record<string, React.ReactNode> = {
         'tic-tac-toe': <Target size={14} className="text-blue-500" />,
         'gomoku': <Circle size={14} className="text-emerald-500" />,
-        'werewolf': <Moon size={14} className="text-violet-500" />,
+        'werewolf': <span className="text-violet-500">🐺</span>,
     };
 
     const gameNames: Record<string, string> = {
@@ -147,7 +147,7 @@ const GameStats: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                         { icon: <Gamepad2 size={18} />, value: gameTypeStats.total, label: 'Tổng ván', gradient: 'from-indigo-500 to-purple-500', glow: 'shadow-indigo-200/50 dark:shadow-indigo-900/30' },
                         { icon: <Target size={18} />, value: gameTypeStats.ttt, label: 'Tic Tac Toe', gradient: 'from-blue-500 to-cyan-500', glow: 'shadow-blue-200/50 dark:shadow-blue-900/30' },
                         { icon: <Circle size={18} />, value: gameTypeStats.gomoku, label: 'Cờ Caro', gradient: 'from-emerald-500 to-teal-500', glow: 'shadow-emerald-200/50 dark:shadow-emerald-900/30' },
-                        { icon: <Moon size={18} />, value: gameTypeStats.werewolf, label: 'Ma Sói', gradient: 'from-violet-500 to-purple-600', glow: 'shadow-violet-200/50 dark:shadow-violet-900/30' },
+                        { icon: <span>🐺</span>, value: gameTypeStats.werewolf, label: 'Ma Sói', gradient: 'from-violet-500 to-purple-600', glow: 'shadow-violet-200/50 dark:shadow-violet-900/30' },
                     ].map((card, i) => (
                         <div key={i} className={clsx("backdrop-blur-xl bg-white/60 dark:bg-slate-800/50 border border-white/50 dark:border-slate-700/40 rounded-2xl p-3.5 text-center shadow-lg hover:-translate-y-0.5 transition-all duration-300", card.glow)}>
                             <div className={clsx("w-9 h-9 rounded-xl bg-gradient-to-br mx-auto mb-2 flex items-center justify-center text-white shadow-md", card.gradient)}>{card.icon}</div>

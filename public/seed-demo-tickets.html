@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seed Demo Tickets</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; min-height: 100vh; }
+        h1 { font-size: 1.5rem; margin-bottom: 1rem; background: linear-gradient(135deg, #a78bfa, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .info { font-size: 0.85rem; color: #94a3b8; margin-bottom: 1.5rem; line-height: 1.6; }
+        #log { background: #1e293b; border-radius: 12px; padding: 1.5rem; font-family: 'Fira Code', monospace; font-size: 0.8rem; line-height: 2; min-height: 300px; max-height: 500px; overflow-y: auto; border: 1px solid #334155; white-space: pre-wrap; }
+        .ok { color: #4ade80; }
+        .warn { color: #fbbf24; }
+        .err { color: #f87171; }
+        .info-text { color: #60a5fa; }
+        button { background: linear-gradient(135deg, #7c3aed, #6366f1); color: white; border: none; padding: 0.75rem 2rem; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-right: 0.5rem; margin-bottom: 1rem; transition: all .2s; }
+        button:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(124,58,237,0.4); }
+        button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-danger { background: linear-gradient(135deg, #dc2626, #ef4444); }
+    </style>
+</head>
+<body>
+    <h1>🎫 Seed Demo Tickets</h1>
+    <p class="info">
+        Trang này sẽ tạo 3 ticket demo với 3 loại khác nhau (Nhãn/Túi, Thùng Carton, Social Media) vào Firestore.<br>
+        Sau khi tạo xong, vào <a href="/public/orders" style="color:#a78bfa">flow.auvietglobal.com/public/orders</a> → tab "Tạo yêu cầu" để kiểm tra.
+    </p>
+    <button onclick="seedTickets()" id="seedBtn">🚀 Tạo 3 Ticket Demo</button>
+    <button onclick="clearDemoTickets()" id="clearBtn" class="btn-danger">🗑️ Xóa Demo Tickets</button>
+    <div id="log"></div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js';
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, orderBy } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDPLGY_V4-SMO1Z_F4FXQKN2nFcWgXS3EM",
+            authDomain: "avgflow-dd822.firebaseapp.com",
+            projectId: "avgflow-dd822",
+            storageBucket: "avgflow-dd822.firebasestorage.app",
+            messagingSenderId: "717390934498",
+            appId: "1:717390934498:web:cc8c33b9addd0fd7ea9d57"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const logEl = document.getElementById('log');
+        function log(msg, cls = '') {
+            const span = document.createElement('span');
+            span.className = cls;
+            span.textContent = msg + '\n';
+            logEl.appendChild(span);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function generateTicketCode(category) {
+            const prefixes = { 'label-bag': 'NTK', 'carton': 'CTN', 'social': 'SOC' };
+            const prefix = prefixes[category] || 'TK';
+            const ts = Date.now().toString(36).toUpperCase().slice(-4);
+            const rand = Math.random().toString(36).substring(2, 5).toUpperCase();
+            return `${prefix}-${ts}${rand}`;
+        }
+
+        const CATEGORY_LABELS = { 'label-bag': 'Nhãn / Túi', 'carton': 'Thùng Carton', 'social': 'Social Media' };
+        const ACTION_LABELS = { edit: 'Chỉnh sửa', new: 'Tạo mới' };
+
+        const tickets = [
+            {
+                category: 'label-bag', action: 'new',
+                brandName: 'Trà Shan Tuyết Cổ Thụ',
+                contactName: 'Nguyễn Thanh Tuyền', contactPhone: '0912345678',
+                contactEmail: 'tuyennt@demo.com', contactAddress: '123 Nguyễn Huệ, Q.1, TP HCM',
+                formData: {
+                    'Tên nhãn hàng': 'Trà Shan Tuyết Cổ Thụ', 'Người đặt hàng': 'Nguyễn Thanh Tuyền',
+                    'Số điện thoại': '0912345678', 'Email': 'tuyennt@demo.com',
+                    'Kích thước': '12x20cm', 'Số lượng': '500 túi',
+                    'Ý tưởng / Ghi chú thêm': 'Thiết kế nhãn túi trà cao cấp, phong cách truyền thống Việt Nam, gam màu xanh rêu + vàng đồng',
+                },
+                imageUrls: [],
+            },
+            {
+                category: 'carton', action: 'edit',
+                brandName: 'Mật Ong Rừng Tây Bắc',
+                contactName: 'Trà My', contactPhone: '0987654321',
+                contactEmail: 'tramy@demo.com', contactAddress: '45 Lê Lợi, Q.3, TP HCM',
+                formData: {
+                    'Tên đơn vị đặt hàng': 'Mật Ong Rừng Tây Bắc', 'Người đặt hàng': 'Trà My',
+                    'Số điện thoại': '0987654321', 'Email': 'tramy@demo.com',
+                    'Kích thước thùng': '30x25x20cm', 'Số lượng': '200 thùng',
+                    'Ý tưởng / Ghi chú thêm': 'Chỉnh sửa thùng carton hiện tại, thêm logo mới và thay đổi bố cục mặt trước',
+                },
+                imageUrls: [],
+            },
+            {
+                category: 'social', action: 'new',
+                brandName: 'Cà Phê Đà Lạt Premium',
+                contactName: 'Đỗ Chiều', contactPhone: '0909876543',
+                contactEmail: 'chieudo@demo.com', contactAddress: '78 Trần Hưng Đạo, Q.5, TP HCM',
+                formData: {
+                    'Tên nhãn hàng / Fanpage': 'Cà Phê Đà Lạt Premium', 'Người đặt hàng': 'Đỗ Chiều',
+                    'Số điện thoại': '0909876543', 'Email': 'chieudo@demo.com',
+                    'Ý tưởng / Ghi chú thêm': 'Thiết kế banner quảng cáo Facebook + Instagram cho chiến dịch ra mắt sản phẩm mới',
+                    'Link tài nguyên thiết kế': 'https://drive.google.com/demo-link',
+                },
+                imageUrls: [],
+            },
+        ];
+
+        async function seedTickets() {
+            document.getElementById('seedBtn').disabled = true;
+            logEl.innerHTML = '';
+            log('🚀 Bắt đầu tạo demo tickets...\n', 'info-text');
+
+            let success = 0;
+            for (let i = 0; i < tickets.length; i++) {
+                const t = tickets[i];
+                const ticketCode = generateTicketCode(t.category);
+                const description = Object.entries(t.formData).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
+
+                log(`📝 [${i + 1}/3] Tạo ticket ${ticketCode}...`, 'info-text');
+
+                const ticketData = {
+                    ...t, ticketCode, description,
+                    status: 'open', revisionRound: 0,
+                    createdAt: serverTimestamp(), updatedAt: serverTimestamp(), completedAt: null,
+                    _isDemo: true, // mark for easy cleanup
+                };
+
+                try {
+                    const docRef = await addDoc(collection(db, 'design_tickets'), ticketData);
+                    log(`   ✅ Ticket ${ticketCode} → ID: ${docRef.id}`, 'ok');
+                    log(`   📦 ${CATEGORY_LABELS[t.category]} — ${ACTION_LABELS[t.action]}`);
+                    log(`   🏷️  ${t.brandName} | 👤 ${t.contactName} (${t.contactPhone})`);
+
+                    // Welcome message
+                    await addDoc(collection(db, 'design_tickets', docRef.id, 'messages'), {
+                        text: `🎉 Ticket ${ticketCode} đã được tạo thành công!\n\nLoại: ${CATEGORY_LABELS[t.category]} — ${ACTION_LABELS[t.action]}\nThương hiệu: ${t.brandName}\n\nAdmin sẽ liên hệ bạn sớm nhất qua chat này!`,
+                        sender: 'Hệ thống', senderRole: 'admin', createdAt: serverTimestamp(),
+                    });
+                    log(`   💬 Welcome message ✓\n`, 'ok');
+                    success++;
+                } catch (err) {
+                    log(`   ❌ Lỗi: ${err.message}\n`, 'err');
+                }
+
+                // Small delay between tickets
+                if (i < tickets.length - 1) await new Promise(r => setTimeout(r, 1000));
+            }
+
+            log(`\n${'═'.repeat(50)}`);
+            log(`🎉 Hoàn tất! ${success}/${tickets.length} tickets đã được tạo.`, success === tickets.length ? 'ok' : 'warn');
+            log(`\n👉 Kiểm tra tại: /public/orders → tab "Tạo yêu cầu"`, 'info-text');
+            document.getElementById('seedBtn').disabled = false;
+        }
+
+        async function clearDemoTickets() {
+            document.getElementById('clearBtn').disabled = true;
+            log('\n🗑️ Xóa demo tickets...\n', 'warn');
+
+            try {
+                const q = query(collection(db, 'design_tickets'), where('_isDemo', '==', true));
+                const snap = await getDocs(q);
+                if (snap.empty) {
+                    log('   Không tìm thấy demo tickets nào.', 'warn');
+                    document.getElementById('clearBtn').disabled = false;
+                    return;
+                }
+                let deleted = 0;
+                for (const d of snap.docs) {
+                    // Delete messages subcollection
+                    const msgSnap = await getDocs(collection(db, 'design_tickets', d.id, 'messages'));
+                    for (const m of msgSnap.docs) {
+                        await deleteDoc(doc(db, 'design_tickets', d.id, 'messages', m.id));
+                    }
+                    await deleteDoc(doc(db, 'design_tickets', d.id));
+                    log(`   ✅ Đã xóa: ${d.data().ticketCode}`, 'ok');
+                    deleted++;
+                }
+                log(`\n🎉 Đã xóa ${deleted} demo tickets.`, 'ok');
+            } catch (err) {
+                log(`   ❌ Lỗi: ${err.message}`, 'err');
+            }
+            document.getElementById('clearBtn').disabled = false;
+        }
+
+        // Expose to global scope for inline onclick
+        window.seedTickets = seedTickets;
+        window.clearDemoTickets = clearDemoTickets;
+    </script>
+</body>
+</html>

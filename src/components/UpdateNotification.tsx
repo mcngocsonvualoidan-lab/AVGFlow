@@ -13,6 +13,22 @@ const UpdateNotification: React.FC = () => {
                 if (window.updateApp) { window.updateApp(); } else { window.location.reload(); }
                 return;
             }
+
+            // If user recently hit F5 or Header Reload icon, suppress popup
+            // because the reload itself applies the update
+            const manualReloadAt = sessionStorage.getItem('avgflow-manual-reload');
+            if (manualReloadAt) {
+                const elapsed = Date.now() - parseInt(manualReloadAt, 10);
+                if (elapsed < 10000) { // Within 10 seconds of manual reload
+                    sessionStorage.removeItem('avgflow-manual-reload');
+                    // Silently apply the update since user just reloaded
+                    // @ts-ignore
+                    if (window.updateApp) { window.updateApp(); }
+                    return;
+                }
+                sessionStorage.removeItem('avgflow-manual-reload');
+            }
+
             setShow(true);
         };
 

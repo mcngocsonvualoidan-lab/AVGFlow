@@ -1,16 +1,66 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
-import { Moon, Sun, Skull, Eye, Crown, RotateCcw, Send, ThumbsUp, Loader2, MessageCircle, Users, Shield, Clock, Trophy, BarChart3 } from 'lucide-react';
-import { MinigameService, GameRoom, WerewolfState, WerewolfChatMessage, GameHistory } from '../../services/minigameService';
+import { Sun, Skull, Crown, RotateCcw, Send, ThumbsUp, Loader2, MessageCircle, Users, Shield, Clock, Trophy, BarChart3, Volume2, VolumeX } from 'lucide-react';
+import { MinigameService, GameRoom, WerewolfState, WerewolfChatMessage, GameHistory, decodeEmail } from '../../services/minigameService';
+import { useData } from '../../context/DataContext';
+import { werewolfAudio, PhaseType } from './werewolf-audio';
 import './werewolf-gothic.css';
+
+// Error Boundary to prevent white screen crashes
+class WerewolfErrorBoundary extends React.Component<
+    { children: React.ReactNode; roomId?: string; isHost?: boolean },
+    { hasError: boolean; error: Error | null }
+> {
+    constructor(props: any) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error: Error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error: Error, info: React.ErrorInfo) {
+        console.error('🐺 WerewolfGame crash:', error, info);
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="p-6 text-center bg-[#0a0a0f] rounded-2xl border border-[#8b1a1a]/30">
+                    <div className="text-4xl mb-3">🐺💥</div>
+                    <h3 className="text-xl font-bold text-[#c62828] mb-2">Đã xảy ra lỗi</h3>
+                    <p className="text-sm text-[#6b5f50] mb-4">{this.state.error?.message || 'Lỗi không xác định'}</p>
+                    <button
+                        onClick={() => this.setState({ hasError: false, error: null })}
+                        className="px-4 py-2 bg-[#8b5c3a] text-white rounded-xl font-bold text-sm mr-2"
+                    >
+                        🔄 Thử lại
+                    </button>
+                    {this.props.isHost && this.props.roomId && (
+                        <button
+                            onClick={async () => {
+                                try {
+                                    await MinigameService.updateGameState(this.props.roomId!, { phase: 'waiting' });
+                                    this.setState({ hasError: false, error: null });
+                                } catch (e) { console.error(e); }
+                            }}
+                            className="px-4 py-2 bg-[#c62828] text-white rounded-xl font-bold text-sm"
+                        >
+                            ↩ Reset game
+                        </button>
+                    )}
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
 
 const WOLF_ROLES = [
     { role: 'Ma Sói', icon: '🐺', team: 'wolf', desc: 'Kẻ săn mồi trong đêm. Mỗi đêm chọn 1 người để cắn.', cardImage: '/cards/werewolf.png' },
-    { role: 'Dân làng', icon: '�️', team: 'village', desc: 'Linh hồn của ngôi làng. Tìm và treo cổ Ma Sói.', cardImage: '/cards/villager.png' },
-    { role: 'Tiên tri', icon: '🔮', team: 'village', desc: 'Kẻ thấy rõ bóng tối. Mỗi đêm soi vai trò 1 người.', cardImage: '/cards/seer.png' },
+    { role: 'Dân làng', icon: '🏡', team: 'village', desc: 'Linh hồn của ngôi làng. Tìm và treo cổ Ma Sói.', cardImage: '/cards/villager.png' },
+    { role: 'Tiên tri', icon: '🔮', team: 'village', desc: 'Nhà tiên tri bí ẩn. Mỗi đêm soi 1 người để biết họ có phải Ma Sói không.', cardImage: '/cards/seer.png' },
     { role: 'Bảo vệ', icon: '⚔️', team: 'village', desc: 'Hiệp sĩ canh giữ. Mỗi đêm bảo vệ 1 người.', cardImage: '/cards/guard.png' },
-    { role: 'Phù thủy', icon: '�', team: 'village', desc: 'Bà phù thủy bí ẩn. Có 1 bình cứu và 1 bình độc.', cardImage: '/cards/witch.png' },
+    { role: 'Phù thủy', icon: '🧙', team: 'village', desc: 'Bà phù thủy bí ẩn. Có 1 bình cứu và 1 bình độc.', cardImage: '/cards/witch.png' },
 ];
 const CARD_BACK_IMAGE = '/cards/card_back.png';
 
@@ -18,7 +68,7 @@ const CARD_BACK_IMAGE = '/cards/card_back.png';
 const ROLE_GRADIENTS: Record<string, string> = {
     'Ma Sói': 'from-[#2a0a0a] via-[#4a1010] to-[#1a0505]',
     'Dân làng': 'from-[#1a1510] via-[#2a2518] to-[#0f0d08]',
-    'Tiên tri': 'from-[#1a1030] via-[#2a1848] to-[#0f0820]',
+    'Tiên tri': 'from-[#10102a] via-[#1a1848] to-[#080818]',
     'Bảo vệ': 'from-[#0a1520] via-[#142838] to-[#081018]',
     'Phù thủy': 'from-[#201020] via-[#381838] to-[#100810]',
 };
@@ -111,7 +161,7 @@ const CardFace = ({ flipped, size, onFlip, cardImage, roleName, roleIcon, alive 
 };
 
 // ==================== ROLE ASSIGN CARD (with fallback) ====================
-const RoleAssignCard = ({ cardImage, roleName, roleIcon, isBack }: {
+export const RoleAssignCard = ({ cardImage, roleName, roleIcon, isBack }: {
     cardImage?: string; roleName?: string; roleIcon?: string; isBack?: boolean;
 }) => {
     const [imgError, setImgError] = useState(false);
@@ -133,6 +183,160 @@ const RoleAssignCard = ({ cardImage, roleName, roleIcon, isBack }: {
                 <img src={cardImage} alt={roleName} className="w-full h-full object-cover" onError={() => setImgError(true)} />
             ) : (
                 <CardFallback roleName={roleName || ''} roleIcon={roleIcon || ''} size="sm" />
+            )}
+        </div>
+    );
+};
+
+// ==================== SCRATCH CARD for Role Reveal ====================
+const ScratchRevealCard: React.FC<{
+    cardImage?: string; roleName: string; roleIcon: string;
+    onRevealed: () => void;
+}> = ({ cardImage, roleName, roleIcon, onRevealed }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [imgError, setImgError] = useState(false);
+    const [revealed, setRevealed] = useState(false);
+    const isDrawing = useRef(false);
+    const scratchPercent = useRef(0);
+
+    // Initialize scratch overlay
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || revealed) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const w = canvas.width;
+        const h = canvas.height;
+
+        // Draw golden scratch overlay
+        const grad = ctx.createLinearGradient(0, 0, w, h);
+        grad.addColorStop(0, '#8b5c3a');
+        grad.addColorStop(0.3, '#c9873a');
+        grad.addColorStop(0.5, '#e8d5a3');
+        grad.addColorStop(0.7, '#c9873a');
+        grad.addColorStop(1, '#8b5c3a');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Add texture pattern
+        ctx.globalAlpha = 0.15;
+        for (let i = 0; i < 200; i++) {
+            const x = Math.random() * w;
+            const y = Math.random() * h;
+            const r = Math.random() * 3 + 0.5;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        // Center text
+        ctx.fillStyle = '#1a0a0a';
+        ctx.font = 'bold 16px "Playfair Display", serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✨ Cào để xem vai trò ✨', w / 2, h / 2 - 12);
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#3a2010';
+        ctx.fillText('Kéo ngón tay hoặc chuột', w / 2, h / 2 + 12);
+
+        // Decorative border
+        ctx.strokeStyle = '#e8d5a3';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(4, 4, w - 8, h - 8);
+    }, [revealed]);
+
+    const getPos = (e: React.MouseEvent | React.TouchEvent): { x: number; y: number } | null => {
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        if ('touches' in e) {
+            const t = e.touches[0] || e.changedTouches[0];
+            return { x: (t.clientX - rect.left) * scaleX, y: (t.clientY - rect.top) * scaleY };
+        }
+        return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+    };
+
+    const scratch = (pos: { x: number; y: number }) => {
+        const canvas = canvasRef.current;
+        if (!canvas || revealed) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 22, 0, Math.PI * 2);
+        ctx.fill();
+        // Also draw a connecting line for smoother scratching
+        ctx.lineWidth = 44;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        ctx.globalCompositeOperation = 'source-over';
+
+        // Check scratch percentage
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let transparent = 0;
+        for (let i = 3; i < imageData.data.length; i += 4) {
+            if (imageData.data[i] === 0) transparent++;
+        }
+        scratchPercent.current = transparent / (imageData.data.length / 4);
+        if (scratchPercent.current > 0.4) {
+            setRevealed(true);
+            onRevealed();
+        }
+    };
+
+    const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
+        e.preventDefault();
+        isDrawing.current = true;
+        const pos = getPos(e);
+        if (pos) scratch(pos);
+    };
+    const handleMove = (e: React.MouseEvent | React.TouchEvent) => {
+        e.preventDefault();
+        if (!isDrawing.current) return;
+        const pos = getPos(e);
+        if (pos) scratch(pos);
+    };
+    const handleEnd = () => { isDrawing.current = false; };
+
+    return (
+        <div className="relative w-[200px] h-[290px] rounded-xl overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.5)] border-2 border-[#c9873a]/40 mb-3 select-none">
+            {/* Background: role card */}
+            <div className="absolute inset-0">
+                {!imgError && cardImage ? (
+                    <img src={cardImage} alt={roleName} className="w-full h-full object-cover" onError={() => setImgError(true)} />
+                ) : (
+                    <CardFallback roleName={roleName} roleIcon={roleIcon} size="sm" />
+                )}
+            </div>
+            {/* Scratch canvas overlay */}
+            {!revealed && (
+                <canvas
+                    ref={canvasRef}
+                    width={200}
+                    height={290}
+                    className="absolute inset-0 w-full h-full cursor-pointer z-10"
+                    style={{ touchAction: 'none' }}
+                    onMouseDown={handleStart}
+                    onMouseMove={handleMove}
+                    onMouseUp={handleEnd}
+                    onMouseLeave={handleEnd}
+                    onTouchStart={handleStart}
+                    onTouchMove={handleMove}
+                    onTouchEnd={handleEnd}
+                />
+            )}
+            {/* Revealed sparkle effect */}
+            {revealed && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: [0, 1, 0] }}
+                    transition={{ duration: 1.2 }}
+                    className="absolute inset-0 bg-gradient-to-br from-[#c9873a]/30 via-transparent to-[#e8d5a3]/20 pointer-events-none z-10"
+                />
             )}
         </div>
     );
@@ -186,9 +390,9 @@ const GameChat: React.FC<{
     const channelLabel: Record<string, string> = { day: '💬 Tất cả', wolf: '🐺 Ma Sói', dead: '💀 Linh hồn', system: '📢 Hệ thống' };
     const isWolfMode = activeChannel === 'wolf';
 
-    // Filter messages by active tab
+    // Filter messages by active tab — exclude system messages (shown in GameEventLog)
     const filteredMessages = messages.filter(m =>
-        m.channel === 'system' || m.channel === activeChannel
+        m.channel !== 'system' && m.channel === activeChannel
     );
 
     return (
@@ -270,6 +474,64 @@ const GameChat: React.FC<{
     );
 };
 
+// ==================== CHAT TOAST — New Message Popup ====================
+const ChatToast: React.FC<{
+    messages: { id: string; senderName: string; senderAvatar: string; text: string; channel: string }[];
+    onDismiss: (id: string) => void;
+    isWolf?: boolean;
+}> = ({ messages, onDismiss, isWolf: _isWolf }) => {
+    useEffect(() => {
+        const timers = messages.map(m =>
+            setTimeout(() => onDismiss(m.id), 4000)
+        );
+        return () => timers.forEach(t => clearTimeout(t));
+    }, [messages, onDismiss]);
+
+    if (messages.length === 0) return null;
+
+    return (
+        <div className="space-y-1.5 mb-2">
+            <AnimatePresence>
+                {messages.slice(-3).map(m => (
+                    <motion.div
+                        key={m.id}
+                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: 40, scale: 0.9 }}
+                        transition={{ duration: 0.3 }}
+                        onClick={() => onDismiss(m.id)}
+                        className={clsx(
+                            "flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer transition-all hover:brightness-110",
+                            m.channel === 'wolf'
+                                ? "bg-[#2a0a0a]/90 border-[#8b1a1a]/50 shadow-lg shadow-red-900/30"
+                                : "bg-[#1a1825]/90 border-[#8b5c3a]/40 shadow-lg shadow-amber-900/20"
+                        )}
+                        style={{ backdropFilter: 'blur(12px)' }}
+                    >
+                        <div className="relative w-7 h-7 rounded-full overflow-hidden shrink-0">
+                            <img src={m.senderAvatar || `https://ui-avatars.com/api/?name=${m.senderName}&size=32`}
+                                className="w-full h-full object-cover" alt=""
+                                onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                            <div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px]" style={{display:'none'}}>
+                                {(m.senderName||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}
+                            </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className={clsx("text-xs font-bold", m.channel === 'wolf' ? "text-[#c62828]" : "text-[#c9873a]")}>
+                                {m.senderName} {m.channel === 'wolf' && '🐺'}
+                            </p>
+                            <p className={clsx("text-sm truncate", m.channel === 'wolf' ? "text-[#e8a0a0]" : "text-[#e8dcc8]")}>
+                                {m.text}
+                            </p>
+                        </div>
+                        <span className="text-[10px] text-[#6b5f50] shrink-0 mt-0.5">●</span>
+                    </motion.div>
+                ))}
+            </AnimatePresence>
+        </div>
+    );
+};
+
 // ==================== SINGLE CHANNEL CHAT BOX ====================
 const ChatBox: React.FC<{
     roomId: string; myUid: string; myName: string; myAvatar: string;
@@ -279,12 +541,37 @@ const ChatBox: React.FC<{
     const [messages, setMessages] = useState<WerewolfChatMessage[]>([]);
     const [text, setText] = useState('');
     const chatEndRef = useRef<HTMLDivElement>(null);
+    const [toasts, setToasts] = useState<{ id: string; senderName: string; senderAvatar: string; text: string; channel: string }[]>([]);
+    const prevMsgCountRef = useRef(0);
+    const initialLoadRef = useRef(true);
 
     useEffect(() => {
         return MinigameService.subscribeToChat(roomId, (msgs) => {
-            setMessages(msgs.filter(m => m.channel === channel || m.channel === 'system'));
+            const filtered = msgs.filter(m => m.channel === channel);
+            setMessages(filtered);
+
+            // Show toast for new messages from OTHER players (not self, not system)
+            const nonSystem = filtered.filter(m => m.channel !== 'system');
+            if (!initialLoadRef.current && nonSystem.length > prevMsgCountRef.current) {
+                const newMsgs = nonSystem.slice(prevMsgCountRef.current);
+                const otherNewMsgs = newMsgs.filter(m => m.sender !== myUid);
+                if (otherNewMsgs.length > 0) {
+                    setToasts(prev => [
+                        ...prev,
+                        ...otherNewMsgs.map(m => ({
+                            id: m.id || `toast-${Date.now()}-${Math.random()}`,
+                            senderName: m.senderName,
+                            senderAvatar: m.senderAvatar,
+                            text: m.text,
+                            channel: m.channel,
+                        }))
+                    ].slice(-3));
+                }
+            }
+            prevMsgCountRef.current = nonSystem.length;
+            if (initialLoadRef.current) initialLoadRef.current = false;
         });
-    }, [roomId, channel]);
+    }, [roomId, channel, myUid]);
 
     useEffect(() => {
         if (chatEndRef.current) {
@@ -292,6 +579,10 @@ const ChatBox: React.FC<{
             if (container) container.scrollTop = container.scrollHeight;
         }
     }, [messages]);
+
+    const dismissToast = useCallback((id: string) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+    }, []);
 
     const send = async () => {
         if (!text.trim()) return;
@@ -310,6 +601,12 @@ const ChatBox: React.FC<{
                 <span className={clsx("text-sm font-bold", isWolf ? "text-[#c62828]" : "text-[#c9873a]")}
                     style={{ fontFamily: "'Playfair Display', serif" }}>{title}</span>
             </div>
+            {/* Toast notifications for new messages */}
+            {toasts.length > 0 && (
+                <div className="px-2.5 pt-2">
+                    <ChatToast messages={toasts} onDismiss={dismissToast} isWolf={isWolf} />
+                </div>
+            )}
             <div className="overflow-y-auto p-2.5 space-y-1.5" style={{ maxHeight }}>
                 {messages.filter(m => m.channel !== 'system').length === 0 && <p className={clsx("text-xs text-center py-3",
                     isWolf ? "text-[#c62828]/50" : "text-[#6b5f50]")}>
@@ -410,9 +707,173 @@ const GameEventLog: React.FC<{ roomId: string }> = ({ roomId }) => {
 
 // ==================== ROLE ABILITY DESCRIPTIONS ====================
 const getRoleDesc = (role: string) => WOLF_ROLES.find(r => r.role === role)?.desc || '';
+const getRoleIconByName = (role: string) => WOLF_ROLES.find(r => r.role === role)?.icon || '❓';
+
+// ==================== WOLF ICON (SVG) — Howling Silhouette + Moon ====================
+const WolfIcon: React.FC<{ size?: number; className?: string; style?: React.CSSProperties }> = ({ size = 24, className = '', style }) => {
+    const id = React.useId();
+    return (
+        <svg width={size} height={size} viewBox="0 0 64 64" fill="none" className={className} style={style} xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                {/* Golden outer glow */}
+                <filter id={`wolfGlow-${id}`} x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur"/>
+                    <feMerge>
+                        <feMergeNode in="blur"/>
+                        <feMergeNode in="blur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                </filter>
+                {/* Moon ambient glow */}
+                <radialGradient id={`moonGrad-${id}`} cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="currentColor" stopOpacity="0.25"/>
+                    <stop offset="100%" stopColor="currentColor" stopOpacity="0"/>
+                </radialGradient>
+            </defs>
+
+            {/* Ambient moon glow behind everything */}
+            <circle cx="38" cy="18" r="20" fill={`url(#moonGrad-${id})`}/>
+
+            {/* Crescent moon */}
+            <g filter={`url(#wolfGlow-${id})`}>
+                <circle cx="38" cy="18" r="12" fill="currentColor" opacity="0.9"/>
+                <circle cx="42" cy="15" r="9.5" fill="#1a1028" opacity="0.95"/>
+            </g>
+
+            {/* Wolf silhouette — howling upward, side profile */}
+            <g filter={`url(#wolfGlow-${id})`}>
+                <path d="
+                    M 10,58
+                    L 10,44
+                    C 10,40 12,36 14,34
+                    L 16,32
+                    C 14,30 13,28 13,26
+                    C 13,23 15,20 18,18
+                    L 20,17
+                    C 20,15 21,13 22,12
+                    L 20,8
+                    L 18,3
+                    C 18,3 22,6 23,9
+                    L 24,11
+                    C 25,10 26,9 28,9
+                    L 30,4
+                    C 30,4 30,8 29,11
+                    C 28,13 27,15 26,17
+                    C 25,19 24,21 24,24
+                    C 24,26 25,28 26,29
+                    L 22,30
+                    C 20,28 19,26 19,24
+                    C 19,22 20,20 22,18
+                    L 18,20
+                    C 16,22 15,25 16,28
+                    L 17,31
+                    C 15,33 14,36 14,38
+                    L 14,42
+                    L 18,42
+                    C 20,42 22,40 24,38
+                    L 26,36
+                    C 28,38 30,42 30,46
+                    L 30,58
+                    L 26,58
+                    L 26,48
+                    C 26,46 25,44 24,42
+                    L 22,44
+                    C 20,46 18,48 18,50
+                    L 18,58
+                    Z
+                " fill="currentColor" opacity="0.95"/>
+            </g>
+
+            {/* Small stars twinkling */}
+            <circle cx="8" cy="8" r="0.8" fill="currentColor" opacity="0.6"/>
+            <circle cx="52" cy="10" r="0.6" fill="currentColor" opacity="0.5"/>
+            <circle cx="56" cy="30" r="0.7" fill="currentColor" opacity="0.4"/>
+            <circle cx="48" cy="38" r="0.5" fill="currentColor" opacity="0.3"/>
+            <circle cx="6" cy="22" r="0.5" fill="currentColor" opacity="0.45"/>
+            <circle cx="46" cy="5" r="0.6" fill="currentColor" opacity="0.35"/>
+        </svg>
+    );
+};
 
 // ==================== NORMALIZE PHASE ====================
 // Backward compat: old phases 'night', 'day' => new phases
+// ==================== ATMOSPHERIC EFFECTS ====================
+const WerewolfAtmosphere: React.FC<{ phase: string }> = React.memo(({ phase }) => {
+    const isNight = phase.startsWith('night');
+    return (
+        <div className={clsx("ww-atmosphere", isNight && "ww-atmosphere-night")}>
+            {/* Fog wisps */}
+            <div className="ww-fog-wisp" />
+            <div className="ww-fog-wisp" />
+            <div className="ww-fog-wisp" />
+
+            {/* Spirit orbs */}
+            <div className="ww-spirit-orb" />
+            <div className="ww-spirit-orb" />
+            <div className="ww-spirit-orb" />
+            <div className="ww-spirit-orb" />
+            <div className="ww-spirit-orb" />
+            <div className="ww-spirit-orb" />
+
+            {/* Bats — night only */}
+            {isNight && <>
+                <div className="ww-bat">🦇</div>
+                <div className="ww-bat">🦇</div>
+                <div className="ww-bat">🦇</div>
+            </>}
+
+            {/* Candle flames */}
+            <div className="ww-candle" />
+            <div className="ww-candle" />
+            <div className="ww-candle" />
+
+            {/* Blood drips — night/dramatic phases */}
+            {(isNight || phase === 'day-vote' || phase === 'day-defense') && <>
+                <div className="ww-blood-drip" />
+                <div className="ww-blood-drip" />
+                <div className="ww-blood-drip" />
+                <div className="ww-blood-drip" />
+                <div className="ww-blood-drip" />
+            </>}
+
+            {/* Scanline */}
+            <div className="ww-scanline" />
+
+            {/* Vignette */}
+            <div className={clsx("ww-vignette", isNight && "ww-vignette-night")} />
+        </div>
+    );
+});
+
+// Phase transition flash effect
+const PhaseTransitionFlash: React.FC<{ phase: string }> = React.memo(({ phase }) => {
+    const [flashType, setFlashType] = useState<string | null>(null);
+    const prevPhaseRef = useRef(phase);
+
+    useEffect(() => {
+        if (prevPhaseRef.current === phase) return;
+        const prev = prevPhaseRef.current;
+        prevPhaseRef.current = phase;
+
+        // Determine flash type
+        if (phase.startsWith('night') && !prev.startsWith('night')) {
+            setFlashType('night');
+        } else if (phase.startsWith('day') && prev.startsWith('night')) {
+            setFlashType('day');
+        } else if (phase === 'gameover') {
+            setFlashType('blood');
+        } else {
+            return;
+        }
+
+        const timer = setTimeout(() => setFlashType(null), 1300);
+        return () => clearTimeout(timer);
+    }, [phase]);
+
+    if (!flashType) return null;
+    return <div className={`ww-phase-flash ww-phase-flash-${flashType}`} />;
+});
+
 const normalizePhase = (phase: string | undefined): string => {
     if (!phase) return 'waiting';
     // Old phases mapping
@@ -422,18 +883,311 @@ const normalizePhase = (phase: string | undefined): string => {
 };
 
 // ==================== MAIN WEREWOLF COMPONENT ====================
-const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; myAvatar: string }> = ({ room, myUid, myName, myAvatar }) => {
+const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; myAvatar: string }> = React.memo(({ room, myUid, myName, myAvatar }) => {
     const gs = (room.gameState || {}) as WerewolfState;
     const phase = normalizePhase(gs.phase);
     const isHost = myUid === room.hostId;
-    const playerList = Object.entries(room.players || {}).map(([uid, data]: [string, any]) => ({ uid, name: data.name, avatar: data.avatar }));
+    // Sync avatars from Firestore users
+    const { users: firestoreUsers } = useData();
+    const playerList = useMemo(() => {
+        return Object.entries(room.players || {}).map(([uid, data]: [string, any]) => {
+            // Decode the RTDB key back to email to match Firestore user
+            const email = decodeEmail(uid);
+            const firestoreUser = firestoreUsers.find(u => (u.email || '').toLowerCase() === email.toLowerCase());
+            // Priority: Firestore avatar > RTDB avatar > fallback
+            const resolvedAvatar = firestoreUser?.avatar || data.avatar || '';
+            return { uid, name: data.name, avatar: resolvedAvatar };
+        });
+    }, [room.players, firestoreUsers]);
+
+    // Auto-sync avatars to RTDB when Firestore user has avatar but RTDB doesn't
+    useEffect(() => {
+        if (!firestoreUsers.length || !room.players) return;
+        Object.entries(room.players).forEach(([uid, data]: [string, any]) => {
+            if (data.avatar) return; // Already has avatar in RTDB
+            const email = decodeEmail(uid);
+            const firestoreUser = firestoreUsers.find(u => (u.email || '').toLowerCase() === email.toLowerCase());
+            if (firestoreUser?.avatar) {
+                // Sync avatar from Firestore to RTDB
+                MinigameService.joinRoom(room.id, email, data.name, firestoreUser.avatar).catch(() => {});
+            }
+        });
+    }, [firestoreUsers, room.players, room.id]);
     const myRole = gs.roles?.[myUid];
     const isWolf = myRole?.role === 'Ma Sói' && myRole?.alive;
-    const [showMyRole, setShowMyRole] = useState(false);
+    const [showMyRole, setShowMyRole] = useState<false | 'scratch' | true>(false);
     const resolvingRef = useRef(false);
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [audioMuted, setAudioMuted] = useState(true);
+    const prevPhaseForAudioRef = useRef(phase);
+
+    // Audio: init on first click anywhere in the game
+    const initAudio = useCallback(() => {
+        if (!werewolfAudio.isInitialized()) {
+            werewolfAudio.init();
+            werewolfAudio.setVolume(0.25);
+        }
+    }, []);
+
+    // Audio: phase-based ambient switching + one-shot effects
+    useEffect(() => {
+        if (!werewolfAudio.isInitialized() || audioMuted) return;
+        const prev = prevPhaseForAudioRef.current;
+        prevPhaseForAudioRef.current = phase;
+
+        // Map game phase to audio phase
+        let audioPhase: PhaseType = 'waiting';
+        if (phase.startsWith('night')) audioPhase = 'night';
+        else if (phase === 'day-vote' || phase === 'day-defense' || phase === 'day-revote') audioPhase = 'vote';
+        else if (phase.startsWith('day')) audioPhase = 'day';
+        else if (phase === 'gameover') audioPhase = 'gameover';
+        else if (phase === 'waiting') audioPhase = 'waiting';
+
+        // Set ambient
+        werewolfAudio.setPhase(audioPhase);
+
+        // One-shot effects on transitions
+        if (prev !== phase) {
+            if (phase.startsWith('night') && !prev.startsWith('night')) {
+                werewolfAudio.playWolfHowl();
+            } else if (phase === 'day-discussion' && prev.startsWith('night')) {
+                werewolfAudio.playBellToll();
+                if (gs.nightKilled) werewolfAudio.playDeathStinger();
+            } else if (phase === 'day-vote') {
+                werewolfAudio.playHeartbeat(15);
+            } else if (phase === 'gameover') {
+                werewolfAudio.playVictory();
+            }
+        }
+    }, [phase, gs.nightKilled, audioMuted]);
+
+    // Audio: cleanup on unmount
+    useEffect(() => {
+        return () => { werewolfAudio.destroy(); };
+    }, []);
+
+    const toggleAudio = useCallback(() => {
+        // First click: init audio context (requires user gesture)
+        if (!werewolfAudio.isInitialized()) {
+            initAudio();
+        }
+        if (audioMuted) {
+            // Unmute: resume context + start ambient
+            if (werewolfAudio.isMuted()) werewolfAudio.toggleMute();
+            setAudioMuted(false);
+        } else {
+            // Mute
+            if (!werewolfAudio.isMuted()) werewolfAudio.toggleMute();
+            setAudioMuted(true);
+        }
+    }, [initAudio, audioMuted]);
+
+    // Reset all local UI state when game resets to waiting or new roles assigned
+    useEffect(() => {
+        if (phase === 'waiting') {
+            setShowMyRole(false);
+            setDefenseTimeLeft(60);
+            setRevoteTimeLeft(10);
+            setShowResetConfirm(false);
+            resolvingRef.current = false;
+            defenseTriggeredRef.current = false;
+            revoteTriggeredRef.current = false;
+        }
+    }, [phase]);
+
+    // Timers — MUST be declared at top level (Rules of Hooks) to prevent flicker
+    const DEFENSE_DURATION = 60;
+    const REVOTE_DURATION = 10;
+    const [defenseTimeLeft, setDefenseTimeLeft] = useState(DEFENSE_DURATION);
+    const [revoteTimeLeft, setRevoteTimeLeft] = useState(REVOTE_DURATION);
+    const defenseTriggeredRef = useRef(false);
+    const revoteTriggeredRef = useRef(false);
+
+    // Defense timer effect (runs only during day-defense phase)
+    useEffect(() => {
+        if (phase !== 'day-defense') {
+            defenseTriggeredRef.current = false;
+            return;
+        }
+        const defenseStarted = gs.defenseStartedAt || Date.now();
+        // Initialize time left immediately
+        const initialElapsed = Math.floor((Date.now() - defenseStarted) / 1000);
+        setDefenseTimeLeft(Math.max(0, DEFENSE_DURATION - initialElapsed));
+        const interval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - defenseStarted) / 1000);
+            const remaining = Math.max(0, DEFENSE_DURATION - elapsed);
+            setDefenseTimeLeft(remaining);
+            if (remaining <= 0 && isHost && !defenseTriggeredRef.current) {
+                defenseTriggeredRef.current = true;
+                clearInterval(interval);
+                startRevote();
+            }
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [phase, gs.defenseStartedAt, isHost]);
+
+    // Revote timer effect (runs only during day-revote phase)
+    useEffect(() => {
+        if (phase !== 'day-revote') {
+            revoteTriggeredRef.current = false;
+            return;
+        }
+        const revoteStarted = gs.revoteStartedAt || Date.now();
+        const initialElapsed = Math.floor((Date.now() - revoteStarted) / 1000);
+        setRevoteTimeLeft(Math.max(0, REVOTE_DURATION - initialElapsed));
+        const interval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - revoteStarted) / 1000);
+            const remaining = Math.max(0, REVOTE_DURATION - elapsed);
+            setRevoteTimeLeft(remaining);
+            if (remaining <= 0 && isHost && !revoteTriggeredRef.current) {
+                revoteTriggeredRef.current = true;
+                clearInterval(interval);
+                finalResolveVote();
+            }
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [phase, gs.revoteStartedAt, isHost]);
+
+    // Night-resolve auto-trigger — MUST be at top-level (Rules of Hooks)
+    useEffect(() => {
+        if (phase !== 'night-resolve' || !isHost) return;
+        
+        let cancelled = false;
+        const tryResolve = async (attempt = 0) => {
+            if (cancelled || resolvingRef.current) return;
+            resolvingRef.current = true;
+            try {
+                await resolveNight();
+            } catch (e) {
+                console.error(`resolveNight error (attempt ${attempt + 1}):`, e);
+                // Retry up to 5 times with exponential backoff
+                if (!cancelled && attempt < 5) {
+                    await new Promise(r => setTimeout(r, Math.min((attempt + 1) * 1000, 5000)));
+                    resolvingRef.current = false;
+                    return tryResolve(attempt + 1);
+                }
+                // All retries exhausted — auto-fallback to day-discussion
+                if (!cancelled) {
+                    console.warn('resolveNight: All retries exhausted, falling back to day-discussion');
+                    try {
+                        await MinigameService.mergeGameState(room.id, {
+                            phase: 'day-discussion',
+                            nightLog: '☀️ Đêm bình yên (tự động bỏ qua do lỗi).',
+                            nightKilled: null,
+                        });
+                        await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: '⚠️ Lỗi tổng hợp đêm — tự động bỏ qua.', timestamp: Date.now(), channel: 'system' });
+                    } catch (fallbackErr) {
+                        console.error('resolveNight fallback also failed:', fallbackErr);
+                    }
+                }
+            } finally {
+                resolvingRef.current = false;
+            }
+        };
+
+        // Safety timeout: if still stuck after 15s, force-skip
+        const safetyTimeout = setTimeout(() => {
+            if (cancelled) return;
+            console.warn('resolveNight: Safety timeout triggered (15s)');
+            resolvingRef.current = false;
+            MinigameService.mergeGameState(room.id, {
+                phase: 'day-discussion',
+                nightLog: '☀️ Đêm bình yên (timeout).',
+                nightKilled: null,
+            }).catch(() => {});
+        }, 15000);
+
+        tryResolve();
+        return () => { cancelled = true; clearTimeout(safetyTimeout); };
+    }, [phase, isHost]);
+
+    // Auto-skip night phases if role is dead — MUST be at top-level hooks
+    const hasWolfAlive = Object.entries(gs.roles || {}).some(([, r]) => (r as any).role === 'Ma Sói' && (r as any).alive);
+    const hasSeerAlive = Object.entries(gs.roles || {}).some(([, r]) => (r as any).role === 'Tiên tri' && (r as any).alive);
+    const hasGuardAlive = Object.entries(gs.roles || {}).some(([, r]) => (r as any).role === 'Bảo vệ' && (r as any).alive);
+    const hasWitchAlive = Object.entries(gs.roles || {}).some(([, r]) => (r as any).role === 'Phù thủy' && (r as any).alive);
+
+    // Auto-skip night-wolf if ALL wolves are dead
+    useEffect(() => {
+        if (phase === 'night-wolf' && isHost && !hasWolfAlive) {
+            MinigameService.mergeGameState(room.id, {
+                wolfTarget: null, 'nightActionsComplete/wolves': true, phase: 'night-seer',
+            }).catch(e => console.error('auto-skip wolf:', e));
+        }
+    }, [phase, isHost, hasWolfAlive]);
+
+    // Auto-skip Seer night phase if Seer is dead
+    useEffect(() => {
+        if (phase === 'night-seer' && isHost && !hasSeerAlive) { skipSeer(); }
+    }, [phase, isHost, hasSeerAlive]);
+
+    useEffect(() => {
+        if (phase === 'night-guard' && isHost && !hasGuardAlive) { skipGuard(); }
+    }, [phase, isHost, hasGuardAlive]);
+
+    useEffect(() => {
+        if (phase === 'night-witch' && isHost && !hasWitchAlive) { witchDone(); }
+    }, [phase, isHost, hasWitchAlive]);
+
+    // Auto-transfer host when host character is killed
+    const hostRole = gs.roles?.[room.hostId];
+    const isHostDead = hostRole && !hostRole.alive;
+    useEffect(() => {
+        if (!isHost || !isHostDead || phase === 'waiting' || phase === 'gameover' || !gs.roles) return;
+        // Find a random alive player to be new host
+        const alivePlayerUids = Object.entries(gs.roles)
+            .filter(([uid, r]) => (r as any).alive && uid !== room.hostId)
+            .map(([uid]) => uid);
+        if (alivePlayerUids.length === 0) return;
+        const newHostUid = alivePlayerUids[Math.floor(Math.random() * alivePlayerUids.length)];
+        const newHostName = playerList.find(p => p.uid === newHostUid)?.name || '???';
+        MinigameService.transferHost(room.id, newHostUid).then(() => {
+            MinigameService.sendChat(room.id, {
+                sender: 'system', senderName: 'Hệ thống', senderAvatar: '',
+                text: `👑 Trưởng làng đã ngã xuống! ${newHostName} trở thành Trưởng làng mới.`,
+                timestamp: Date.now(), channel: 'system',
+            });
+        }).catch(e => console.error('auto-transfer host error:', e));
+    }, [isHost, isHostDead, phase]);
+
+    // Auto-transfer host back to original creator at gameover
+    useEffect(() => {
+        if (phase !== 'gameover' || !gs.originalHostId) return;
+        // Only the current host triggers transfer to avoid race conditions
+        if (!isHost || room.hostId === gs.originalHostId) return;
+        const origName = playerList.find(p => p.uid === gs.originalHostId)?.name || '???';
+        MinigameService.transferHost(room.id, gs.originalHostId).then(() => {
+            MinigameService.sendChat(room.id, {
+                sender: 'system', senderName: 'Hệ thống', senderAvatar: '',
+                text: `👑 Quyền Trưởng làng được trao lại cho ${origName}.`,
+                timestamp: Date.now(), channel: 'system',
+            });
+        }).catch(e => console.error('restore host error:', e));
+    }, [phase, isHost]);
 
     const alivePlayers = playerList.filter(p => gs.roles?.[p.uid]?.alive);
     const aliveOthers = alivePlayers.filter(p => p.uid !== myUid);
+
+    // Auto-resolve vote after 5 seconds when all alive players have voted
+    const totalAliveCount = alivePlayers.length;
+    const totalVotedCount = Object.keys(gs.votes || {}).length + (gs.skipVotes || []).length;
+    const allVoted = phase === 'day-vote' && totalAliveCount > 0 && totalVotedCount >= totalAliveCount;
+    const [voteCountdown, setVoteCountdown] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (!allVoted) { setVoteCountdown(null); return; }
+        setVoteCountdown(5);
+        const interval = setInterval(() => {
+            setVoteCountdown(prev => {
+                if (prev === null || prev <= 1) { clearInterval(interval); return 0; }
+                return prev - 1;
+            });
+        }, 1000);
+        const timer = setTimeout(() => {
+            if (isHost) resolveVote();
+        }, 5000);
+        return () => { clearInterval(interval); clearTimeout(timer); };
+    }, [allVoted, isHost]);
     const playerNames: Record<string, { name: string; avatar: string }> = {};
     playerList.forEach(p => { playerNames[p.uid] = { name: p.name, avatar: p.avatar }; });
 
@@ -452,263 +1206,420 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
         return ch;
     };
 
-    // ---- ROLE ASSIGNMENT ----
+    // ---- ROLE ASSIGNMENT (fully random each time, no repeat from previous game) ----
     const assignRoles = async () => {
-        const uids = playerList.map(p => p.uid);
-        const n = uids.length; if (n < 5) return;
-        const roles: string[] = [];
-        const wolfCount = n <= 6 ? 1 : n <= 9 ? 2 : 3;
-        for (let i = 0; i < wolfCount; i++) roles.push('Ma Sói');
-        roles.push('Tiên tri', 'Bảo vệ');
-        if (n >= 7) roles.push('Phù thủy');
-        while (roles.length < n) roles.push('Dân làng');
-        for (let i = roles.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[roles[i], roles[j]] = [roles[j], roles[i]]; }
-        const roleMap: any = {};
-        uids.forEach((uid, i) => {
-            const r = WOLF_ROLES.find(x => x.role === roles[i])!;
-            roleMap[uid] = { role: r.role, icon: r.icon, alive: true };
-        });
-        await MinigameService.clearChat(room.id);
-        await MinigameService.updateGameState(room.id, {
-            phase: 'roles-assigned', roles: roleMap, night: 0,
-            wolfVotes: {}, seerResults: {}, guardLastTarget: null,
-            witchSaveUsed: false, witchKillUsed: false,
-            nightActionsComplete: {}, votes: {}, skipVotes: [],
-        });
+        try {
+            const uids = playerList.map(p => p.uid);
+            const n = uids.length; if (n < 5) return;
+            const roles: string[] = [];
+            const wolfCount = n <= 6 ? 2 : n <= 9 ? 2 : 3;
+            for (let i = 0; i < wolfCount; i++) roles.push('Ma Sói');
+            roles.push('Tiên tri', 'Bảo vệ');
+            if (n >= 6) roles.push('Phù thủy');
+            while (roles.length < n) roles.push('Dân làng');
+
+            // Fisher-Yates shuffle with crypto-grade randomness for better unpredictability
+            const getSecureRandom = () => {
+                if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+                    const arr = new Uint32Array(1);
+                    crypto.getRandomValues(arr);
+                    return arr[0] / (0xFFFFFFFF + 1);
+                }
+                return Math.random();
+            };
+
+            // Get previous roles to avoid repeat assignments
+            // (saved in `previousRoles` field during reset, or fallback to current roles)
+            const prevRoles = gs.previousRoles || gs.roles || {};
+
+            // Shuffle and ensure no player gets the same role as previous game
+            let bestRoles: string[] = [];
+            let bestConflicts = n + 1;
+
+            // Try up to 20 shuffles, pick the one with fewest conflicts
+            for (let attempt = 0; attempt < 20; attempt++) {
+                const tryRoles = [...roles];
+                // Double Fisher-Yates shuffle
+                for (let pass = 0; pass < 2; pass++) {
+                    for (let i = tryRoles.length - 1; i > 0; i--) {
+                        const j = Math.floor(getSecureRandom() * (i + 1));
+                        [tryRoles[i], tryRoles[j]] = [tryRoles[j], tryRoles[i]];
+                    }
+                }
+
+                // Also shuffle the uids order
+                const tryUids = [...uids];
+                for (let i = tryUids.length - 1; i > 0; i--) {
+                    const j = Math.floor(getSecureRandom() * (i + 1));
+                    [tryUids[i], tryUids[j]] = [tryUids[j], tryUids[i]];
+                }
+
+                // Count conflicts (same non-wolf role as previous game)
+                // Wolves CAN repeat, but special roles must change
+                let conflicts = 0;
+                tryUids.forEach((uid, i) => {
+                    if (prevRoles[uid]?.role === tryRoles[i] && tryRoles[i] !== 'Ma Sói') conflicts++;
+                });
+
+                if (conflicts < bestConflicts) {
+                    bestConflicts = conflicts;
+                    bestRoles = tryRoles.map((role, i) => `${tryUids[i]}::${role}`);
+                }
+
+                // Perfect — no conflicts at all
+                if (conflicts === 0) break;
+            }
+
+            // Parse the best result
+            const roleMap: any = {};
+            bestRoles.forEach(entry => {
+                const [uid, roleName] = entry.split('::');
+                const r = WOLF_ROLES.find(x => x.role === roleName)!;
+                roleMap[uid] = { role: r.role, icon: r.icon, alive: true };
+            });
+
+            // Final safety: try to fix any remaining non-wolf conflicts by swapping
+            if (bestConflicts > 0) {
+                const conflictUids = Object.keys(roleMap).filter(uid =>
+                    prevRoles[uid]?.role === roleMap[uid].role && roleMap[uid].role !== 'Ma Sói'
+                );
+                const okUids = Object.keys(roleMap).filter(uid => !conflictUids.includes(uid));
+                for (const cUid of conflictUids) {
+                    // Find someone with a different role who can swap (skip wolf swaps)
+                    const swapPartner = okUids.find(oUid =>
+                        roleMap[oUid].role !== roleMap[cUid].role &&
+                        (prevRoles[oUid]?.role !== roleMap[cUid].role || roleMap[cUid].role === 'Ma Sói') &&
+                        (prevRoles[cUid]?.role !== roleMap[oUid].role || roleMap[oUid].role === 'Ma Sói')
+                    );
+                    if (swapPartner) {
+                        const temp = { ...roleMap[cUid] };
+                        roleMap[cUid] = { ...roleMap[swapPartner] };
+                        roleMap[swapPartner] = temp;
+                        okUids.splice(okUids.indexOf(swapPartner), 1);
+                    }
+                }
+            }
+
+            await MinigameService.clearChat(room.id);
+            // Full clean state — ensures no leftover data from previous game
+            await MinigameService.updateGameState(room.id, {
+                phase: 'roles-assigned', roles: roleMap, previousRoles: null, night: 0,
+                originalHostId: room.hostId, // remember who started the game
+                wolfVotes: {}, wolfTarget: null,
+                guardTarget: null, guardLastTarget: null,
+                witchSaveUsed: false, witchKillUsed: false,
+                witchSaveThisNight: false, witchKillTarget: null,
+                nightActionsComplete: {}, nightKilled: null, nightLog: '',
+                votes: {}, skipVotes: [], voteResult: null, gameLog: [],
+                defenseTarget: null, defenseStartedAt: null,
+                revoteStartedAt: null, gameResult: null,
+                seerTarget: null, seerResult: null,
+            });
+        } catch (e) { console.error('assignRoles error:', e); }
     };
 
     // ---- START NIGHT ----
     const startNight = async () => {
-        const nightNum = (gs.night || 0) + 1;
-        await MinigameService.mergeGameState(room.id, {
-            phase: 'night-wolf', night: nightNum,
-            wolfVotes: {}, wolfTarget: null, seerTarget: null,
-            guardTarget: null, witchSaveThisNight: false, witchKillTarget: null,
-            nightKilled: null, nightLog: '',
-            nightActionsComplete: { wolves: false, seer: false, guard: false, witch: false },
-        });
-        await MinigameService.sendChat(room.id, {
-            sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: `🌙 Đêm ${nightNum} bắt đầu. Mọi người nhắm mắt...`,
-            timestamp: Date.now(), channel: 'system',
-        });
+        try {
+            const nightNum = (gs.night || 0) + 1;
+            await MinigameService.mergeGameState(room.id, {
+                phase: 'night-wolf', night: nightNum,
+                wolfVotes: {}, wolfTarget: null,
+                guardTarget: null, witchSaveThisNight: false, witchKillTarget: null,
+                nightKilled: null, nightLog: '', seerTarget: null, seerResult: null,
+                nightActionsComplete: { wolves: false, seer: false, guard: false, witch: false },
+            });
+            await MinigameService.sendChat(room.id, {
+                sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: `🌙 Đêm ${nightNum} bắt đầu. Mọi người nhắm mắt...`,
+                timestamp: Date.now(), channel: 'system',
+            });
+        } catch (e) { console.error('startNight error:', e); }
     };
 
     // ---- WOLF VOTE ----
     const wolfVote = async (targetUid: string) => {
-        const newVotes = { ...(gs.wolfVotes || {}), [myUid]: targetUid };
-        await MinigameService.mergeGameState(room.id, { wolfVotes: newVotes });
-        // Check if all alive wolves voted
-        const aliveWolves = Object.entries(gs.roles || {}).filter(([, r]) => (r as any).role === 'Ma Sói' && (r as any).alive).map(([uid]) => uid);
-        const allVoted = aliveWolves.every(w => newVotes[w]);
-        if (allVoted) {
-            // Find most voted target
-            const voteCounts: Record<string, number> = {};
-            Object.values(newVotes).forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
-            const maxVotes = Math.max(...Object.values(voteCounts));
-            const target = Object.entries(voteCounts).find(([, c]) => c === maxVotes)?.[0] || null;
-            await MinigameService.mergeGameState(room.id, {
-                wolfTarget: target, 'nightActionsComplete/wolves': true, phase: 'night-seer',
-            });
-        }
+        try {
+            const newVotes = { ...(gs.wolfVotes || {}), [myUid]: targetUid };
+            await MinigameService.mergeGameState(room.id, { wolfVotes: newVotes });
+            const aliveWolves = Object.entries(gs.roles || {}).filter(([, r]) => (r as any).role === 'Ma Sói' && (r as any).alive).map(([uid]) => uid);
+            const allVoted = aliveWolves.every(w => newVotes[w]);
+            if (allVoted) {
+                const voteCounts: Record<string, number> = {};
+                Object.values(newVotes).forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
+                const maxVotes = Math.max(...Object.values(voteCounts));
+                const target = Object.entries(voteCounts).find(([, c]) => c === maxVotes)?.[0] || null;
+                await MinigameService.mergeGameState(room.id, {
+                    wolfTarget: target, 'nightActionsComplete/wolves': true, phase: 'night-seer',
+                });
+            }
+        } catch (e) { console.error('wolfVote error:', e); }
     };
 
-    // ---- SEER CHECK ----
-    const seerCheck = async (targetUid: string) => {
-        const targetRole = gs.roles?.[targetUid]?.role || '???';
-        const newResults = { ...(gs.seerResults || {}), [targetUid]: targetRole };
-        await MinigameService.mergeGameState(room.id, {
-            seerTarget: targetUid, seerResults: newResults,
-            'nightActionsComplete/seer': true, phase: 'night-guard',
-        });
+    // ---- SEER PEEK (each night, peek at 1 person to learn if wolf) ----
+    const seerPeek = async (targetUid: string) => {
+        try {
+            const targetRole = gs.roles?.[targetUid]?.role;
+            const isWolfResult = targetRole === 'Ma Sói';
+            // Store result but DON'T change phase yet — let Seer see the result first
+            await MinigameService.mergeGameState(room.id, {
+                seerTarget: targetUid, seerResult: isWolfResult ? 'wolf' : 'village',
+                'nightActionsComplete/seer': true,
+            });
+        } catch (e) { console.error('seerPeek error:', e); }
+    };
+
+    const confirmSeerResult = async () => {
+        try {
+            await MinigameService.mergeGameState(room.id, { phase: 'night-guard' });
+        } catch (e) { console.error('confirmSeerResult error:', e); }
     };
 
     const skipSeer = async () => {
-        await MinigameService.mergeGameState(room.id, { 'nightActionsComplete/seer': true, phase: 'night-guard' });
+        try {
+            await MinigameService.mergeGameState(room.id, { seerTarget: null, seerResult: null, 'nightActionsComplete/seer': true, phase: 'night-guard' });
+        } catch (e) { console.error('skipSeer error:', e); }
     };
 
     // ---- GUARD PROTECT ----
     const guardProtect = async (targetUid: string) => {
-        await MinigameService.mergeGameState(room.id, {
-            guardTarget: targetUid, 'nightActionsComplete/guard': true, phase: 'night-witch',
-        });
+        try {
+            await MinigameService.mergeGameState(room.id, {
+                guardTarget: targetUid, 'nightActionsComplete/guard': true, phase: 'night-witch',
+            });
+        } catch (e) { console.error('guardProtect error:', e); }
     };
 
     const skipGuard = async () => {
-        await MinigameService.mergeGameState(room.id, { guardTarget: null, 'nightActionsComplete/guard': true, phase: 'night-witch' });
+        try {
+            await MinigameService.mergeGameState(room.id, { guardTarget: null, 'nightActionsComplete/guard': true, phase: 'night-witch' });
+        } catch (e) { console.error('skipGuard error:', e); }
     };
 
     // ---- WITCH ACTIONS (reversible until witchDone) ----
     const witchSave = async () => {
-        await MinigameService.mergeGameState(room.id, { witchSaveThisNight: true });
+        try { await MinigameService.mergeGameState(room.id, { witchSaveThisNight: true }); } catch (e) { console.error('witchSave error:', e); }
     };
     const witchUndoSave = async () => {
-        await MinigameService.mergeGameState(room.id, { witchSaveThisNight: false });
+        try { await MinigameService.mergeGameState(room.id, { witchSaveThisNight: false }); } catch (e) { console.error('witchUndoSave error:', e); }
     };
 
     const witchKill = async (targetUid: string) => {
-        await MinigameService.mergeGameState(room.id, { witchKillTarget: targetUid });
+        try { await MinigameService.mergeGameState(room.id, { witchKillTarget: targetUid }); } catch (e) { console.error('witchKill error:', e); }
     };
     const witchUndoKill = async () => {
-        await MinigameService.mergeGameState(room.id, { witchKillTarget: null });
+        try { await MinigameService.mergeGameState(room.id, { witchKillTarget: null }); } catch (e) { console.error('witchUndoKill error:', e); }
     };
 
     const witchDone = async () => {
-        // Permanently mark abilities as used only when witch finalizes
-        const updates: Record<string, any> = { 'nightActionsComplete/witch': true, phase: 'night-resolve' };
-        if (gs.witchSaveThisNight) updates.witchSaveUsed = true;
-        if (gs.witchKillTarget) updates.witchKillUsed = true;
-        await MinigameService.mergeGameState(room.id, updates);
+        try {
+            const updates: Record<string, any> = { 'nightActionsComplete/witch': true, phase: 'night-resolve' };
+            if (gs.witchSaveThisNight) updates.witchSaveUsed = true;
+            if (gs.witchKillTarget) updates.witchKillUsed = true;
+            await MinigameService.mergeGameState(room.id, updates);
+        } catch (e) { console.error('witchDone error:', e); }
     };
 
     // ---- RESOLVE NIGHT ----
     const resolveNight = async () => {
-        const wolfTarget = gs.wolfTarget;
-        const guardTarget = gs.guardTarget;
-        const witchSaved = gs.witchSaveThisNight;
-        const witchKillTarget = gs.witchKillTarget;
-        let killed: string | null = null;
-        let nightLog = '';
+        try {
+            // BUG FIX: Read FRESH state from room.gameState instead of stale closure `gs`
+            const freshState = (room.gameState || {}) as WerewolfState;
+            const wolfTarget = freshState.wolfTarget;
+            const guardTarget = freshState.guardTarget;
+            const witchSaved = freshState.witchSaveThisNight;
+            const witchKillTarget = freshState.witchKillTarget;
+            const currentRoles = freshState.roles || {};
+            let killed: string | null = null;
+            let nightLog = '';
 
-        // Wolf kill (blocked by guard or witch save)
-        if (wolfTarget) {
-            if (wolfTarget === guardTarget) {
-                nightLog += `🛡️ Bảo vệ đã cứu 1 người! `;
-            } else if (witchSaved) {
-                nightLog += `🧙 Phù thủy đã dùng thuốc cứu! `;
-            } else {
-                killed = wolfTarget;
+            // Build night event log entry
+            const nightEvent: any = {
+                night: freshState.night || 1,
+                type: 'night',
+                wolfTarget: wolfTarget || null,
+                seerTarget: freshState.seerTarget || null,
+                guardTarget: guardTarget || null,
+                witchSave: !!witchSaved,
+                witchKill: witchKillTarget || null,
+                killed: [] as string[],
+                saved: false,
+            };
+
+            // Resolve wolf kill (blocked by guard or witch save — but don't reveal HOW)
+            if (wolfTarget) {
+                if (wolfTarget === guardTarget) {
+                    nightEvent.saved = true;
+                } else if (witchSaved) {
+                    nightEvent.saved = true;
+                } else {
+                    killed = wolfTarget;
+                }
             }
-        }
 
-        // Witch poison
-        if (witchKillTarget && witchKillTarget !== killed) {
-            if (killed) {
-                // Two people die
-                nightLog += `💀 ${playerNames[killed]?.name || '???'} và ${playerNames[witchKillTarget]?.name || '???'} đã chết trong đêm.`;
-                const updatedRoles = { ...gs.roles };
-                updatedRoles[killed] = { ...updatedRoles[killed], alive: false };
-                updatedRoles[witchKillTarget] = { ...updatedRoles[witchKillTarget], alive: false };
+            // Witch poison kill
+            if (witchKillTarget && witchKillTarget !== killed) {
+                if (!killed) {
+                    killed = witchKillTarget;
+                }
+                // If killed is already set (wolf kill), witchKillTarget is added separately below
+            }
+
+            // Collect all dead this night
+            const allKilled: string[] = [];
+            if (killed) allKilled.push(killed);
+            if (witchKillTarget && witchKillTarget !== killed) allKilled.push(witchKillTarget);
+
+            // Build night log message
+            if (allKilled.length > 1) {
+                nightLog += `🩸 Đêm qua là một đêm đẫm máu... ${allKilled.length} người đã không qua khỏi.`;
+            } else if (allKilled.length === 1) {
+                nightLog += '🩸 Đêm qua là một đêm đẫm máu... Có người đã không qua khỏi.';
+            } else {
+                nightLog += '☀️ Đêm qua bình yên, không ai bị hại.';
+            }
+            nightEvent.killed = allKilled;
+
+            const prevLog = freshState.gameLog || [];
+            // Common reset fields to clean up night actions
+            const nightResetFields = {
+                wolfVotes: null, wolfTarget: null,
+                guardTarget: null, witchSaveThisNight: false, witchKillTarget: null,
+                seerTarget: null, seerResult: null, nightActionsComplete: null,
+            };
+
+            if (allKilled.length > 0) {
+                const updatedRoles = { ...currentRoles };
+                allKilled.forEach(uid => {
+                    updatedRoles[uid] = { ...updatedRoles[uid], alive: false };
+                });
                 const result = checkGameEnd(updatedRoles);
                 await MinigameService.mergeGameState(room.id, {
+                    ...nightResetFields,
                     roles: updatedRoles, nightLog, nightKilled: killed,
                     guardLastTarget: guardTarget,
+                    gameLog: [...prevLog, nightEvent],
                     phase: result ? 'gameover' : 'day-discussion',
                     ...(result ? { gameResult: result } : {}),
                 });
-                await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: nightLog, timestamp: Date.now(), channel: 'system' });
                 if (result) await saveGameHistory(result, updatedRoles);
-                return;
             } else {
-                killed = witchKillTarget;
-                nightLog += `🧙 Phù thủy đã dùng thuốc độc! `;
+                await MinigameService.mergeGameState(room.id, {
+                    ...nightResetFields,
+                    nightLog, nightKilled: null, guardLastTarget: guardTarget,
+                    gameLog: [...prevLog, nightEvent],
+                    phase: 'day-discussion',
+                });
             }
-        }
-
-        if (killed) {
-            nightLog += `💀 ${playerNames[killed]?.name || '???'} đã chết trong đêm.`;
-            const updatedRoles = { ...gs.roles };
-            updatedRoles[killed] = { ...updatedRoles[killed], alive: false };
-            const result = checkGameEnd(updatedRoles);
-            await MinigameService.mergeGameState(room.id, {
-                roles: updatedRoles, nightLog, nightKilled: killed,
-                guardLastTarget: guardTarget,
-                phase: result ? 'gameover' : 'day-discussion',
-                ...(result ? { gameResult: result } : {}),
-            });
-            if (result) await saveGameHistory(result, updatedRoles);
-        } else {
-            nightLog += '☀️ Đêm bình yên, không ai bị hại.';
-            await MinigameService.mergeGameState(room.id, {
-                nightLog, nightKilled: null, guardLastTarget: guardTarget,
-                phase: 'day-discussion',
-            });
-        }
-        await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: nightLog, timestamp: Date.now(), channel: 'system' });
+            await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: allKilled.length > 0 ? '🩸 Đêm qua là một đêm đẫm máu... Trời sáng rồi.' : '☀️ Đêm qua bình yên. Trời sáng rồi.', timestamp: Date.now(), channel: 'system' });
+        } catch (e) { console.error('resolveNight error:', e); throw e; }
     };
 
     // ---- DAY VOTE ----
     const dayVote = async (targetUid: string) => {
-        const newVotes = { ...(gs.votes || {}), [myUid]: targetUid };
-        const newSkip = (gs.skipVotes || []).filter(u => u !== myUid);
-        await MinigameService.mergeGameState(room.id, { votes: newVotes, skipVotes: newSkip });
+        try {
+            const newVotes = { ...(gs.votes || {}), [myUid]: targetUid };
+            const newSkip = (gs.skipVotes || []).filter(u => u !== myUid);
+            await MinigameService.mergeGameState(room.id, { votes: newVotes, skipVotes: newSkip });
+        } catch (e) { console.error('dayVote error:', e); }
     };
 
     const daySkip = async () => {
-        const newSkip = [...(gs.skipVotes || []).filter(u => u !== myUid), myUid];
-        const newVotes = { ...(gs.votes || {}) };
-        delete newVotes[myUid];
-        await MinigameService.mergeGameState(room.id, { votes: newVotes, skipVotes: newSkip });
+        try {
+            const newSkip = [...(gs.skipVotes || []).filter(u => u !== myUid), myUid];
+            const newVotes = { ...(gs.votes || {}) };
+            delete newVotes[myUid];
+            await MinigameService.mergeGameState(room.id, { votes: newVotes, skipVotes: newSkip });
+        } catch (e) { console.error('daySkip error:', e); }
     };
 
     const resolveVote = async () => {
-        const votes = gs.votes || {};
-        const skipCount = (gs.skipVotes || []).length;
-        const voteCounts: Record<string, number> = {};
-        Object.values(votes).forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
-        const maxVotes = Math.max(0, ...Object.values(voteCounts));
-        const topTargets = Object.entries(voteCounts).filter(([, c]) => c === maxVotes);
+        try {
+            const votes = gs.votes || {};
+            const skipCount = (gs.skipVotes || []).length;
+            const voteCounts: Record<string, number> = {};
+            Object.values(votes).forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
+            const maxVotes = Math.max(0, ...Object.values(voteCounts));
+            const topTargets = Object.entries(voteCounts).filter(([, c]) => c === maxVotes);
 
-        if (maxVotes === 0 || skipCount > maxVotes || topTargets.length > 1) {
-            const msg = '⚖️ Không đủ phiếu hoặc hòa — không ai bị treo cổ.';
-            await MinigameService.mergeGameState(room.id, { voteResult: null, phase: 'day-result' });
-            await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: msg, timestamp: Date.now(), channel: 'system' });
-        } else {
-            // Enter defense phase — the most voted player gets 60s to defend themselves
-            const defenseTarget = topTargets[0][0];
-            const dName = playerNames[defenseTarget]?.name || '???';
-            const msg = `⚠️ ${dName} nhận nhiều phiếu nhất (${maxVotes} phiếu). Hãy biện hộ trong 60 giây!`;
-            await MinigameService.mergeGameState(room.id, {
-                phase: 'day-defense',
-                defenseTarget,
-                defenseVoteCount: maxVotes,
-                defenseStartedAt: Date.now(),
-                preDefenseVotes: { ...votes },
-                preDefenseSkipVotes: [...(gs.skipVotes || [])],
-            });
-            await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: msg, timestamp: Date.now(), channel: 'system' });
-        }
+            if (maxVotes === 0 || skipCount > maxVotes || topTargets.length > 1) {
+                const msg = '⚖️ Không đủ phiếu hoặc hòa — không ai bị treo cổ.';
+                await MinigameService.mergeGameState(room.id, { voteResult: null, phase: 'day-result' });
+                await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: msg, timestamp: Date.now(), channel: 'system' });
+            } else {
+                const defenseTarget = topTargets[0][0];
+                const dName = playerNames[defenseTarget]?.name || '???';
+                const msg = `⚠️ ${dName} nhận nhiều phiếu nhất (${maxVotes} phiếu). Hãy biện hộ trong 60 giây!`;
+                await MinigameService.mergeGameState(room.id, {
+                    phase: 'day-defense',
+                    defenseTarget,
+                    defenseVoteCount: maxVotes,
+                    defenseStartedAt: Date.now(),
+                    preDefenseVotes: { ...votes },
+                    preDefenseSkipVotes: [...(gs.skipVotes || [])],
+                });
+                await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: msg, timestamp: Date.now(), channel: 'system' });
+            }
+        } catch (e) { console.error('resolveVote error:', e); }
     };
 
     // After defense, start revote period (10s)
     const startRevote = async () => {
-        const dName = playerNames[gs.defenseTarget || '']?.name || '???';
-        const msg = `🗳️ ${dName} đã biện hộ xong. Bạn có 10 giây để thay đổi quyết định!`;
-        await MinigameService.mergeGameState(room.id, {
-            phase: 'day-revote',
-            revoteStartedAt: Date.now(),
-        });
-        await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: msg, timestamp: Date.now(), channel: 'system' });
+        try {
+            const dName = playerNames[gs.defenseTarget || '']?.name || '???';
+            const msg = `🗳️ ${dName} đã biện hộ xong. Bạn có 10 giây để thay đổi quyết định!`;
+            await MinigameService.mergeGameState(room.id, {
+                phase: 'day-revote',
+                revoteStartedAt: Date.now(),
+            });
+            await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: msg, timestamp: Date.now(), channel: 'system' });
+        } catch (e) { console.error('startRevote error:', e); }
     };
 
     // Final vote resolution after revote period
     const finalResolveVote = async () => {
-        const votes = gs.votes || {};
-        const skipCount = (gs.skipVotes || []).length;
-        const voteCounts: Record<string, number> = {};
-        Object.values(votes).forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
-        const maxVotes = Math.max(0, ...Object.values(voteCounts));
-        const topTargets = Object.entries(voteCounts).filter(([, c]) => c === maxVotes);
-        let msg = '';
+        try {
+            const votes = gs.votes || {};
+            const skipCount = (gs.skipVotes || []).length;
+            const voteCounts: Record<string, number> = {};
+            Object.values(votes).forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
+            const maxVotes = Math.max(0, ...Object.values(voteCounts));
+            const topTargets = Object.entries(voteCounts).filter(([, c]) => c === maxVotes);
+            let msg = '';
 
-        if (maxVotes === 0 || skipCount > maxVotes || topTargets.length > 1) {
-            msg = '⚖️ Sau khi thay đổi phiếu, không đủ phiếu hoặc hòa — không ai bị treo cổ.';
-            await MinigameService.mergeGameState(room.id, { voteResult: null, phase: 'day-result', defenseTarget: null, defenseVoteCount: null, defenseStartedAt: null, revoteStartedAt: null, preDefenseVotes: null, preDefenseSkipVotes: null });
-        } else {
-            const eliminated = topTargets[0][0];
-            const updatedRoles = { ...gs.roles };
-            updatedRoles[eliminated] = { ...updatedRoles[eliminated], alive: false };
-            const eName = playerNames[eliminated]?.name || '???';
-            msg = `⚔️ ${eName} bị treo cổ!`;
-            const result = checkGameEnd(updatedRoles);
-            await MinigameService.mergeGameState(room.id, {
-                roles: updatedRoles, voteResult: eliminated,
-                phase: result ? 'gameover' : 'day-result',
-                ...(result ? { gameResult: result } : {}),
-                defenseTarget: null, defenseVoteCount: null, defenseStartedAt: null, revoteStartedAt: null, preDefenseVotes: null, preDefenseSkipVotes: null,
-            });
-            if (result) await saveGameHistory(result, updatedRoles);
-        }
-        await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: msg, timestamp: Date.now(), channel: 'system' });
+            // Build day event log entry
+            const dayEvent: any = {
+                night: gs.night || 1,
+                type: 'day',
+                votes: { ...votes },
+                skipVotes: [...(gs.skipVotes || [])],
+                voteResult: null as string | null,
+                killed: [] as string[],
+            };
+            const prevLog = gs.gameLog || [];
+
+            if (maxVotes === 0 || skipCount > maxVotes || topTargets.length > 1) {
+                msg = '⚖️ Sau khi thay đổi phiếu, không đủ phiếu hoặc hòa — không ai bị treo cổ.';
+                await MinigameService.mergeGameState(room.id, { voteResult: null, phase: 'day-result', gameLog: [...prevLog, dayEvent], defenseTarget: null, defenseVoteCount: null, defenseStartedAt: null, revoteStartedAt: null, preDefenseVotes: null, preDefenseSkipVotes: null });
+            } else {
+                const eliminated = topTargets[0][0];
+                dayEvent.voteResult = eliminated;
+                dayEvent.killed = [eliminated];
+                const updatedRoles = { ...gs.roles };
+                updatedRoles[eliminated] = { ...updatedRoles[eliminated], alive: false };
+                const eName = playerNames[eliminated]?.name || '???';
+                msg = `⚔️ ${eName} bị treo cổ!`;
+                const result = checkGameEnd(updatedRoles);
+                await MinigameService.mergeGameState(room.id, {
+                    roles: updatedRoles, voteResult: eliminated,
+                    gameLog: [...prevLog, dayEvent],
+                    phase: result ? 'gameover' : 'day-result',
+                    ...(result ? { gameResult: result } : {}),
+                    defenseTarget: null, defenseVoteCount: null, defenseStartedAt: null, revoteStartedAt: null, preDefenseVotes: null, preDefenseSkipVotes: null,
+                });
+                if (result) await saveGameHistory(result, updatedRoles);
+            }
+            await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: msg, timestamp: Date.now(), channel: 'system' });
+        } catch (e) { console.error('finalResolveVote error:', e); }
     };
 
     const checkGameEnd = (roles: any): string | null => {
@@ -749,27 +1660,46 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
     };
 
     const startDayVote = async () => {
-        await MinigameService.mergeGameState(room.id, { phase: 'day-vote', votes: {}, skipVotes: [] });
-        await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: '🗳️ Bỏ phiếu bắt đầu! Chọn người nghi ngờ hoặc bỏ qua.', timestamp: Date.now(), channel: 'system' });
+        try {
+            await MinigameService.mergeGameState(room.id, { phase: 'day-vote', votes: {}, skipVotes: [] });
+            await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: '🗳️ Bỏ phiếu bắt đầu! Chọn người nghi ngờ hoặc bỏ qua.', timestamp: Date.now(), channel: 'system' });
+        } catch (e) { console.error('startDayVote error:', e); }
     };
 
     const resetGame = async () => {
-        await MinigameService.clearChat(room.id);
-        await MinigameService.updateGameState(room.id, { phase: 'waiting' });
+        try {
+            // Save current roles so next assignRoles can avoid repeat assignments
+            const currentRoles = gs.roles || null;
+            await MinigameService.clearChat(room.id);
+            // Full reset: clear ALL game state to ensure clean slate
+            await MinigameService.updateGameState(room.id, {
+                phase: 'waiting',
+                roles: null, previousRoles: currentRoles, night: 0,
+                wolfVotes: null, wolfTarget: null,
+                guardTarget: null, guardLastTarget: null,
+                witchSaveUsed: false, witchKillUsed: false,
+                witchSaveThisNight: false, witchKillTarget: null,
+                nightActionsComplete: null, nightKilled: null, nightLog: null,
+                votes: null, skipVotes: null, voteResult: null, gameLog: null,
+                seerTarget: null, seerResult: null,
+                defenseTarget: null, defenseStartedAt: null,
+                revoteStartedAt: null, gameResult: null,
+            });
+        } catch (e) { console.error('resetGame error:', e); }
     };
 
     // ---- HELPER: Player Card ----
     const PlayerCard: React.FC<{ p: typeof playerList[0]; onClick?: () => void; selected?: boolean; disabled?: boolean; extra?: React.ReactNode }> = ({ p, onClick, selected, disabled, extra }) => {
         const r = gs.roles?.[p.uid];
+        const isDead = r && !r.alive;
         return (
             <button onClick={onClick} disabled={disabled || !onClick}
                 className={clsx("w-full flex items-center gap-2 p-2 rounded-xl text-left text-base transition-all",
                     selected ? "bg-[#2a0a0a] ring-2 ring-[#8b1a1a]" : "hover:bg-[#221f30] border border-transparent hover:border-[#8b5c3a]/20",
-                    disabled && "opacity-40 cursor-not-allowed",
-                    !r?.alive && "opacity-30 line-through")}>
-                <div className="relative w-7 h-7 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
-                <span className="font-medium flex-1 text-[#e8dcc8]">{p.name}</span>
-                {!r?.alive && <Skull size={14} className="text-[#c62828]" />}
+                    disabled && "opacity-40 cursor-not-allowed")}>
+                <div className={clsx("relative w-7 h-7 rounded-full shrink-0", isDead ? "ww-avatar-dead" : "ww-avatar-spooky")} style={{overflow:'visible'}}><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32&background=2a1f3d&color=c9873a`} className="w-full h-full object-cover rounded-full" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px] rounded-full" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
+                <span className={clsx("font-medium flex-1", isDead ? "text-[#6b5f50] line-through opacity-60" : "text-[#e8dcc8]")}>{p.name}</span>
+                {isDead && <Skull size={14} className="text-[#c62828] shrink-0" />}
                 {p.uid === room.hostId && <Crown size={12} className="text-[#c9873a]" />}
                 {extra}
             </button>
@@ -778,6 +1708,13 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
 
     // ---- HELPER: Left Column (role card + info) ----
     const [roleCardFlipped, setRoleCardFlipped] = useState(false);
+
+    // Reset card flip when game resets or new roles assigned
+    useEffect(() => {
+        if (phase === 'waiting' || phase === 'roles-assigned') {
+            setRoleCardFlipped(false);
+        }
+    }, [phase]);
 
     // Auto-flip card back after 5 seconds
     useEffect(() => {
@@ -818,20 +1755,20 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
 
 
 
-                {/* Player status (desktop only) — always visible */}
-                <div className="hidden md:block ww-glass rounded-xl p-3 w-full">
+                {/* Player status — visible on both mobile and desktop */}
+                <div className="ww-glass rounded-xl p-3 w-full">
                     <p className="text-sm font-bold mb-2 ww-glow-gold" style={{ fontFamily: "'Playfair Display', serif", color: '#c9873a' }}>
                         <Users size={14} className="inline mr-1" /> Ngôi Làng ({alivePlayers.length}/{playerList.length})
                     </p>
                     <div className="space-y-1">
                         {playerList.map(p => {
                             const r = gs.roles?.[p.uid];
+                            const isDead = r && !r.alive;
                             return (
-                                <div key={p.uid} className={clsx("flex items-center gap-2 py-1 px-2 rounded-lg text-sm", !r?.alive && "opacity-40")}>
-                                    <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=24`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
-                                    <span className={clsx("flex-1", !r?.alive && "line-through")} style={{ color: '#e8dcc8' }}>{p.name}</span>
-                                    {!r?.alive && <Skull size={12} style={{ color: '#c62828' }} />}
-                                    {r?.alive && <span className="w-2 h-2 rounded-full bg-emerald-500 ww-pulse-glow" />}
+                                <div key={p.uid} className={clsx("flex items-center gap-2 py-1 px-2 rounded-lg text-sm", isDead && "opacity-60")}>
+                                    <div className={clsx("relative w-5 h-5 rounded-full shrink-0", isDead ? "ww-avatar-dead" : "ww-avatar-spooky")} style={{overflow:'visible'}}><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=24&background=2a1f3d&color=c9873a`} className="w-full h-full object-cover rounded-full" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px] rounded-full" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
+                                    <span className={clsx("flex-1", isDead ? "line-through text-[#6b5f50]" : "text-[#e8dcc8]")}>{p.name}</span>
+                                    {isDead ? <Skull size={12} style={{ color: '#c62828' }} /> : <span className="w-2 h-2 rounded-full bg-emerald-500 ww-pulse-glow" />}
                                 </div>
                             );
                         })}
@@ -843,10 +1780,60 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
     };
 
     // ---- GAME PHASE LAYOUT: Two-column on PC ----
-    const GamePhaseLayout: React.FC<{ children: React.ReactNode; showCard?: boolean; className?: string }> = ({ children, showCard = true, className }) => {
+    // NOTE: This is a RENDER FUNCTION, not a React component.
+    // Defining it as a component inside OnlineWerewolf caused it to be
+    // recreated on every render (new function reference = new component type),
+    // which unmounted/remounted all children (including ChatBox) every second
+    // during countdown timers, causing visible flickering.
+    const renderPhaseLayout = (children: React.ReactNode, showCard = true, className?: string) => {
         const hasLeftColumn = showCard && myRole && phase !== 'waiting' && phase !== 'gameover';
+        const showAdminReset = isHost && phase !== 'waiting' && phase !== 'gameover';
         return (
-            <div className={clsx("werewolf-gothic ww-texture max-w-5xl mx-auto p-4 rounded-2xl", className)}>
+            <div className={clsx("werewolf-gothic ww-texture max-w-5xl mx-auto p-4 rounded-2xl relative", className)}>
+                {/* Atmospheric Effects */}
+                <WerewolfAtmosphere phase={phase} />
+                <PhaseTransitionFlash phase={phase} />
+
+                {/* Audio Toggle */}
+                <button
+                    onClick={toggleAudio}
+                    className="absolute top-2 left-2 z-20 flex items-center gap-1 px-2.5 py-1.5 bg-[#1a0a0a]/70 hover:bg-[#2a0a0a] border border-[#8b5c3a]/30 hover:border-[#c9873a]/50 rounded-xl text-xs font-medium transition-all backdrop-blur-sm"
+                    title={audioMuted ? 'Bật âm thanh' : 'Tắt âm thanh'}
+                >
+                    {audioMuted ? <VolumeX size={14} className="text-[#8b5c3a]/70" /> : <Volume2 size={14} className="text-[#c9873a]" />}
+                    <span className={audioMuted ? 'text-[#8b5c3a]/50' : 'text-[#c9873a]/80'}>{audioMuted ? '🔇' : '🔊'}</span>
+                </button>
+
+                {/* Admin Reset Button */}
+                {showAdminReset && (
+                    <div className="absolute top-2 right-2 z-20">
+                        {showResetConfirm ? (
+                            <div className="flex items-center gap-1.5 bg-[#1a0a0a]/95 border border-[#c62828]/50 rounded-xl px-3 py-2 shadow-lg backdrop-blur-sm">
+                                <span className="text-xs text-[#e8a0a0] font-medium">Reset game?</span>
+                                <button
+                                    onClick={() => { resetGame(); setShowResetConfirm(false); }}
+                                    className="px-2.5 py-1 bg-[#c62828] hover:bg-[#d32f2f] text-white rounded-lg text-xs font-bold transition-colors"
+                                >
+                                    Xác nhận
+                                </button>
+                                <button
+                                    onClick={() => setShowResetConfirm(false)}
+                                    className="px-2.5 py-1 bg-[#333] hover:bg-[#444] text-[#aaa] rounded-lg text-xs font-medium transition-colors"
+                                >
+                                    Hủy
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => setShowResetConfirm(true)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 bg-[#1a0a0a]/70 hover:bg-[#2a0a0a] border border-[#8b1a1a]/30 hover:border-[#c62828]/50 rounded-xl text-xs text-[#c62828]/70 hover:text-[#c62828] font-medium transition-all backdrop-blur-sm"
+                                title="Reset game (Admin)"
+                            >
+                                <RotateCcw size={12} /> Reset
+                            </button>
+                        )}
+                    </div>
+                )}
                 {hasLeftColumn ? (
                     <div className="ww-game-layout">
                         {renderLeftColumn()}
@@ -947,26 +1934,283 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
         );
     };
 
+    // ---- GAME HISTORY PANEL ----
+    const [showHistory, setShowHistory] = useState(false);
+    const [expandedMatch, setExpandedMatch] = useState<string | null>(null);
+
+    const renderHistory = () => {
+        if (!showHistory) return null;
+        const formatDuration = (s: number) => {
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            return m > 0 ? `${m} phút ${sec}s` : `${sec}s`;
+        };
+        const formatTime = (ts: number) => {
+            const d = new Date(ts);
+            const day = d.getDate().toString().padStart(2, '0');
+            const month = (d.getMonth() + 1).toString().padStart(2, '0');
+            const h = d.getHours().toString().padStart(2, '0');
+            const min = d.getMinutes().toString().padStart(2, '0');
+            return `${day}/${month} ${h}:${min}`;
+        };
+
+        return (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: 'rgba(10,8,18,0.92)' }} onClick={() => setShowHistory(false)}>
+                <div className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border border-[#8b5c3a]/40 overflow-hidden"
+                    style={{ background: 'linear-gradient(135deg, #1a1825 0%, #0f0e1a 100%)' }} onClick={e => e.stopPropagation()}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-[#8b5c3a]/30"
+                        style={{ background: 'linear-gradient(135deg, #1e1a2e 0%, #16141f 100%)' }}>
+                        <h3 className="text-lg font-bold flex items-center gap-2" style={{ fontFamily: "'Playfair Display', serif", color: '#c9873a' }}>
+                            📜 Lịch sử trận đấu
+                        </h3>
+                        <button onClick={() => setShowHistory(false)}
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-[#6b5f50] hover:text-[#c9873a] hover:bg-[#8b5c3a]/20 transition-all text-lg font-bold">✕</button>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                        {gameHistory.length === 0 ? (
+                            <div className="text-center py-12">
+                                <p className="text-4xl mb-3">🐺</p>
+                                <p className="text-[#6b5f50] text-base">Chưa có trận đấu nào.</p>
+                                <p className="text-[#6b5f50]/60 text-sm mt-1">Hãy bắt đầu ván chơi đầu tiên!</p>
+                            </div>
+                        ) : gameHistory.map((g) => {
+                            const isExpanded = expandedMatch === g.id;
+                            const isVillageWin = g.winnerTeam === 'village';
+                            const playerEntries = Object.entries(g.players);
+                            const wolves = playerEntries.filter(([, p]) => p.role === 'Ma Sói');
+                            const villagers = playerEntries.filter(([, p]) => p.role !== 'Ma Sói');
+
+                            return (
+                                <div key={g.id} className="rounded-xl border border-[#8b5c3a]/25 overflow-hidden transition-all hover:border-[#c9873a]/40"
+                                    style={{ background: 'rgba(26,24,37,0.7)' }}>
+                                    {/* Match summary row */}
+                                    <button onClick={() => setExpandedMatch(isExpanded ? null : g.id)}
+                                        className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 hover:bg-[#8b5c3a]/10 transition-all">
+                                        <span className="text-2xl shrink-0">{isVillageWin ? '🏡' : '🐺'}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-sm truncate" style={{ color: isVillageWin ? '#7ab87a' : '#c62828', fontFamily: "'Playfair Display', serif" }}>
+                                                {g.result}
+                                            </p>
+                                            <div className="flex items-center gap-2 text-xs text-[#6b5f50] mt-0.5">
+                                                <span>🌙 {g.nightCount || '?'} đêm</span>
+                                                <span>•</span>
+                                                <span>👥 {playerEntries.length} người</span>
+                                                {g.duration != null && <><span>•</span><span>⏱ {formatDuration(g.duration)}</span></>}
+                                            </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <p className="text-[10px] text-[#6b5f50]">{formatTime(g.finishedAt)}</p>
+                                            <span className={clsx("text-xs transition-transform inline-block", isExpanded && "rotate-180")}>▼</span>
+                                        </div>
+                                    </button>
+
+                                    {/* Expanded details */}
+                                    {isExpanded && (
+                                        <div className="px-3 pb-3 border-t border-[#8b5c3a]/15 pt-2 space-y-2">
+                                            {/* Wolves */}
+                                            <div>
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-[#c62828] mb-1">🐺 Phe Sói</p>
+                                                <div className="space-y-1">
+                                                    {wolves.map(([uid, p]) => (
+                                                        <div key={uid} className="flex items-center gap-2 text-sm">
+                                                            <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0">
+                                                                <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=24`} className="w-full h-full object-cover" alt="" />
+                                                            </div>
+                                                            <span className={clsx("flex-1 truncate", !p.alive && "line-through text-[#6b5f50]")} style={{ color: p.alive ? '#e8dcc8' : undefined }}>
+                                                                {p.name}
+                                                            </span>
+                                                            {p.won ? <span className="text-emerald-400 text-xs font-bold">✓ Thắng</span> : <span className="text-[#c62828] text-xs">✗ Thua</span>}
+                                                            {!p.alive && <Skull size={10} className="text-[#c62828] shrink-0" />}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            {/* Villagers */}
+                                            <div>
+                                                <p className="text-[10px] font-bold uppercase tracking-wider text-[#7ab87a] mb-1">🏡 Phe Dân</p>
+                                                <div className="space-y-1">
+                                                    {villagers.map(([uid, p]) => (
+                                                        <div key={uid} className="flex items-center gap-2 text-sm">
+                                                            <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0">
+                                                                <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=24`} className="w-full h-full object-cover" alt="" />
+                                                            </div>
+                                                            <span className={clsx("flex-1 truncate", !p.alive && "line-through text-[#6b5f50]")} style={{ color: p.alive ? '#e8dcc8' : undefined }}>
+                                                                {p.name}
+                                                            </span>
+                                                            <span className="text-xs text-[#6b5f50]">{getRoleIconByName(p.role || '')} {p.role}</span>
+                                                            {p.won ? <span className="text-emerald-400 text-xs font-bold">✓ Thắng</span> : <span className="text-[#c62828] text-xs">✗ Thua</span>}
+                                                            {!p.alive && <Skull size={10} className="text-[#c62828] shrink-0" />}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-4 py-2.5 border-t border-[#8b5c3a]/20 text-center"
+                        style={{ background: 'rgba(26,24,37,0.5)' }}>
+                        <p className="text-xs text-[#6b5f50]">Tổng: {gameHistory.length} trận đã chơi</p>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // ============ RENDER PHASES ============
 
     // WAITING
     if (phase === 'waiting') return (
-        <GamePhaseLayout showCard={false} className="text-center">
-            <div className="ww-flicker mb-4">
-                <Moon size={48} className="text-[#c9873a] mx-auto" />
+        renderPhaseLayout(<>
+            {/* Header */}
+            <div className="ww-moon-halo mb-6 mx-auto">
+                <WolfIcon size={64} className="text-[#c9873a] drop-shadow-lg" style={{ filter: 'drop-shadow(0 0 20px rgba(201,135,58,0.4))' }} />
             </div>
-            <h3 className="ww-title text-3xl mb-1">Ma Sói</h3>
-            <p className="ww-body text-base mb-4" style={{ fontFamily: "'Playfair Display', serif" }}>— Phòng Chờ —</p>
-            <div className="flex flex-wrap justify-center gap-2 mb-4">
-                {playerList.map(p => <span key={p.uid} className="px-3 py-1.5 ww-panel rounded-lg text-base font-medium flex items-center gap-2">
-                    <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0 border border-[#8b5c3a]/30"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>{p.name}
-                    {p.uid === room.hostId && <Crown size={12} className="text-[#c9873a]" />}
-                </span>)}
-            </div>
-            <p className="text-sm text-[#6b5f50] mb-4">{playerList.length} linh hồn đã tập trung {playerList.length < 5 ? '(cần tối thiểu 5)' : '✓'}</p>
-            {isHost && playerList.length >= 5 && <button onClick={assignRoles} className="px-8 py-3 ww-btn-primary text-xl shadow-lg">🐺 Chia Vai & Bắt Đầu</button>}
-            {!isHost && <p className="text-sm text-[#6b5f50] italic">Chờ trưởng làng bắt đầu...</p>}
-        </GamePhaseLayout>
+            <h3 className="ww-title ww-ghostly-reveal text-4xl md:text-5xl mb-2">Ma Sói</h3>
+            <p className="ww-body ww-ghostly-reveal text-lg mb-8 tracking-wider" style={{ fontFamily: "'Playfair Display', serif", color: '#a89b85', animationDelay: '0.3s', opacity: 0 }}>— Phòng Chờ —</p>
+
+            {/* Player Circle */}
+            {(() => {
+                const host = playerList.find(p => p.uid === room.hostId);
+                const others = playerList.filter(p => p.uid !== room.hostId);
+                const count = others.length;
+                // All coordinates in a fixed viewBox coordinate system (0-500)
+                const VB = 500;
+                const vcx = VB / 2;
+                const vcy = VB / 2;
+                const vRadius = count <= 4 ? 160 : count <= 6 ? 175 : count <= 8 ? 190 : 200;
+
+                return (
+                    <div className="ww-panel rounded-2xl p-3 md:p-6 mb-6 border border-[#8b5c3a]/20">
+                        {/* Container: responsive width, square aspect ratio */}
+                        <div className="relative mx-auto w-full" style={{ maxWidth: 520, aspectRatio: '1' }}>
+                            {/* SVG decorative lines */}
+                            <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${VB} ${VB}`} preserveAspectRatio="xMidYMid meet" style={{ zIndex: 0 }}>
+                                {others.map((p, i) => {
+                                    const angle = (i / count) * 2 * Math.PI - Math.PI / 2;
+                                    return <line key={p.uid} x1={vcx} y1={vcy} x2={vcx + Math.cos(angle) * vRadius} y2={vcy + Math.sin(angle) * vRadius} stroke="rgba(139,92,58,0.12)" strokeWidth="1" strokeDasharray="4 4" />;
+                                })}
+                                <circle cx={vcx} cy={vcy} r={vRadius} fill="none" stroke="rgba(201,135,58,0.08)" strokeWidth="1" strokeDasharray="6 6" />
+                            </svg>
+
+                            {/* Center - Host */}
+                            {host && (
+                                <div className="absolute" style={{
+                                    left: '50%', top: '50%',
+                                    transform: 'translate(-50%, -50%)',
+                                    zIndex: 10,
+                                }}>
+                                    <div className="ww-avatar-entrance" style={{ opacity: 0 }}>
+                                        <div className="flex flex-col items-center gap-1" style={{ width: 80 }}>
+                                            <div className="ww-avatar-spooky relative w-12 h-12 md:w-16 md:h-16 rounded-full overflow-visible"
+                                                style={{ boxShadow: '0 0 20px rgba(201,135,58,0.4), 0 0 40px rgba(201,135,58,0.2)' }}>
+                                                <img src={host.avatar || `https://ui-avatars.com/api/?name=${host.name}&size=56&background=2a1f3d&color=c9873a&bold=true`} className="w-full h-full object-cover rounded-full" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                                <div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-xs rounded-full" style={{display:'none'}}>{(host.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
+                                                <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#c9873a] rounded-full flex items-center justify-center shadow-lg"><Crown size={10} className="text-white" /></div>
+                                            </div>
+                                            <span className="text-[10px] md:text-xs font-semibold text-[#c9873a] text-center leading-tight truncate w-full">{host.name?.split(' ').slice(-2).join(' ')}</span>
+                                            <span className="text-[7px] md:text-[9px] font-bold uppercase tracking-wider text-[#c9873a]/70">Trưởng làng</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Orbiting players - positioned by percentage */}
+                            {others.map((p, i) => {
+                                const angle = (i / count) * 2 * Math.PI - Math.PI / 2;
+                                const pctX = ((vcx + Math.cos(angle) * vRadius) / VB) * 100;
+                                const pctY = ((vcy + Math.sin(angle) * vRadius) / VB) * 100;
+                                return (
+                                    <div key={p.uid} className="absolute" style={{
+                                        left: `${pctX}%`, top: `${pctY}%`,
+                                        transform: 'translate(-50%, -50%)',
+                                        zIndex: 5,
+                                    }}>
+                                        <div className="ww-avatar-entrance" style={{ opacity: 0, animationDelay: `${i * 0.1}s` }}>
+                                            <div className="flex flex-col items-center gap-0.5" style={{ width: 64 }}>
+                                                <div className="ww-avatar-spooky relative w-8 h-8 md:w-11 md:h-11 rounded-full overflow-visible">
+                                                    <img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=44&background=2a1f3d&color=c9873a&bold=true`} className="w-full h-full object-cover rounded-full" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                                    <div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[9px] rounded-full" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div>
+                                                </div>
+                                                <span className="text-[8px] md:text-[11px] font-semibold text-[#e8dcc8] text-center leading-tight truncate w-full">{p.name?.split(' ').slice(-2).join(' ')}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* Player count */}
+            <p className="text-base text-[#a89b85] mb-6 font-medium">
+                <span className="text-[#c9873a] font-bold">{playerList.length}</span> linh hồn đã tập trung {playerList.length < 5 ? <span className="text-[#8b5c3a]">(cần tối thiểu 5)</span> : <span className="text-emerald-400">✓</span>}
+            </p>
+
+            {/* Role Showcase */}
+            {(() => {
+                const n = playerList.length;
+                const wolfCount = n <= 6 ? 2 : n <= 9 ? 2 : 3;
+                const hasWitch = n >= 6;
+                const villagerCount = Math.max(0, n - wolfCount - 2 - (hasWitch ? 1 : 0));
+                const roleDistribution = [
+                    { ...WOLF_ROLES[0], count: wolfCount },   // Ma Sói
+                    { ...WOLF_ROLES[2], count: 1 },            // Tiên tri
+                    { ...WOLF_ROLES[3], count: 1 },            // Bảo vệ
+                    ...(hasWitch ? [{ ...WOLF_ROLES[4], count: 1 }] : []), // Phù thủy
+                    { ...WOLF_ROLES[1], count: villagerCount }, // Dân làng
+                ].filter(r => r.count > 0);
+
+                return (
+                    <div className="ww-panel rounded-2xl p-4 md:p-6 mb-6 border border-[#8b5c3a]/20">
+                        <p className="text-sm font-bold text-[#c9873a] mb-3 flex items-center justify-center gap-1.5" style={{ fontFamily: "'Playfair Display', serif" }}>
+                            <Users size={14} /> Nhân vật trong ván ({n} người chơi)
+                        </p>
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 md:gap-3">
+                            {roleDistribution.map(r => (
+                                <div key={r.role} className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-gradient-to-b from-[#1a1825]/80 to-[#0f0e1a]/60 border border-[#8b5c3a]/15 hover:border-[#c9873a]/30 transition-all hover:scale-[1.05] group">
+                                    <div className="relative w-14 h-20 md:w-16 md:h-24 rounded-lg overflow-hidden shadow-lg group-hover:shadow-[#c9873a]/20 transition-shadow">
+                                        <img src={r.cardImage} alt={r.role} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                        <div className="av-fb absolute inset-0 bg-gradient-to-br from-[#2a1f3d] to-[#1a0f2d] items-center justify-center text-3xl" style={{display:'none'}}>{r.icon}</div>
+                                    </div>
+                                    <span className="text-xs md:text-sm font-bold text-[#e8dcc8] text-center leading-tight">{r.icon} {r.role}</span>
+                                    <span className="text-[10px] font-bold text-[#c9873a] bg-[#c9873a]/10 px-1.5 py-0.5 rounded-full">×{r.count}</span>
+                                    <p className="text-[9px] md:text-[10px] text-[#8b7b6b] text-center leading-tight line-clamp-2 hidden sm:block">{r.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* Action buttons */}
+            {isHost && playerList.length >= 5 && (
+                <button onClick={assignRoles} className="w-full max-w-sm mx-auto block px-8 py-4 ww-btn-primary text-xl shadow-xl hover:scale-105 transition-transform">
+                    🐺 Chia Vai & Bắt Đầu
+                </button>
+            )}
+            {!isHost && <p className="text-base text-[#6b5f50] italic animate-pulse">Chờ trưởng làng bắt đầu...</p>}
+
+            {/* History button */}
+            {gameHistory.length > 0 && (
+                <button onClick={() => setShowHistory(true)}
+                    className="mt-4 px-6 py-2.5 rounded-xl text-sm font-bold transition-all border border-[#8b5c3a]/40 hover:border-[#c9873a]/60 hover:bg-[#8b5c3a]/15"
+                    style={{ color: '#c9873a', background: 'rgba(26,24,37,0.6)' }}>
+                    📜 Lịch sử trận đấu ({gameHistory.length})
+                </button>
+            )}
+            {renderHistory()}
+
+            {renderStats()}
+        </>, false, "text-center")
     );
 
     // ---- HELPER: get wolf teammates ----
@@ -977,53 +2221,67 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
             .map(([uid]) => ({ uid, ...playerNames[uid] }));
     };
 
-    // ROLES ASSIGNED
+    // ROLES ASSIGNED — Single scratch-to-reveal card only
     if (phase === 'roles-assigned') {
         const wolfTeammates = getWolfTeammates();
+        const roleInfo = myRole ? WOLF_ROLES.find(r => r.role === myRole.role) : null;
         return (
-            <GamePhaseLayout className="text-center">
-                <h3 className="ww-title text-xl mb-4">🃏 Số Phận Đã Được Quyết Định</h3>
-                {myRole && (() => {
-                    const roleInfo = WOLF_ROLES.find(r => r.role === myRole.role);
-                    return (
-                        <div className="ww-panel rounded-2xl p-6 mb-4">
-                            {showMyRole ? (
-                                <motion.div initial={{ rotateY: 90 }} animate={{ rotateY: 0 }} className="flex flex-col items-center">
-                                    <RoleAssignCard cardImage={roleInfo?.cardImage} roleName={myRole.role} roleIcon={myRole.icon} />
-                                    <p className="font-bold text-[#c9873a] text-xl">{myRole.icon} {myRole.role}</p>
-                                    <p className="text-sm text-[#6b5f50] mt-1 italic">{getRoleDesc(myRole.role)}</p>
-                                    <p className="text-sm text-[#6b5f50] mt-2">Giữ bí mật vai trò của bạn!</p>
-                                    {/* Wolf teammate recognition */}
-                                    {myRole.role === 'Ma Sói' && wolfTeammates.length > 0 && (
-                                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
-                                            className="mt-4 p-3 ww-panel-blood rounded-xl w-full">
-                                            <p className="text-sm font-bold text-[#c62828] mb-2 flex items-center justify-center gap-1">
-                                                <Users size={12} /> 🐺 Đồng đội Ma Sói của bạn:
-                                            </p>
-                                            <div className="flex flex-wrap justify-center gap-2">
-                                                {wolfTeammates.map(w => (
-                                                    <span key={w.uid} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#2a0a0a] rounded-lg text-sm font-medium text-[#c9873a]">
-                                                        <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0"><img src={w.avatar || `https://ui-avatars.com/api/?name=${w.name}&size=24`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px]" style={{display:'none'}}>{(w.name||'?').split(' ').map((w2: string)=>w2[0]).join('').slice(0,2)}</div></div>
-                                                        {w.name} 🐺
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </motion.div>
-                            ) : (
-                                <div className="flex flex-col items-center">
-                                    <RoleAssignCard isBack />
-                                    <button onClick={() => setShowMyRole(true)} className="px-6 py-3 ww-btn-primary shadow-md"><Eye size={18} className="inline mr-2" /> Lật bài xem vai trò</button>
-                                </div>
-                            )}
-                        </div>
-                    );
-                })()}
-                {isHost && <button onClick={startNight} className="px-6 py-3 ww-btn-night">🌙 Bắt đầu Đêm 1</button>}
+            renderPhaseLayout(<>
+                <div className="flex flex-col items-center justify-center w-full" style={{ minHeight: 'min(70vh, 600px)' }}>
+                    {myRole && (
+                        <>
+                            <ScratchRevealCard
+                                cardImage={roleInfo?.cardImage}
+                                roleName={myRole.role}
+                                roleIcon={myRole.icon}
+                                onRevealed={() => setShowMyRole(true)}
+                            />
+                            <motion.p
+                                className="mt-2 text-base text-[#8b5c3a] font-medium"
+                                animate={{ opacity: [0.5, 1, 0.5] }}
+                                transition={{ duration: 2, repeat: Infinity }}
+                            >
+                                {showMyRole === true ? '✨ Vai trò đã được tiết lộ!' : '👆 Cào thẻ để xem vai trò'}
+                            </motion.p>
+                            <AnimatePresence>
+                                {showMyRole === true && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 20 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: 20 }}
+                                        transition={{ delay: 0.3 }}
+                                        className="mt-4 text-center"
+                                    >
+                                        <p className="font-bold text-[#c9873a] text-2xl" style={{ fontFamily: "'Playfair Display', serif" }}>{myRole.icon} {myRole.role}</p>
+                                        <p className="text-sm text-[#a89b85] mt-1 italic max-w-xs mx-auto">{getRoleDesc(myRole.role)}</p>
+                                        <p className="text-xs text-[#6b5f50] mt-2 flex items-center justify-center gap-1"><Shield size={12} /> Giữ bí mật vai trò của bạn!</p>
+                                        {myRole.role === 'Ma Sói' && wolfTeammates.length > 0 && (
+                                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}
+                                                className="mt-4 p-3 ww-panel-blood rounded-xl">
+                                                <p className="text-sm font-bold text-[#c62828] mb-2 flex items-center justify-center gap-1">
+                                                    <Users size={12} /> 🐺 Đồng đội Ma Sói:
+                                                </p>
+                                                <div className="flex flex-wrap justify-center gap-2">
+                                                    {wolfTeammates.map(w => (
+                                                        <span key={w.uid} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#2a0a0a] rounded-lg text-sm font-medium text-[#c9873a]">
+                                                            <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0"><img src={w.avatar || `https://ui-avatars.com/api/?name=${w.name}&size=24`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px]" style={{display:'none'}}>{(w.name||'?').split(' ').map((w2: string)=>w2[0]).join('').slice(0,2)}</div></div>
+                                                            {w.name} 🐺
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </>
+                    )}
+                </div>
+
+                {isHost && <button onClick={startNight} className="px-6 py-3 ww-btn-night mt-4">🌙 Bắt đầu Đêm 1</button>}
                 <GameEventLog roomId={room.id} />
-                <SeparatedChats roomId={room.id} myUid={myUid} myName={myName} myAvatar={myAvatar} channel={getChatChannel()} visibleChannels={getVisibleChannels()} title="💬 Chat trước khi vào đêm" canSwitchToWolf={isWolf} />
-            </GamePhaseLayout>
+                <SeparatedChats roomId={room.id} myUid={myUid} myName={myName} myAvatar={myAvatar} channel={getChatChannel()} visibleChannels={getVisibleChannels()} title="💬 Chat trước khi vào đêm" canSwitchToWolf={isWolf && showMyRole === true} />
+            </>, false, "text-center")
         );
     }
 
@@ -1033,10 +2291,10 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
         const myVote = gs.wolfVotes?.[myUid];
         const wolfTeammates = getWolfTeammates();
         return (
-            <GamePhaseLayout>
+            renderPhaseLayout(<>
 
                 <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
-                    <Moon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
                     <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
                     <p className="text-[#6b5f50] text-base mt-1">🐺 Ma Sói thức dậy...</p>
                 </div>
@@ -1077,55 +2335,87 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                         )}
                     </div>
                 )}
-            </GamePhaseLayout>
+            </>)
         );
     }
 
-    // NIGHT - SEER
+    // NIGHT - SEER PEEK (choose 1 person to peek at)
     if (phase === 'night-seer') {
         const isSeer = myRole?.role === 'Tiên tri' && myRole.alive;
-        const hasSeerAlive = Object.entries(gs.roles || {}).some(([, r]) => (r as any).role === 'Tiên tri' && (r as any).alive);
-        return (
-            <GamePhaseLayout>
-
+        if (!hasSeerAlive) {
+            return renderPhaseLayout(<>
                 <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
-                    <Moon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
                     <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
-                    <p className="text-[#c9a3e8] text-base mt-1">🔮 Tiên tri thức dậy...</p>
+                    <p className="text-[#a3c9a8] text-base mt-1">🔮 Tiên tri đã ngã xuống...</p>
+                </div>
+                <Loader2 size={20} className="animate-spin mx-auto text-[#a3c9a8]" />
+                <p className="text-base text-[#6b5f50] text-center mt-2">Đang xử lý...</p>
+            </>, false, "text-center");
+        }
+        return (
+            renderPhaseLayout(<>
+                <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
+                    <p className="text-[#a3c9a8] text-base mt-1">🔮 Tiên tri thức dậy...</p>
                 </div>
                 {isSeer ? (
                     <div>
-                        <p className="text-base font-bold text-[#9b6bc4] mb-2">🔮 Chọn người muốn soi:</p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mb-3">
-                            {aliveOthers.map(p => {
-                                const known = gs.seerResults?.[p.uid];
-                                return (
-                                    <PlayerCard key={p.uid} p={p} onClick={() => seerCheck(p.uid)} disabled={!!known}
-                                        extra={known ? <span className="text-sm text-[#c9873a] font-bold">{gs.roles?.[p.uid]?.icon} {known}</span> : undefined} />
-                                );
-                            })}
-                        </div>
-                        <button onClick={skipSeer} className="w-full py-2 text-base text-[#6b5f50] hover:text-slate-600">Bỏ qua</button>
+                        {/* Show seer result if already peeked */}
+                        {gs.seerTarget && gs.seerResult ? (
+                            <div className="text-center p-4">
+                                <p className="text-lg font-bold text-[#c9873a] mb-3">🔮 Kết quả soi:</p>
+                                <p className="text-xl font-bold text-[#e8dcc8] mb-2">{playerNames[gs.seerTarget]?.name || '???'}</p>
+                                {gs.seerResult === 'wolf' ? (
+                                    <div className="bg-[#2a0a0a]/60 border border-[#c62828]/30 rounded-xl p-4 mb-4">
+                                        <p className="text-2xl font-bold text-[#c62828]">🐺 Là MA SÓI!</p>
+                                    </div>
+                                ) : (
+                                    <div className="bg-[#0a2a1a]/60 border border-emerald-500/30 rounded-xl p-4 mb-4">
+                                        <p className="text-2xl font-bold text-emerald-400">✅ Không phải Ma Sói</p>
+                                    </div>
+                                )}
+                                <button onClick={confirmSeerResult} className="px-6 py-2.5 bg-[#8b5c3a] hover:bg-[#a06a3a] text-white rounded-xl font-bold text-base transition-colors">Đã hiểu → Tiếp tục</button>
+                            </div>
+                        ) : (
+                            <>
+                                <p className="text-base font-bold text-[#a3c9a8] mb-2">🔮 Chọn 1 người để soi:</p>
+                                <p className="text-sm text-[#6b5f50] mb-3 italic">Bạn sẽ biết người đó có phải Ma Sói hay không.</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mb-3">
+                                    {aliveOthers.map(p => (
+                                        <PlayerCard key={p.uid} p={p} onClick={() => seerPeek(p.uid)} />
+                                    ))}
+                                </div>
+                                <button onClick={skipSeer} className="w-full py-2 text-base text-[#6b5f50] hover:text-slate-600">Bỏ qua (không soi)</button>
+                            </>
+                        )}
                     </div>
-                ) : isHost && !hasSeerAlive ? (
-                    <div className="text-center"><p className="text-base text-[#6b5f50] mb-2">Tiên tri đã chết.</p>
-                        <button onClick={skipSeer} className="px-4 py-2 bg-purple-500 text-white rounded-xl font-bold text-base">Tiếp tục →</button></div>
                 ) : (
-                    <p className="text-base text-[#6b5f50] text-center p-4">{myRole?.alive ? `${myRole?.icon} Chờ Tiên tri hành động...` : '💀 Quan sát...'}</p>
+                    <p className="text-base text-[#6b5f50] text-center p-4">{myRole?.alive ? `${getRoleIconByName(myRole?.role || '')} Chờ Tiên tri hành động...` : '💀 Quan sát...'}</p>
                 )}
-            </GamePhaseLayout>
+            </>)
         );
     }
 
-    // NIGHT - GUARD
+    // NIGHT - GUARD (auto-skip if dead — no reveal)
     if (phase === 'night-guard') {
         const isGuard = myRole?.role === 'Bảo vệ' && myRole.alive;
-        const hasGuardAlive = Object.entries(gs.roles || {}).some(([, r]) => (r as any).role === 'Bảo vệ' && (r as any).alive);
-        return (
-            <GamePhaseLayout>
-
+        if (!hasGuardAlive) {
+            return renderPhaseLayout(<>
                 <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
-                    <Moon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
+                    <p className="text-emerald-300 text-base mt-1">🛡️ Bảo vệ thức dậy...</p>
+                </div>
+                <Loader2 size={20} className="animate-spin mx-auto text-emerald-400" />
+                <p className="text-base text-[#6b5f50] text-center mt-2">Đang xử lý...</p>
+            </>, false, "text-center");
+        }
+        return (
+            renderPhaseLayout(<>
+                <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
                     <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
                     <p className="text-emerald-300 text-base mt-1">🛡️ Bảo vệ thức dậy...</p>
                 </div>
@@ -1140,31 +2430,36 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                         </div>
                         <button onClick={skipGuard} className="w-full py-2 text-base text-[#6b5f50] hover:text-slate-600">Không bảo vệ ai</button>
                     </div>
-                ) : isHost && !hasGuardAlive ? (
-                    <div className="text-center"><p className="text-base text-[#6b5f50] mb-2">Bảo vệ đã chết.</p>
-                        <button onClick={skipGuard} className="px-4 py-2 bg-emerald-500 text-white rounded-xl font-bold text-base">Tiếp tục →</button></div>
                 ) : (
-                    <p className="text-base text-[#6b5f50] text-center p-4">{myRole?.alive ? `${myRole?.icon} Chờ Bảo vệ hành động...` : '💀 Quan sát...'}</p>
+                    <p className="text-base text-[#6b5f50] text-center p-4">{myRole?.alive ? `${getRoleIconByName(myRole?.role || '')} Chờ Bảo vệ hành động...` : '💀 Quan sát...'}</p>
                 )}
-            </GamePhaseLayout>
+            </>)
         );
     }
 
-    // NIGHT - WITCH
+    // NIGHT - WITCH (auto-skip if dead — no reveal)
     if (phase === 'night-witch') {
         const isWitch = myRole?.role === 'Phù thủy' && myRole.alive;
-        const hasWitchAlive = Object.entries(gs.roles || {}).some(([, r]) => (r as any).role === 'Phù thủy' && (r as any).alive);
         const wolfTarget = gs.wolfTarget;
         const targetName = wolfTarget ? playerNames[wolfTarget]?.name || '???' : null;
-        // Witch can only use ONE ability per night: save OR kill, not both
         const usedAbilityThisNight = gs.witchSaveThisNight || !!gs.witchKillTarget;
         const canSave = !gs.witchSaveUsed && wolfTarget && wolfTarget !== gs.guardTarget && !gs.witchKillTarget;
         const canKill = !gs.witchKillUsed && !gs.witchSaveThisNight;
-        return (
-            <GamePhaseLayout>
-
+        if (!hasWitchAlive) {
+            return renderPhaseLayout(<>
                 <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
-                    <Moon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
+                    <p className="text-cyan-300 text-base mt-1">🧙 Phù thủy thức dậy...</p>
+                </div>
+                <Loader2 size={20} className="animate-spin mx-auto text-cyan-400" />
+                <p className="text-base text-[#6b5f50] text-center mt-2">Đang xử lý...</p>
+            </>, false, "text-center");
+        }
+        return (
+            renderPhaseLayout(<>
+                <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
                     <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
                     <p className="text-cyan-300 text-base mt-1">🧙 Phù thủy thức dậy...</p>
                 </div>
@@ -1205,45 +2500,57 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                         {gs.witchKillUsed && !gs.witchKillTarget && !usedAbilityThisNight && <p className="text-sm text-[#6b5f50] mt-1">Đã dùng thuốc độc ở đêm trước</p>}
                         <button onClick={witchDone} className="w-full py-2.5 bg-cyan-600 text-white rounded-xl font-bold text-base mt-2">✓ Xong, kết thúc đêm</button>
                     </div>
-                ) : isHost && !hasWitchAlive ? (
-                    <div className="text-center"><p className="text-base text-[#6b5f50] mb-2">Phù thủy đã chết.</p>
-                        <button onClick={witchDone} className="px-4 py-2 bg-cyan-500 text-white rounded-xl font-bold text-base">Tiếp tục →</button></div>
                 ) : (
-                    <p className="text-base text-[#6b5f50] text-center p-4">{myRole?.alive ? `${myRole?.icon} Chờ Phù thủy hành động...` : '💀 Quan sát...'}</p>
+                    <p className="text-base text-[#6b5f50] text-center p-4">{myRole?.alive ? `${getRoleIconByName(myRole?.role || '')} Chờ Phù thủy hành động...` : '💀 Quan sát...'}</p>
                 )}
-            </GamePhaseLayout>
+            </>)
         );
     }
 
-    // NIGHT - RESOLVE — use useEffect to prevent duplicate calls on re-render
-    useEffect(() => {
-        if (phase === 'night-resolve' && isHost && !resolvingRef.current) {
-            resolvingRef.current = true;
-            resolveNight().finally(() => { resolvingRef.current = false; });
-        }
-    }, [phase, isHost]);
+    // (night-resolve useEffect moved to top-level hooks area)
 
     if (phase === 'night-resolve') {
-        return <GamePhaseLayout showCard={false} className="text-center"><Loader2 size={24} className="animate-spin mx-auto text-[#c9873a]" /><p className="text-base text-[#6b5f50] mt-2">Đang tổng hợp kết quả đêm...</p></GamePhaseLayout>;
+        return renderPhaseLayout(<>
+            <Loader2 size={24} className="animate-spin mx-auto text-[#c9873a]" />
+            <p className="text-base text-[#6b5f50] mt-2">Đang tổng hợp kết quả đêm...</p>
+            <p className="text-xs text-[#6b5f50]/60 mt-1">Tự động bỏ qua sau 15 giây nếu gặp lỗi</p>
+            <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+                {isHost && (
+                    <button 
+                        onClick={() => { resolvingRef.current = false; resolveNight(); }}
+                        className="px-4 py-2 ww-btn-primary text-sm"
+                    >
+                        🔄 Thử lại
+                    </button>
+                )}
+                <button 
+                    onClick={() => MinigameService.mergeGameState(room.id, { phase: 'day-discussion', nightLog: '☀️ Đêm bình yên (bỏ qua).', nightKilled: null })}
+                    className="px-4 py-2 bg-[#333] hover:bg-[#444] text-[#aaa] rounded-xl text-sm font-medium transition-colors"
+                >
+                    ⏭️ Bỏ qua đêm
+                </button>
+            </div>
+        </>, false, "text-center");
     }
 
     // DAY - DISCUSSION
     if (phase === 'day-discussion') return (
-        <GamePhaseLayout>
+        renderPhaseLayout(<>
 
             <div className="text-center mb-4">
                 <Sun size={32} className="mx-auto mb-2 text-[#c9873a]" />
                 <h3 className="ww-heading text-xl">☀️ Ban ngày — Đêm {gs.night}</h3>
                 {gs.nightLog && <p className="text-base mt-2 p-3 ww-panel-parchment rounded-xl">{gs.nightLog}</p>}
+                {gs.nightKilled && <p className="text-sm text-[#c62828] mt-1 italic">Người chết chỉ thấy trên lá bài của chính mình.</p>}
             </div>
             <div className="mb-3">
-                <p className="text-sm font-bold text-[#6b5f50] mb-2">NGƯỜI CHƠI CÒN SỐNG ({alivePlayers.length})</p>
+                <p className="text-sm font-bold text-[#6b5f50] mb-2">NGƯỜI CHƠI ({playerList.length})</p>
                 {playerList.map(p => {
-                    const r = gs.roles?.[p.uid];
                     return (
-                        <div key={p.uid} className={clsx("flex items-center gap-2 py-1.5 text-base", !r?.alive && "opacity-30 line-through")}>
-                            <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
-                            {r?.alive ? '👤' : '💀'} {p.name}
+                        <div key={p.uid} className="flex items-center gap-2 py-1.5 text-base">
+                            <div className={clsx("relative w-6 h-6 rounded-full shrink-0", !gs.roles?.[p.uid]?.alive ? "ww-avatar-dead" : "ww-avatar-spooky")} style={{overflow:'visible'}}><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32&background=2a1f3d&color=c9873a`} className="w-full h-full object-cover rounded-full" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px] rounded-full" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
+                            👤 {p.name}
+                            {p.uid === myUid && !gs.roles?.[p.uid]?.alive && <span className="text-xs text-[#c62828] ml-1">(💀 bạn)</span>}
                         </div>
                     );
                 })}
@@ -1252,7 +2559,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
             {isHost && <button onClick={startDayVote} className="w-full py-2.5 ww-btn-primary text-base mb-2">🗳️ Bắt đầu Bỏ phiếu</button>}
             <GameEventLog roomId={room.id} />
             <SeparatedChats roomId={room.id} myUid={myUid} myName={myName} myAvatar={myAvatar} channel={getChatChannel()} visibleChannels={getVisibleChannels()} title="💬 Thảo luận ban ngày" maxHeight={300} canSwitchToWolf={isWolf} />
-        </GamePhaseLayout>
+        </>)
     );
 
     // DAY - VOTE
@@ -1262,11 +2569,12 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
         const totalAlive = alivePlayers.length;
         const totalVoted = Object.keys(gs.votes || {}).length + (gs.skipVotes || []).length;
         return (
-            <GamePhaseLayout>
+            renderPhaseLayout(<>
 
                 <div className="text-center mb-3">
                     <h3 className="ww-heading text-xl">🗳️ Bỏ phiếu — Đêm {gs.night}</h3>
                     <p className="text-sm text-[#6b5f50]">{totalVoted}/{totalAlive} đã vote</p>
+                    {voteCountdown !== null && <p className="text-sm text-[#c9873a] font-bold mt-1 animate-pulse">⏳ Chuyển sang phản biện trong {voteCountdown} giây...</p>}
                 </div>
                 {/* Vote Status Tracker */}
                 <div className="mb-3 p-2.5 bg-[#16141f]/80 rounded-xl border border-[#8b5c3a]/30">
@@ -1297,11 +2605,12 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 {myRole?.alive ? (
                     <div className="mb-3 space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 p-3 rounded-xl border border-[#8b5c3a]/30 bg-[#16141f]/60">
-                            {aliveOthers.map(p => {
+                            {alivePlayers.map(p => {
                                 const voteCount = Object.values(gs.votes || {}).filter(v => v === p.uid).length;
+                                const isSelf = p.uid === myUid;
                                 return (
-                                    <PlayerCard key={p.uid} p={p} onClick={() => dayVote(p.uid)} selected={myVote === p.uid}
-                                        extra={<span className="text-sm text-[#6b5f50]">{voteCount > 0 && `${voteCount} phiếu`}</span>} />
+                                    <PlayerCard key={p.uid} p={p} onClick={isSelf ? undefined : () => dayVote(p.uid)} selected={myVote === p.uid} disabled={isSelf}
+                                        extra={<span className="text-sm text-[#6b5f50]">{isSelf ? '(bạn)' : ''}{voteCount > 0 ? ` ${voteCount} phiếu` : ''}</span>} />
                                 );
                             })}
                         </div>
@@ -1310,37 +2619,49 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                             <ThumbsUp size={16} className="inline mr-1.5" /> Bỏ qua {skipped && '✓'}
                         </button>
                     </div>
-                ) : <p className="text-base text-[#6b5f50] text-center p-4">💀 Bạn đã bị loại.</p>}
+                ) : (
+                    <div className="mb-3 space-y-3">
+                        <div className="text-center p-3 rounded-xl bg-[#1a0808]/60 border border-[#8b1a1a]/30">
+                            <p className="text-base text-[#c62828] font-bold">💀 Bạn đã bị loại.</p>
+                            <p className="text-sm text-[#6b5f50] mt-1">Bạn không thể bỏ phiếu, nhưng vẫn có thể theo dõi diễn biến.</p>
+                        </div>
+                        {/* Show vote results for dead players (read-only) */}
+                        <div className="p-3 rounded-xl border border-[#8b5c3a]/20 bg-[#16141f]/40">
+                            <p className="text-xs font-bold text-[#a89b85] uppercase tracking-wider mb-2">📊 Diễn biến bỏ phiếu</p>
+                            <div className="space-y-1">
+                                {alivePlayers.map(p => {
+                                    const voteCount = Object.values(gs.votes || {}).filter(v => v === p.uid).length;
+                                    const isSelf = p.uid === myUid;
+                                    return (
+                                        <div key={p.uid} className="flex items-center gap-2 py-1.5 px-2 rounded-lg text-base">
+                                            <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0"><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=20`} className="w-full h-full object-cover" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[6px]" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
+                                            <span className="flex-1 font-medium text-[#e8dcc8]">{p.name}{isSelf ? ' (bạn)' : ''}</span>
+                                            {voteCount > 0 && (
+                                                <span className="text-sm font-bold text-[#c62828] bg-[#2a0a0a] px-2 py-0.5 rounded-full">
+                                                    {voteCount} phiếu
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {isHost && totalVoted >= totalAlive && <button onClick={resolveVote} className="w-full py-2.5 ww-btn-primary text-base">⚔️ Công bố kết quả</button>}
                 <GameEventLog roomId={room.id} />
                 <SeparatedChats roomId={room.id} myUid={myUid} myName={myName} myAvatar={myAvatar} channel={getChatChannel()} visibleChannels={getVisibleChannels()} title="💬 Thảo luận khi bỏ phiếu" maxHeight={250} canSwitchToWolf={isWolf} />
-            </GamePhaseLayout>
+            </>)
         );
     }
 
     // DAY - DEFENSE (60s for the accused to defend themselves)
     if (phase === 'day-defense') {
         const defensePlayer = playerList.find(p => p.uid === gs.defenseTarget);
-        const defenseStarted = gs.defenseStartedAt || Date.now();
-        const DEFENSE_DURATION = 60; // seconds
-        const [defenseTimeLeft, setDefenseTimeLeft] = useState(DEFENSE_DURATION);
-
-        useEffect(() => {
-            const interval = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - defenseStarted) / 1000);
-                const remaining = Math.max(0, DEFENSE_DURATION - elapsed);
-                setDefenseTimeLeft(remaining);
-                if (remaining <= 0 && isHost) {
-                    clearInterval(interval);
-                    startRevote();
-                }
-            }, 1000);
-            return () => clearInterval(interval);
-        }, [defenseStarted, isHost]);
 
         const isDefender = myUid === gs.defenseTarget;
         return (
-            <GamePhaseLayout>
+            renderPhaseLayout(<>
 
                 <div className="text-center mb-4">
                     <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="mb-3">
@@ -1410,34 +2731,18 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 </div>
                 <GameEventLog roomId={room.id} />
                 <SeparatedChats roomId={room.id} myUid={myUid} myName={myName} myAvatar={myAvatar} channel={getChatChannel()} visibleChannels={getVisibleChannels()} title="🛡️ Biện hộ" maxHeight={250} canSwitchToWolf={isWolf} />
-            </GamePhaseLayout>
+            </>)
         );
     }
 
     // DAY - REVOTE (10s for others to change their vote)
     if (phase === 'day-revote') {
-        const revoteStarted = gs.revoteStartedAt || Date.now();
-        const REVOTE_DURATION = 10; // seconds
-        const [revoteTimeLeft, setRevoteTimeLeft] = useState(REVOTE_DURATION);
         const myVote = gs.votes?.[myUid];
         const skipped = (gs.skipVotes || []).includes(myUid);
         const defensePlayer = playerList.find(p => p.uid === gs.defenseTarget);
 
-        useEffect(() => {
-            const interval = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - revoteStarted) / 1000);
-                const remaining = Math.max(0, REVOTE_DURATION - elapsed);
-                setRevoteTimeLeft(remaining);
-                if (remaining <= 0 && isHost) {
-                    clearInterval(interval);
-                    finalResolveVote();
-                }
-            }, 1000);
-            return () => clearInterval(interval);
-        }, [revoteStarted, isHost]);
-
         return (
-            <GamePhaseLayout>
+            renderPhaseLayout(<>
 
                 <div className="text-center mb-3">
                     <Clock size={28} className="mx-auto text-orange-500 mb-2" />
@@ -1466,14 +2771,15 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 {myRole?.alive && myUid !== gs.defenseTarget ? (
                     <div className="mb-3 space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 p-3 rounded-xl border border-[#8b5c3a]/30 bg-[#16141f]/60">
-                            {aliveOthers.map(p => {
+                            {alivePlayers.map(p => {
                                 const voteCount = Object.values(gs.votes || {}).filter(v => v === p.uid).length;
                                 const isTarget = p.uid === gs.defenseTarget;
+                                const isSelf = p.uid === myUid;
                                 return (
-                                    <PlayerCard key={p.uid} p={p} onClick={() => dayVote(p.uid)} selected={myVote === p.uid}
+                                    <PlayerCard key={p.uid} p={p} onClick={isSelf ? undefined : () => dayVote(p.uid)} selected={myVote === p.uid} disabled={isSelf}
                                         extra={<span className="text-sm text-[#6b5f50]">
                                             {isTarget && <Shield size={12} className="inline text-[#c9873a] mr-1" />}
-                                            {voteCount > 0 && `${voteCount} phiếu`}
+                                            {isSelf ? '(bạn)' : ''}{voteCount > 0 ? ` ${voteCount} phiếu` : ''}
                                         </span>} />
                                 );
                             })}
@@ -1496,14 +2802,13 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                         ⚔️ Công bố kết quả cuối cùng
                     </button>
                 )}
-            </GamePhaseLayout>
+            </>)
         );
     }
 
     // DAY - RESULT
     if (phase === 'day-result') return (
-        <GamePhaseLayout className="text-center">
-
+        renderPhaseLayout(<>
             <h3 className="ww-title text-xl mb-3">⚔️ Kết Quả Phán Xử</h3>
             {gs.voteResult ? (
                 <div className="p-4 ww-panel-blood rounded-xl mb-3">
@@ -1512,28 +2817,56 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 </div>
             ) : <p className="text-base text-[#6b5f50] mb-3">Không ai bị treo cổ.</p>}
             {isHost && <button onClick={startNight} className="px-6 py-2.5 ww-btn-night text-base">🌙 Đêm tiếp theo</button>}
-        </GamePhaseLayout>
+        </>, true, "text-center")
     );
 
     // GAMEOVER
-    if (phase === 'gameover') return (
-        <GamePhaseLayout showCard={false} className="text-center">
-            <div className="text-7xl mb-4 ww-flicker">{gs.gameResult?.includes('dân') ? '�' : '🐺'}</div>
+    if (phase === 'gameover') {
+        const gameLog = gs.gameLog || [];
+        const getName = (uid: string) => playerNames[uid]?.name || '???';
+        const getRole = (uid: string) => gs.roles?.[uid]?.role || '???';
+        const getRoleIcon = (uid: string) => gs.roles?.[uid]?.icon || '❓';
+
+        return renderPhaseLayout(<>
+            <div className="text-7xl mb-4 ww-flicker">{gs.gameResult?.includes('dân') ? '🏡' : '🐺'}</div>
             <h3 className="ww-title text-2xl mb-3">{gs.gameResult}</h3>
             <div className="p-3 ww-panel rounded-xl text-left mb-4">
+                <h4 className="text-sm font-bold text-[#c9873a] uppercase tracking-wider mb-2" style={{ fontFamily: "'Playfair Display', serif" }}>📋 Danh sách nhân vật</h4>
                 {playerList.map(p => { const r = gs.roles?.[p.uid]; return <div key={p.uid} className="flex items-center gap-2 py-1 text-base"><span>{r?.icon}</span><span className={clsx(!r?.alive && "line-through text-[#6b5f50]")}>{p.name}</span><span className="text-sm text-[#6b5f50]">({r?.role})</span>{!r?.alive && <Skull size={12} className="text-[#c62828]" />}</div>; })}
             </div>
+            {gameLog.length > 0 && (<div className="ww-panel rounded-xl text-left mb-4 overflow-hidden">
+                <h4 className="text-sm font-bold text-[#c9873a] uppercase tracking-wider p-3 pb-2" style={{ fontFamily: "'Playfair Display', serif" }}>📜 Diễn biến trận đấu</h4>
+                <div className="px-3 pb-3 space-y-1">
+                    {gameLog.map((ev: any, idx: number) => (<div key={idx} className={clsx("rounded-lg p-2.5 text-sm border", ev.type === 'night' ? "bg-[#0a0a1a]/60 border-[#1a1040]/40" : "bg-[#1a1510]/60 border-[#2a2518]/40")}>
+                        <div className="flex items-center gap-1.5 mb-1.5 font-bold text-[13px]">
+                            {ev.type === 'night' ? (<><span>🌙</span><span className="text-[#8b7acc]">Đêm {ev.night}</span></>) : (<><span>☀️</span><span className="text-[#c9873a]">Ngày {ev.night}</span></>)}
+                        </div>
+                        {ev.type === 'night' ? (<div className="space-y-1 text-[12px] text-[#b0a898]">
+                            {ev.wolfTarget ? (<div className="flex items-start gap-1.5"><span className="shrink-0">🐺</span><span>Ma Sói tấn công <strong className="text-[#e8dcc8]">{getName(ev.wolfTarget)}</strong>{ev.saved ? <span className="text-emerald-400 ml-1">→ Được {ev.savedBy === 'guard' ? '🛡️ Bảo vệ' : ev.savedBy === 'witch' ? '🧙 Phù thủy' : ''} cứu!</span> : ''}</span></div>) : (<div className="flex items-start gap-1.5"><span className="shrink-0">🐺</span><span className="italic">Ma Sói không tấn công</span></div>)}
+                            {ev.seerTarget && (<div className="flex items-start gap-1.5"><span className="shrink-0">🔮</span><span>Tiên tri soi <strong className="text-[#e8dcc8]">{getName(ev.seerTarget)}</strong></span></div>)}
+                            {ev.guardTarget && (<div className="flex items-start gap-1.5"><span className="shrink-0">🛡️</span><span>Bảo vệ che chở <strong className="text-[#e8dcc8]">{getName(ev.guardTarget)}</strong></span></div>)}
+                            {ev.witchSave && (<div className="flex items-start gap-1.5"><span className="shrink-0">🧪</span><span className="text-emerald-400">Phù thủy dùng bình cứu</span></div>)}
+                            {ev.witchKill && (<div className="flex items-start gap-1.5"><span className="shrink-0">☠️</span><span>Phù thủy đầu độc <strong className="text-[#c62828]">{getName(ev.witchKill)}</strong></span></div>)}
+                            {ev.killed?.length > 0 ? (<div className="flex items-start gap-1.5 pt-0.5 border-t border-white/5"><span className="shrink-0">💀</span><span className="text-[#c62828]">{ev.killed.map((uid: string) => `${getName(uid)} (${getRoleIcon(uid)} ${getRole(uid)})`).join(', ')} đã chết</span></div>) : (<div className="flex items-start gap-1.5 pt-0.5 border-t border-white/5"><span className="shrink-0">✨</span><span className="text-emerald-400">Không ai chết</span></div>)}
+                        </div>) : (<div className="space-y-1 text-[12px] text-[#b0a898]">
+                            {ev.votes && Object.keys(ev.votes).length > 0 && (<div className="flex items-start gap-1.5"><span className="shrink-0">🗳️</span><span>{Object.entries(ev.votes as Record<string, string>).map(([voter, target]) => (<span key={voter} className="inline-block mr-2"><span className="text-[#e8dcc8]">{getName(voter)}</span><span className="text-[#6b5f50]"> → </span><span className="text-[#e8dcc8]">{getName(target)}</span></span>))}</span></div>)}
+                            {ev.skipVotes?.length > 0 && (<div className="flex items-start gap-1.5"><span className="shrink-0">⏭️</span><span className="text-[#6b5f50]">Bỏ qua: {ev.skipVotes.map((uid: string) => getName(uid)).join(', ')}</span></div>)}
+                            {ev.voteResult ? (<div className="flex items-start gap-1.5 pt-0.5 border-t border-white/5"><span className="shrink-0">⚔️</span><span className="text-[#c62828]"><strong>{getName(ev.voteResult)}</strong> ({getRoleIcon(ev.voteResult)} {getRole(ev.voteResult)}) bị treo cổ</span></div>) : (<div className="flex items-start gap-1.5 pt-0.5 border-t border-white/5"><span className="shrink-0">⚖️</span><span className="text-[#6b5f50] italic">Không ai bị treo cổ</span></div>)}
+                        </div>)}
+                    </div>))}
+                </div>
+            </div>)}
             {isHost && <button onClick={resetGame} className="px-6 py-3 ww-btn-primary flex items-center gap-2 mx-auto"><RotateCcw size={16} /> Chơi lại</button>}
             {!isHost && <p className="text-sm text-[#6b5f50] mt-2">Đợi chủ phòng bắt đầu ván mới...</p>}
             <GameChat roomId={room.id} myUid={myUid} myName={myName} myAvatar={myAvatar} channel={getChatChannel()} visibleChannels={getVisibleChannels()} canSwitchToWolf={isWolf} />
             {renderStats()}
-        </GamePhaseLayout>
-    );
+        </>, false, "text-center");
+    }
 
     // FALLBACK — unknown phase or legacy data: show reset option
     return (
-        <GamePhaseLayout showCard={false} className="text-center">
-            <Moon size={40} className="mx-auto mb-3 text-[#c9873a]" />
+        renderPhaseLayout(<>
+            <WolfIcon size={40} className="mx-auto mb-3 text-[#c9873a]" />
             <p className="text-base text-[#6b5f50] mb-3">Phiên chơi không hợp lệ hoặc đã hết hạn.</p>
             {isHost && (
                 <button onClick={resetGame} className="px-5 py-2.5 ww-btn-primary text-base">
@@ -1541,10 +2874,16 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 </button>
             )}
             {!isHost && <p className="text-sm text-[#6b5f50]">Đợi chủ phòng khởi động lại game.</p>}
-        </GamePhaseLayout>
+        </>, false, "text-center")
     );
-};
+});
 
-export default OnlineWerewolf;
+// Wrapped export with Error Boundary
+const OnlineWerewolfWrapped: React.FC<{ room: GameRoom; myUid: string; myName: string; myAvatar: string }> = (props) => (
+    <WerewolfErrorBoundary roomId={props.room.id} isHost={props.myUid === props.room.hostId}>
+        <OnlineWerewolf {...props} />
+    </WerewolfErrorBoundary>
+);
+
+export default OnlineWerewolfWrapped;
 export { WOLF_ROLES };
-

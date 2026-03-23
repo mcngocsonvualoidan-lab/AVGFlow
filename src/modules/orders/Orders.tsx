@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Package, Clock, User, Tag, FileText, Filter, Search, ArrowUpDown, ChevronDown, AlertCircle, CheckCircle2, Loader2, Truck, XCircle, BarChart as BarChartIcon, Calendar, CalendarClock, Copy, Printer } from 'lucide-react';
+import { Package, Clock, User, Tag, FileText, Filter, Search, ArrowUpDown, ChevronDown, AlertCircle, CheckCircle2, Loader2, Truck, XCircle, BarChart as BarChartIcon, Calendar, CalendarClock, Copy, Printer, PenLine } from 'lucide-react';
 import PrintOrdersManager from './PrintOrdersManager';
+import DesignOrdersManager from './DesignOrdersManager';
 import { clsx } from 'clsx';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList } from 'recharts';
 import HeroBanner from '../../components/HeroBanner';
@@ -10,10 +11,10 @@ import { useData } from '../../context/DataContext';
 import { db } from '../../lib/firebase';
 import { doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
 import { GlassDatePicker } from '../../components/ui/GlassDatePicker';
+import { supabase } from '../../lib/supabase';
+import { fetchDesignOrders, parseDesignOrders, subscribeToDesignOrderChanges } from '../../services/designOrderService';
+import { fetchPrintOrders as fetchPrintOrdersService, subscribeToPrintOrderChanges } from '../../services/printOrderService';
 
-const SHEET_ID = '1mzYT75VEJh-PMYvlwUEQkvVnDIj6p1P2ssS6FXvK5Vs';
-const GID = '485384320';
-const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9KkabbjikHf61xfeXfxgNlbjRn4TozZu58xGrF58Ys8swvyA7lG-QpEfPms9C9TvF/exec';
 
 interface Order {
@@ -48,76 +49,8 @@ const STATUS_OPTIONS = [
     'Đã hủy',
 ];
 
-/** Parse full CSV text into rows, correctly handling multi-line quoted fields */
-function parseCSV(text: string): string[][] {
-    const rows: string[][] = [];
-    let current = '';
-    let inQuotes = false;
-    const row: string[] = [];
 
-    for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-        if (inQuotes) {
-            if (ch === '"') {
-                if (i + 1 < text.length && text[i + 1] === '"') {
-                    current += '"';
-                    i++;
-                } else {
-                    inQuotes = false;
-                }
-            } else {
-                current += ch;
-            }
-        } else {
-            if (ch === '"') {
-                inQuotes = true;
-            } else if (ch === ',') {
-                row.push(current);
-                current = '';
-            } else if (ch === '\n' || ch === '\r') {
-                // Handle \r\n
-                if (ch === '\r' && i + 1 < text.length && text[i + 1] === '\n') {
-                    i++;
-                }
-                row.push(current);
-                current = '';
-                if (row.length > 0) {
-                    rows.push([...row]);
-                }
-                row.length = 0;
-            } else {
-                current += ch;
-            }
-        }
-    }
-    // Push last field and row
-    row.push(current);
-    if (row.some(c => c.trim())) {
-        rows.push(row);
-    }
-    return rows;
-}
 
-function parseDate(dateStr: string): Date | null {
-    if (!dateStr || !dateStr.trim()) return null;
-    // Format: DD/MM/YYYY HH:MM:SS
-    const parts = dateStr.trim().split(' ');
-    if (parts.length < 1) return null;
-    const dateParts = parts[0].split('/');
-    if (dateParts.length !== 3) return null;
-    const day = parseInt(dateParts[0], 10);
-    const month = parseInt(dateParts[1], 10) - 1;
-    const year = parseInt(dateParts[2], 10);
-    let hours = 0, minutes = 0, seconds = 0;
-    if (parts[1]) {
-        const timeParts = parts[1].split(':');
-        hours = parseInt(timeParts[0], 10) || 0;
-        minutes = parseInt(timeParts[1], 10) || 0;
-        seconds = parseInt(timeParts[2], 10) || 0;
-    }
-    const d = new Date(year, month, day, hours, minutes, seconds);
-    return isNaN(d.getTime()) ? null : d;
-}
 
 function getStatusInfo(status: string): { color: string; bg: string; border: string; icon: React.FC<any>; label: string } {
     const s = (status || '').toLowerCase().trim();
@@ -198,8 +131,9 @@ const Orders: React.FC = () => {
     const [tempDeliveryDate, setTempDeliveryDate] = useState<Date>(new Date());
     const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
     const [searchParams, setSearchParams] = useSearchParams();
-    const activeTab = (searchParams.get('tab') === 'print' ? 'print' : 'orders') as 'orders' | 'print';
-    const setActiveTab = useCallback((tab: 'orders' | 'print') => {
+    const tabParam = searchParams.get('tab');
+    const activeTab = (tabParam === 'print' ? 'print' : tabParam === 'design' ? 'design' : 'orders') as 'orders' | 'print' | 'design';
+    const setActiveTab = useCallback((tab: 'orders' | 'print' | 'design') => {
         setSearchParams((prev: URLSearchParams) => {
             const next = new URLSearchParams(prev);
             if (tab === 'orders') next.delete('tab'); else next.set('tab', tab);
@@ -208,29 +142,49 @@ const Orders: React.FC = () => {
     }, [setSearchParams]);
     const [printProcessingCount, setPrintProcessingCount] = useState(0);
 
-    // Fetch print orders count (only 'Chưa xử lý')
+    // Fetch print orders count (only 'Chưa xử lý') — from Supabase
     useEffect(() => {
         const fetchPrintCount = async () => {
             try {
-                const res = await fetch(`https://docs.google.com/spreadsheets/d/16GLyiZLdBknve7P_JO9ly-Luy5vIgdizNmQH985zPeo/gviz/tq?tqx=out:csv&gid=0`);
-                const text = await res.text();
-                const rows = parseCSV(text);
+                // 🛡️ Supabase-first fetch (protected data)
+                const orders = await fetchPrintOrdersService();
                 let count = 0;
-                for (let i = 1; i < rows.length; i++) {
-                    const c = rows[i];
-                    if (!c[0] && !c[1] && !c[3]) continue;
-                    const status = (c[16] || 'Chưa xử lý').trim().toLowerCase(); // Q: Trạng thái
-                    // Only count 'Chưa xử lý' (pending/unprocessed)
-                    if (status === 'chưa xử lý' || status === '') {
-                        count++;
-                    }
+                for (const o of orders) {
+                    const status = (o.status || 'Chưa xử lý').trim().toLowerCase();
+                    if (status === 'chưa xử lý' || status === '') count++;
                 }
                 setPrintProcessingCount(count);
             } catch { /* silent */ }
         };
         fetchPrintCount();
-        const interval = setInterval(fetchPrintCount, 60 * 1000);
-        return () => clearInterval(interval);
+        // 🔔 Realtime subscription for auto-count updates
+        const unsubscribe = subscribeToPrintOrderChanges(() => {
+            fetchPrintCount();
+        });
+        return () => unsubscribe();
+    }, []);
+
+    // Fetch design tickets pending count from Supabase
+    const [designPendingCount, setDesignPendingCount] = useState(0);
+    useEffect(() => {
+        const fetchDesignCount = async () => {
+            try {
+                const { count, error } = await supabase
+                    .from('design_tickets')
+                    .select('*', { count: 'exact', head: true })
+                    .in('status', ['open', 'in-review', 'revision']);
+                if (!error && count !== null) setDesignPendingCount(count);
+            } catch { /* silent */ }
+        };
+        fetchDesignCount();
+        // Realtime subscription for count updates
+        const channel = supabase
+            .channel('design_tickets_count')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'design_tickets' }, () => {
+                fetchDesignCount();
+            })
+            .subscribe();
+        return () => { supabase.removeChannel(channel); };
     }, []);
 
     // Check if current user can edit orders
@@ -326,45 +280,10 @@ const Orders: React.FC = () => {
         setLoading(true);
         setError('');
         try {
-            const res = await fetch(CSV_URL);
-            const text = await res.text();
-            const rows = parseCSV(text);
+            // 🛡️ Supabase-first fetch (protected data)
+            const rows = await fetchDesignOrders();
             if (rows.length < 2) throw new Error('Không có dữ liệu');
-
-            // New column mapping (after Sheet reorganization):
-            // A(0)=Timestamp, B(1)=Person, C(2)=Brand, D(3)=Request,
-            // E(4)=Description, F(5)=Qty, G(6)=DeliveryEst,
-            // H(7)=Handler, I(8)=Status, J(9)=LeaderCheck, K(10)=CompletionTime
-            const parsedOrders: Order[] = [];
-            for (let i = 1; i < rows.length; i++) {
-                const cols = rows[i];
-                const time = (cols[0] || '').trim();        // A: Dấu thời gian
-                const person = (cols[1] || '').trim();      // B: Bạn là ai?
-                const brand = (cols[2] || '').trim();       // C: Tên thương hiệu
-                const request = (cols[3] || '').trim();     // D: Yêu cầu
-                const description = (cols[4] || '').trim(); // E: Mô tả, Ghi chú
-                const rawStatus = (cols[8] || '').trim();   // I: Trạng thái
-                // Normalize: empty or N/A → "Đang xử lý"
-                const sTrim = (rawStatus || '').trim();
-                const status = (!sTrim || sTrim.toUpperCase() === 'N/A') ? 'Đang xử lý' : sTrim;
-
-                // Skip empty rows
-                if (!time && !person && !brand && !request) continue;
-
-                // Generate safe ID from row index (no STT column anymore)
-                const safeId = `row-${i}`;
-
-                parsedOrders.push({
-                    id: safeId,
-                    time,
-                    person,
-                    brand,
-                    request,
-                    description,
-                    status,
-                    parsedDate: parseDate(time),
-                });
-            }
+            const parsedOrders = parseDesignOrders(rows);
             setOrders(parsedOrders);
         } catch (e: any) {
             setError(e.message || 'Lỗi tải dữ liệu');
@@ -373,7 +292,15 @@ const Orders: React.FC = () => {
         }
     };
 
-    useEffect(() => { fetchData(); }, []);
+    useEffect(() => {
+        fetchData();
+        // 🔄 Realtime subscription for auto-updates
+        const unsubRealtime = subscribeToDesignOrderChanges((rows) => {
+            const parsedOrders = parseDesignOrders(rows);
+            setOrders(parsedOrders);
+        });
+        return () => unsubRealtime();
+    }, []);
 
 
 
@@ -612,10 +539,32 @@ const Orders: React.FC = () => {
                         </span>
                     )}
                 </button>
+                <button
+                    onClick={() => setActiveTab('design')}
+                    className={clsx("flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300",
+                        activeTab === 'design'
+                            ? 'bg-gradient-to-r from-fuchsia-500 to-pink-600 text-white shadow-lg shadow-fuchsia-500/30'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                    )}
+                >
+                    <PenLine size={16} /> Thiết kế
+                    {designPendingCount > 0 && (
+                        <span className={clsx(
+                            'ml-1 min-w-[20px] h-5 flex items-center justify-center rounded-full text-[11px] font-bold px-1.5',
+                            activeTab === 'design'
+                                ? 'bg-white/25 text-white'
+                                : 'bg-fuchsia-500 text-white animate-pulse'
+                        )}>
+                            {designPendingCount}
+                        </span>
+                    )}
+                </button>
             </div>
 
             {activeTab === 'print' ? (
                 <PrintOrdersManager />
+            ) : activeTab === 'design' ? (
+                <DesignOrdersManager />
             ) : (
             <>
             {/* Charts Section */}

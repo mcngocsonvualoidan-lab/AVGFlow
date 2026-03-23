@@ -31,6 +31,12 @@ service firebase.storage {
       allow write: if true;
     }
 
+    // AVGFlow_Images — Design order reference images (public for partners)
+    match /AVGFlow_Images/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.resource.size < 25 * 1024 * 1024; // Max 25MB
+    }
+
     match /{allPaths=**} {
       allow read, write: if request.auth != null;
     }

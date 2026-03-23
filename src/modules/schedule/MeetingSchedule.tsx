@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useMeetingSchedule, MEETING_ARCHIVES, CURRENT_MONTH_GID, MonthArchive } from '../../hooks/useMeetingSchedule';
 import {
-    Calendar, RefreshCw, Clock, MapPin, Users,
+    Calendar, Clock, MapPin, Users,
     Link as LinkIcon, ChevronDown, Sparkles, Zap,
-    UserCheck, FileText, MoreHorizontal, Archive
+    UserCheck, FileText, MoreHorizontal, Archive,
+    LayoutGrid, List, X
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,13 +13,15 @@ const MeetingSchedule: React.FC = () => {
     // Archive state
     const [selectedGid, setSelectedGid] = useState(CURRENT_MONTH_GID);
     const [showArchiveDropdown, setShowArchiveDropdown] = useState(false);
+    const [viewMode, setViewMode] = useState<'card' | 'grid'>('card');
+    const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
 
     // Get current selected archive info
     const currentArchive = MEETING_ARCHIVES.find(a => a.gid === selectedGid) || MEETING_ARCHIVES[0];
     const isViewingArchive = selectedGid !== CURRENT_MONTH_GID;
 
     // Info: Use the shared hook for data fetching with month/year filter
-    const { meetings: sheetData, loading: isSyncing, refresh: fetchSheetData } = useMeetingSchedule(
+    const { meetings: sheetData, loading: _isSyncing, refresh: fetchSheetData } = useMeetingSchedule(
         selectedGid,
         currentArchive.month,
         currentArchive.year
@@ -384,17 +387,129 @@ const MeetingSchedule: React.FC = () => {
                     )}
                 </div>
 
-                <button
-                    onClick={fetchSheetData}
-                    disabled={isSyncing}
-                    className="hidden group px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl hover:bg-white text-slate-700 dark:text-slate-200 rounded-xl border border-white/40 dark:border-white/10 shadow-sm transition-all flex items-center gap-2 text-sm font-semibold"
-                >
-                    <RefreshCw size={16} className={clsx("transition-transform duration-700", isSyncing && "animate-spin")} />
-                    <span>Làm mới</span>
-                </button>
+                {/* View Toggle */}
+                <div className="flex items-center gap-1 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-xl border border-white/40 dark:border-white/10 shadow-sm p-1">
+                    <button
+                        onClick={() => setViewMode('card')}
+                        className={clsx(
+                            "p-2 rounded-lg transition-all text-sm font-semibold flex items-center gap-1.5",
+                            viewMode === 'card'
+                                ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/30"
+                                : "text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-white/10"
+                        )}
+                        title="Chế độ Thẻ"
+                    >
+                        <List size={16} />
+                        <span className="hidden sm:inline">Thẻ</span>
+                    </button>
+                    <button
+                        onClick={() => setViewMode('grid')}
+                        className={clsx(
+                            "p-2 rounded-lg transition-all text-sm font-semibold flex items-center gap-1.5",
+                            viewMode === 'grid'
+                                ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/30"
+                                : "text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-white/10"
+                        )}
+                        title="Chế độ Lưới"
+                    >
+                        <LayoutGrid size={16} />
+                        <span className="hidden sm:inline">Lưới</span>
+                    </button>
+                </div>
             </div>
 
-            {/* Timeline View */}
+            {/* Meeting Detail Modal for Grid View */}
+            <AnimatePresence>
+                {selectedMeeting && (
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setSelectedMeeting(null)}>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 dark:border-white/10 overflow-hidden"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            {(() => {
+                                const ms = getMeetingStatus(selectedMeeting);
+                                const colorMap = {
+                                    ongoing: { bg: 'from-emerald-500 to-teal-600', text: 'text-emerald-600', label: 'Đang diễn ra' },
+                                    upcoming: { bg: 'from-rose-500 to-red-600', text: 'text-red-600', label: 'Sắp tới' },
+                                    planned: { bg: 'from-indigo-500 to-violet-600', text: 'text-indigo-600', label: 'Đang chờ' },
+                                    past: { bg: 'from-amber-500 to-orange-600', text: 'text-amber-600', label: 'Đã diễn ra' },
+                                    none: { bg: 'from-slate-400 to-slate-500', text: 'text-slate-500', label: '' },
+                                };
+                                const c = colorMap[ms] || colorMap.none;
+                                return (
+                                    <>
+                                        {/* Modal Header */}
+                                        <div className={`bg-gradient-to-r ${c.bg} p-5 relative`}>
+                                            <button onClick={() => setSelectedMeeting(null)} className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors">
+                                                <X size={20} />
+                                            </button>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="text-white/80 text-xs font-bold uppercase tracking-wider">{selectedMeeting.day} - {selectedMeeting.date}</div>
+                                                <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-xs font-bold">{c.label}</span>
+                                            </div>
+                                            <h3 className="text-xl font-black text-white leading-snug">{selectedMeeting.content || 'Không có nội dung'}</h3>
+                                        </div>
+
+                                        {/* Modal Body */}
+                                        <div className="p-5 space-y-4">
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5">
+                                                    <Clock size={14} className={c.text} />
+                                                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{selectedMeeting.startTime || '—'}{selectedMeeting.endTime ? ` - ${selectedMeeting.endTime}` : ''}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5">
+                                                    <MapPin size={14} className="text-cyan-500" />
+                                                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{selectedMeeting.scope || '—'}</span>
+                                                </div>
+                                            </div>
+
+                                            {selectedMeeting.participants && (
+                                                <div>
+                                                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5"><Users size={12} /> Thành phần</div>
+                                                    <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-white/5 p-3 rounded-lg border border-slate-100 dark:border-white/5">{selectedMeeting.participants}</p>
+                                                </div>
+                                            )}
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {selectedMeeting.pic && (
+                                                    <div>
+                                                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5"><UserCheck size={12} /> Người điều hành</div>
+                                                        <div className="h-8 min-w-8 px-3 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 inline-flex items-center justify-center text-white text-xs font-bold shadow-md">{selectedMeeting.pic}</div>
+                                                    </div>
+                                                )}
+                                                {selectedMeeting.secretary && (
+                                                    <div>
+                                                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5"><FileText size={12} /> Thư ký</div>
+                                                        <span className="text-sm text-purple-700 dark:text-purple-300 font-medium">{selectedMeeting.secretary}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {selectedMeeting.note && (
+                                                <div className="text-sm text-slate-500 dark:text-slate-400 italic border-t border-slate-100 dark:border-white/5 pt-3 flex items-start gap-1.5">
+                                                    <MoreHorizontal size={14} className="shrink-0 mt-0.5" />
+                                                    <span>{selectedMeeting.note}</span>
+                                                </div>
+                                            )}
+
+                                            {selectedMeeting.link && (
+                                                <a href={selectedMeeting.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg border border-blue-100 transition-colors">
+                                                    <LinkIcon size={12} /> Tài liệu đính kèm
+                                                </a>
+                                            )}
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Content Area */}
             <div className="relative max-w-5xl mx-auto w-full px-2 md:px-0">
                 {displayMeetings.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 bg-white/40 dark:bg-slate-800/40 backdrop-blur-xl rounded-3xl border border-white/50 dark:border-white/5">
@@ -403,11 +518,160 @@ const MeetingSchedule: React.FC = () => {
                         </div>
                         <p className="text-slate-500 font-medium">Chưa có lịch họp nào trong tháng này.</p>
                     </div>
+                ) : viewMode === 'grid' ? (
+                    /* ===== GRID VIEW ===== */
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {displayMeetings.map((meeting: any, idx) => {
+                            const status = getMeetingStatus(meeting);
+                            const gridColors = {
+                                ongoing: {
+                                    card: 'bg-emerald-50 dark:bg-emerald-900/15 border-emerald-200/70 dark:border-emerald-500/25 hover:shadow-emerald-500/15',
+                                    accent: 'from-emerald-500 to-teal-600',
+                                    dot: 'bg-emerald-500',
+                                    text: 'text-emerald-700 dark:text-emerald-300',
+                                    badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+                                    label: 'Đang diễn ra',
+                                },
+                                upcoming: {
+                                    card: 'bg-red-50 dark:bg-red-900/15 border-red-200/70 dark:border-red-500/25 hover:shadow-red-500/15',
+                                    accent: 'from-rose-500 to-red-600',
+                                    dot: 'bg-red-500',
+                                    text: 'text-red-700 dark:text-red-300',
+                                    badge: 'bg-red-100 text-red-700 border-red-200',
+                                    label: 'Sắp tới',
+                                },
+                                planned: {
+                                    card: 'bg-indigo-50 dark:bg-indigo-900/15 border-indigo-200/70 dark:border-indigo-500/25 hover:shadow-indigo-500/15',
+                                    accent: 'from-indigo-500 to-violet-600',
+                                    dot: 'bg-indigo-500',
+                                    text: 'text-indigo-700 dark:text-indigo-300',
+                                    badge: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+                                    label: 'Đang chờ',
+                                },
+                                past: {
+                                    card: 'bg-amber-50 dark:bg-amber-900/15 border-amber-200/70 dark:border-amber-500/25 hover:shadow-amber-500/15',
+                                    accent: 'from-amber-500 to-orange-600',
+                                    dot: 'bg-amber-500',
+                                    text: 'text-amber-700 dark:text-amber-300',
+                                    badge: 'bg-amber-100 text-amber-700 border-amber-200',
+                                    label: 'Đã diễn ra',
+                                },
+                                none: {
+                                    card: 'bg-slate-50 dark:bg-slate-900/15 border-slate-200/70 dark:border-slate-500/25 hover:shadow-slate-500/15',
+                                    accent: 'from-slate-400 to-slate-500',
+                                    dot: 'bg-slate-400',
+                                    text: 'text-slate-500 dark:text-slate-400',
+                                    badge: 'bg-slate-100 text-slate-600 border-slate-200',
+                                    label: '',
+                                },
+                            };
+                            const gc = gridColors[status];
+
+                            return (
+                                <motion.div
+                                    key={idx}
+                                    initial={{ opacity: 0, y: 15 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: idx * 0.03 }}
+                                    onClick={() => setSelectedMeeting(meeting)}
+                                    className={clsx(
+                                        "relative rounded-2xl border cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 overflow-hidden group",
+                                        gc.card
+                                    )}
+                                >
+                                    {/* Color accent top bar */}
+                                    <div className={`h-1.5 bg-gradient-to-r ${gc.accent}`} />
+
+                                    <div className="p-4">
+                                        {/* Date + Status Row */}
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gc.accent} flex items-center justify-center text-white font-black text-sm shadow-md`}>
+                                                    {meeting.date?.split('/')[0]}
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{meeting.day}</div>
+                                                    <div className="text-xs text-slate-600 dark:text-slate-300 font-semibold">{meeting.date}</div>
+                                                </div>
+                                            </div>
+                                            <span className={clsx("flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border", gc.badge)}>
+                                                <span className={clsx("w-1.5 h-1.5 rounded-full", gc.dot, status === 'ongoing' && 'animate-pulse')} />
+                                                {gc.label}
+                                            </span>
+                                        </div>
+
+                                        {/* Time */}
+                                        <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                            <Clock size={12} className={gc.text} />
+                                            <span className="font-semibold">{meeting.startTime || '—'}{meeting.endTime ? ` - ${meeting.endTime}` : ''}</span>
+                                            {meeting.scope && (
+                                                <>
+                                                    <span className="text-slate-300 dark:text-slate-600">•</span>
+                                                    <MapPin size={12} className="text-cyan-500" />
+                                                    <span className="font-medium truncate">{meeting.scope}</span>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* Content */}
+                                        <p className="text-sm font-bold text-slate-800 dark:text-white leading-snug line-clamp-2 group-hover:line-clamp-none transition-all">
+                                            {meeting.content || 'Không có nội dung'}
+                                        </p>
+
+                                        {/* PIC */}
+                                        {meeting.pic && (
+                                            <div className="mt-3 flex items-center gap-2">
+                                                <div className="h-6 min-w-6 px-2 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-[10px] font-bold shadow-sm">
+                                                    {meeting.pic}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
                 ) : (
                     <div className="flex flex-col gap-10">
                         {sortedGroupedEntries.map(([date, meetings], groupIndex) => {
                             const dateInfo = formatDateDisplay(date, (meetings as any[])[0].day);
                             const isFirstActive = groupIndex === firstActiveGroupIndex;
+
+                            // Determine dominant status for the date group
+                            const statuses = (meetings as any[]).map(m => getMeetingStatus(m));
+                            const dominantStatus = statuses.includes('ongoing') ? 'ongoing'
+                                : statuses.includes('upcoming') ? 'upcoming'
+                                : statuses.includes('planned') ? 'planned'
+                                : 'past';
+
+                            // Color mapping for date card
+                            const dateCardColors = {
+                                ongoing: {
+                                    gradient: 'from-emerald-500 to-teal-600',
+                                    shadow: 'shadow-emerald-500/30',
+                                    tint: 'text-emerald-100',
+                                    mobileLine: 'from-emerald-400',
+                                },
+                                upcoming: {
+                                    gradient: 'from-rose-500 to-red-600',
+                                    shadow: 'shadow-rose-500/30',
+                                    tint: 'text-rose-100',
+                                    mobileLine: 'from-rose-400',
+                                },
+                                planned: {
+                                    gradient: 'from-indigo-500 to-violet-600',
+                                    shadow: 'shadow-indigo-500/30',
+                                    tint: 'text-indigo-100',
+                                    mobileLine: 'from-indigo-400',
+                                },
+                                past: {
+                                    gradient: 'from-amber-500 to-orange-600',
+                                    shadow: 'shadow-amber-500/30',
+                                    tint: 'text-amber-100',
+                                    mobileLine: 'from-amber-400',
+                                },
+                            };
+                            const colors = dateCardColors[dominantStatus];
 
                             return (
                                 <motion.div
@@ -423,16 +687,19 @@ const MeetingSchedule: React.FC = () => {
 
                                     {/* Date Column */}
                                     <div className="w-full md:w-[130px] md:text-right flex-shrink-0 flex md:flex-col flex-row items-center md:items-end justify-between md:justify-start gap-2 md:gap-0">
-                                        <div className="flex flex-col items-center md:items-end bg-gradient-to-br from-indigo-500 to-violet-600 p-2.5 md:p-3.5 rounded-2xl shadow-lg shadow-indigo-500/30 border border-white/20 md:mr-6 transition-transform hover:scale-105 duration-300 relative overflow-hidden group">
+                                        <div className={clsx(
+                                            "flex flex-col items-center md:items-end p-2.5 md:p-3.5 rounded-2xl border border-white/20 md:mr-6 transition-all hover:scale-105 duration-300 relative overflow-hidden group",
+                                            `bg-gradient-to-br ${colors.gradient} shadow-lg ${colors.shadow}`
+                                        )}>
                                             <div className="absolute top-0 left-0 w-16 h-16 bg-white/20 rounded-full blur-xl -translate-y-1/2 -translate-x-1/2 group-hover:scale-150 transition-transform duration-500"></div>
                                             <div className="absolute bottom-0 right-0 w-12 h-12 bg-white/10 rounded-full blur-lg translate-y-1/4 translate-x-1/4 group-hover:scale-150 transition-transform duration-500"></div>
-                                            <span className="text-[11px] md:text-xs font-bold text-indigo-100 uppercase tracking-wider relative z-10">{dateInfo.weekday}</span>
+                                            <span className={clsx("text-[11px] md:text-xs font-bold uppercase tracking-wider relative z-10", colors.tint)}>{dateInfo.weekday}</span>
                                             <span className="text-4xl md:text-5xl font-black text-white leading-none my-1 drop-shadow-md relative z-10">{dateInfo.dayNum}</span>
-                                            <span className="text-xs md:text-sm font-medium text-indigo-100 relative z-10">Tháng {dateInfo.month}</span>
+                                            <span className={clsx("text-xs md:text-sm font-medium relative z-10", colors.tint)}>Tháng {dateInfo.month}</span>
                                         </div>
 
                                         {/* Mobile Timeline Dot */}
-                                        <div className="md:hidden h-0.5 flex-1 bg-gradient-to-r from-indigo-400 to-transparent mx-4 rounded-full opacity-50"></div>
+                                        <div className={clsx("md:hidden h-0.5 flex-1 bg-gradient-to-r to-transparent mx-4 rounded-full opacity-50", colors.mobileLine)}></div>
                                     </div>
 
                                     {/* Event Cards */}
@@ -447,16 +714,16 @@ const MeetingSchedule: React.FC = () => {
                                                         "hidden md:block absolute left-[-5px] top-6 w-3 h-3 rounded-full border-2 z-20 transition-all duration-300",
                                                         status === 'ongoing' ? "bg-emerald-500 border-white shadow-[0_0_0_4px_rgba(16,185,129,0.2)] scale-125" :
                                                             status === 'upcoming' ? "bg-red-500 border-white animate-pulse" :
-                                                                status === 'past' ? "bg-blue-500 border-white" :
-                                                                    "bg-white border-slate-300" // planned
+                                                                status === 'past' ? "bg-amber-500 border-white" :
+                                                                    "bg-indigo-500 border-white" // planned
                                                     )} />
 
                                                     <div className={clsx(
                                                         "relative overflow-hidden rounded-2xl border transition-all duration-300 hover:shadow-xl hover:-translate-y-1",
                                                         status === 'ongoing' ? "bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200/60 dark:border-emerald-500/20 shadow-lg shadow-emerald-500/10" :
                                                             status === 'upcoming' ? "bg-red-50/50 dark:bg-red-900/10 border-red-200/60 dark:border-red-500/20 shadow-lg shadow-red-500/10" :
-                                                                status === 'past' ? "bg-blue-50/30 dark:bg-blue-900/10 border-blue-200/40 dark:border-blue-500/10 opacity-90" :
-                                                                    "bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border-white/60 dark:border-white/10 shadow-sm hover:shadow-indigo-500/10"
+                                                                status === 'past' ? "bg-amber-50/50 dark:bg-amber-900/10 border-amber-200/50 dark:border-amber-500/15" :
+                                                                    "bg-indigo-50/40 dark:bg-indigo-900/10 border-indigo-200/50 dark:border-indigo-500/15 shadow-sm hover:shadow-indigo-500/10"
                                                     )}>
 
                                                         {/* Card Header */}
@@ -464,9 +731,15 @@ const MeetingSchedule: React.FC = () => {
                                                             <div className={clsx(
                                                                 "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm",
                                                                 status === 'ongoing' ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
-                                                                    "bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800/30"
+                                                                    status === 'upcoming' ? "bg-red-50 text-red-700 border-red-100 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800/30" :
+                                                                        status === 'past' ? "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800/30" :
+                                                                            "bg-indigo-50 text-indigo-700 border-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-300 dark:border-indigo-800/30"
                                                             )}>
-                                                                <Clock size={14} className={status === 'ongoing' ? "text-emerald-600" : "text-blue-500"} />
+                                                                <Clock size={14} className={clsx(
+                                                                    status === 'ongoing' ? "text-emerald-600" :
+                                                                        status === 'upcoming' ? "text-red-500" :
+                                                                            status === 'past' ? "text-amber-500" : "text-indigo-500"
+                                                                )} />
                                                                 {meeting.startTime}
                                                                 {meeting.endTime && <span className="opacity-70"> - {meeting.endTime}</span>}
                                                             </div>
@@ -479,8 +752,8 @@ const MeetingSchedule: React.FC = () => {
                                                             <div className="ml-auto">
                                                                 {status === 'ongoing' && <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 animate-pulse"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Đang diễn ra</span>}
                                                                 {status === 'upcoming' && <span className="flex items-center gap-1.5 text-xs font-bold text-red-600"><span className="w-2 h-2 rounded-full bg-red-500 animate-ping" /> Sắp tới</span>}
-                                                                {status === 'past' && <span className="flex items-center gap-1.5 text-xs font-bold text-blue-500"><span className="w-2 h-2 rounded-full bg-blue-400" /> Đã diễn ra</span>}
-                                                                {status === 'planned' && <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400"><span className="w-2 h-2 rounded-full bg-white border border-slate-300" /> Đang chờ</span>}
+                                                                {status === 'past' && <span className="flex items-center gap-1.5 text-xs font-bold text-amber-600"><span className="w-2 h-2 rounded-full bg-amber-500" /> Đã diễn ra</span>}
+                                                                {status === 'planned' && <span className="flex items-center gap-1.5 text-xs font-bold text-indigo-500"><span className="w-2 h-2 rounded-full bg-indigo-500" /> Đang chờ</span>}
                                                             </div>
                                                         </div>
 

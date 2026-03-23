@@ -15,7 +15,7 @@ export default defineConfig({
       injectRegister: 'auto',
       manifest: false, // Use manual manifest in public/
       injectManifest: {
-        maximumFileSizeToCacheInBytes: 3000000 // 3MB
+        maximumFileSizeToCacheInBytes: 4000000 // 4MB
       }
     })
   ],

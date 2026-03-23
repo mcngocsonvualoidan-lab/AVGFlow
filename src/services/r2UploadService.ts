@@ -26,11 +26,15 @@ export async function uploadFileToR2(
     file: File,
     folder: string = 'design_tickets'
 ): Promise<R2UploadResult> {
+    // Encode filename to avoid "Invalid character in header content" TypeError
+    // when filename contains non-ASCII characters (e.g. Vietnamese)
+    const encodedFileName = encodeURIComponent(file.name);
+
     const response = await fetch(`${R2_WORKER_URL}/upload`, {
         method: 'POST',
         headers: {
             'Content-Type': file.type || 'application/octet-stream',
-            'X-File-Name': file.name,
+            'X-File-Name': encodedFileName,
             'X-File-Type': file.type,
             'X-Folder': folder,
         },

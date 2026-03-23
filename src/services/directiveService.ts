@@ -1,6 +1,49 @@
 
 import { supabase } from '../lib/supabase';
 
+// ==================== LOCAL CACHE LAYER ====================
+const CACHE_KEY = 'avgflow_directives_cache';
+const CACHE_META_KEY = 'avgflow_directives_cache_meta';
+const CACHE_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
+
+interface CacheMeta {
+    timestamp: number;
+    rowCount: number;
+    source: 'supabase' | 'sheet';
+}
+
+export const getCachedDirectives = (): { data: string[][] | null; meta: CacheMeta | null } => {
+    try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        const metaRaw = localStorage.getItem(CACHE_META_KEY);
+        if (!raw) return { data: null, meta: null };
+        const data = JSON.parse(raw) as string[][];
+        const meta = metaRaw ? JSON.parse(metaRaw) as CacheMeta : null;
+        return { data, meta };
+    } catch {
+        return { data: null, meta: null };
+    }
+};
+
+export const setCachedDirectives = (data: string[][], source: 'supabase' | 'sheet'): void => {
+    try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        localStorage.setItem(CACHE_META_KEY, JSON.stringify({
+            timestamp: Date.now(),
+            rowCount: data.length,
+            source,
+        } as CacheMeta));
+    } catch (e) {
+        console.warn('Cache write failed (storage full?):', e);
+    }
+};
+
+export const isCacheStale = (): boolean => {
+    const { meta } = getCachedDirectives();
+    if (!meta) return true;
+    return Date.now() - meta.timestamp > CACHE_MAX_AGE_MS;
+};
+
 // Helper to fetch from Google Sheets (Legacy Source)
 export const fetchFromGoogleSheet = async (): Promise<string[][]> => {
     const SOURCES = [
@@ -245,38 +288,47 @@ export const syncToSupabase = async (data: string[][]): Promise<void> => {
     }
 };
 
-// Fetch from Supabase (Handling > 1000 rows)
+// Fetch from Supabase (Optimized: parallel pagination)
 export const fetchFromSupabase = async (): Promise<string[][]> => {
-    let allData: any[] = [];
-    let hasMore = true;
-    let page = 0;
+    // First, get the count to know how many pages we need
+    const { count, error: countErr } = await supabase
+        .from(TABLE_NAME)
+        .select('*', { count: 'exact', head: true });
+
+    if (countErr) {
+        console.error('Supabase count error:', countErr);
+        throw countErr;
+    }
+
+    if (!count || count === 0) return [];
+
     const PAGE_SIZE = 1000;
+    const numPages = Math.ceil(count / PAGE_SIZE);
 
-    while (hasMore) {
-        const { data, error } = await supabase
+    // Fetch all pages in parallel for max speed
+    const pagePromises = Array.from({ length: numPages }, (_, page) =>
+        supabase
             .from(TABLE_NAME)
-            .select('*')
+            .select('row_index, row_content')
             .order('row_index', { ascending: true })
-            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+    );
 
-        if (error) {
-            console.error("Supabase load error:", error);
-            throw error;
-        }
+    const results = await Promise.all(pagePromises);
 
-        if (data && data.length > 0) {
-            allData = [...allData, ...data];
-            if (data.length < PAGE_SIZE) {
-                hasMore = false;
-            } else {
-                page++;
-            }
-        } else {
-            hasMore = false;
+    const allData: any[] = [];
+    for (const result of results) {
+        if (result.error) {
+            console.error('Supabase page error:', result.error);
+            throw result.error;
         }
+        if (result.data) allData.push(...result.data);
     }
 
     if (allData.length === 0) return [];
 
-    return allData.map((item: any) => item.row_content);
+    const rows = allData.map((item: any) => item.row_content);
+    // Cache the result
+    setCachedDirectives(rows, 'supabase');
+    return rows;
 };

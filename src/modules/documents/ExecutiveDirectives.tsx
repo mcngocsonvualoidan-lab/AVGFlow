@@ -8,7 +8,7 @@ import {
     BarChart, ComposedChart, Line, LabelList, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
 // import * as XLSX from 'xlsx';
-import { fetchFromSupabase, fetchFromGoogleSheet, syncToSupabase } from '../../services/directiveService';
+import { fetchFromSupabase, fetchFromGoogleSheet, syncToSupabase, getCachedDirectives, setCachedDirectives, isCacheStale } from '../../services/directiveService';
 
 const REQUIREMENTS = [
     {
@@ -89,56 +89,70 @@ const ExecutiveDirectives: React.FC = () => {
 
     const loadData = async (forceSync = false, background = false) => {
         if (!background) {
-            setLoading(true);
             setError(null);
-        } else {
-            // setIsBackgroundUpdating(true);
         }
 
         try {
-            let data: string[][] = [];
+            // ===== TIER 1: Instant render from localStorage cache =====
+            if (!forceSync && !background) {
+                const { data: cachedData, meta } = getCachedDirectives();
+                if (cachedData && cachedData.length > 0) {
+                    setDirectives(cachedData);
+                    setDataSource(meta?.source || 'supabase');
+                    if (meta?.timestamp) setLastUpdated(new Date(meta.timestamp));
+                    // Cache fresh → just background refresh Supabase
+                    if (!isCacheStale()) {
+                        loadData(false, true);
+                        return;
+                    }
+                    // Cache stale → background refresh (no spinner since we have data)
+                    loadData(false, true);
+                    return;
+                }
+                // No cache → show loading spinner
+                setLoading(true);
+            }
 
-            // 1. Try Loading from Supabase first (unless forcing sync)
+            // ===== TIER 2: Supabase (PRIMARY — auto-synced by Apps Script) =====
             if (!forceSync) {
                 try {
-                    data = await fetchFromSupabase();
+                    const data = await fetchFromSupabase();
                     if (data.length > 0) {
                         setDataSource('supabase');
                         setDirectives(data);
-                        // If we loaded from Supabase, trigger a background refresh right away
-                        if (!background) {
-                            loadData(true, true);
-                        }
+                        setLastUpdated(new Date());
+                        // No need to sync Sheet anymore — Apps Script handles it!
+                        return;
                     }
                 } catch (e) {
                     console.warn("Supabase fetch failed", e);
                 }
             }
 
-            // 2. If no data or forcing sync (background or otherwise), fetch from Google Sheet
-            if (forceSync || data.length === 0) {
-                if (forceSync && !background) console.log("Force sync...");
-
+            // ===== TIER 3: Google Sheet CORS proxy (FALLBACK only) =====
+            // Chỉ chạy khi: Supabase trống HOẶC user bấm "Live Sheet" (forceSync)
+            try {
                 const sheetData = await fetchFromGoogleSheet();
-
-                // Only update if we got data
                 if (sheetData.length > 0) {
                     setDirectives(sheetData);
                     setDataSource('sheet');
                     setLastUpdated(new Date());
-
-                    // 3. Sync back to Supabase for next time
-                    syncToSupabase(sheetData).catch(err => console.error("Background sync failed:", err));
+                    setCachedDirectives(sheetData, 'sheet');
+                    // Sync back to Supabase (emergency recovery)
+                    syncToSupabase(sheetData).catch(err => console.error("Fallback sync failed:", err));
+                }
+            } catch (sheetErr: any) {
+                if (!background) {
+                    console.error("Sheet fallback also failed:", sheetErr);
                 }
             }
         } catch (err: any) {
             console.error("Data load error:", err);
             if (!background) {
-                setError(err.message === 'ALL_PROXIES_FAILED' ? "Không thể kết nối Google Sheets." : "Lỗi tải dữ liệu.");
+                setError("Lỗi tải dữ liệu. Vui lòng thử lại.");
             }
         } finally {
             if (!background) setLoading(false);
-            // setIsBackgroundUpdating(false);
         }
     };
 
@@ -239,20 +253,35 @@ const ExecutiveDirectives: React.FC = () => {
     const getRowDate = (row: string[]) => {
         if (dateColIndex === -1) return null;
         const cell = row[dateColIndex];
-        if (!cell) return null;
+        if (!cell || !cell.trim()) return null;
 
-        // formats: dd/mm/yyyy, d/m/yyyy, yyyy-mm-dd
-        // simple regex for dd/mm/yyyy or d/m/yyyy (search ANYWHERE in string)
+        // 1. Try dd/mm/yyyy or d/m/yyyy format
         const dmy = cell.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
         if (dmy) {
-            return new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
+            const year = parseInt(dmy[3]);
+            // Reject invalid dates like 30/12/1899 (Excel epoch for serial 0)
+            if (year < 2000) return null;
+            return new Date(year, parseInt(dmy[2]) - 1, parseInt(dmy[1]));
         }
-        // check iso
+        // 2. Try ISO format yyyy-mm-dd
         const iso = cell.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
         if (iso) {
-            return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]));
+            const year = parseInt(iso[1]);
+            if (year < 2000) return null;
+            return new Date(year, parseInt(iso[2]) - 1, parseInt(iso[3]));
         }
-        return null; // Invalid date format
+        // 3. Try Excel serial number (pure number like "45737")
+        const trimmed = cell.trim();
+        if (/^\d{4,6}$/.test(trimmed)) {
+            const serial = parseInt(trimmed);
+            if (serial > 36526) { // After year 2000 in Excel serial
+                // Excel serial: days since 1899-12-30
+                const excelEpoch = new Date(1899, 11, 30);
+                const date = new Date(excelEpoch.getTime() + serial * 86400000);
+                if (date.getFullYear() >= 2000) return date;
+            }
+        }
+        return null;
     };
 
     // 1. Filter Data (Search + Time)
@@ -406,9 +435,10 @@ const ExecutiveDirectives: React.FC = () => {
             const result = {
                 is2026: true,
                 stt: findApprox('stt') === -1 ? findApprox('#') : findApprox('stt'),
-                time: findApprox('thời gian') === -1 ? findApprox('giờ') : findApprox('thời gian'),
+                time: findApprox('thời gian') !== -1 ? findApprox('thời gian') : (findApprox('giờ') !== -1 ? findApprox('giờ') : 2), // Fallback to column C (index 2)
                 date: dateColIndex,
-                pic: findApprox('chủ thể') === -1 ? findApprox('đầu mối') : findApprox('chủ thể'),
+                // PIC: Cột D (index 3) = "Chủ thể đầu mối" (hardcoded theo cấu trúc Sheet 2026)
+                pic: 3,
 
                 // Columns: G=6, H=7, I=8 (Direct), K=10, L=11, M=12 (Indirect), O=14, P=15, Q=16 (Unconfirmed)
                 direct: {
@@ -467,6 +497,7 @@ const ExecutiveDirectives: React.FC = () => {
                 return column;
             };
             console.log('🔍 Column Mappings (2026):');
+            console.log('👤 PIC column:', getExcelColumn(result.pic), '(index:', result.pic, ') | Headers:', headers.map((h, i) => `${getExcelColumn(i)}=${h}`).join(', '));
             console.log('Direct (should be G,H,I):', {
                 error: getExcelColumn(result.direct.error),
                 other: getExcelColumn(result.direct.other),
@@ -548,7 +579,36 @@ const ExecutiveDirectives: React.FC = () => {
             return true;
         });
     }, [filteredData, filterStatus, colIndices]);    // 2.8 Calculate Type Statistics
+    // 📊 Lấy số liệu từ ô tổng hợp trong Google Sheet (hàng 2):
+    //   - Trực tiếp:    cột F (index 5)
+    //   - Gián tiếp:    cột J (index 9)
+    //   - Chưa xác nhận: cột N (index 13)
     const typeStats = useMemo(() => {
+        // Ưu tiên: Đọc giá trị pre-calculated từ hàng 2 của spreadsheet (directives[1])
+        // directives[0] = hàng 1 (thường là metadata/merged cells)
+        // directives[1] = hàng 2 (chứa tổng hợp theo yêu cầu)
+        if (selectedYear === 2026 && directives.length > 1) {
+            const summaryRow = directives[1]; // Hàng 2 (0-indexed = 1)
+            const parseCellNumber = (cell: string | undefined): number => {
+                if (!cell) return 0;
+                const cleaned = cell.toString().replace(/[^\d]/g, '');
+                return parseInt(cleaned, 10) || 0;
+            };
+
+            const direct = parseCellNumber(summaryRow[5]);       // Cột F (index 5)
+            const indirect = parseCellNumber(summaryRow[9]);      // Cột J (index 9)
+            const unconfirmed = parseCellNumber(summaryRow[13]);  // Cột N (index 13)
+
+            console.log('📊 TypeStats from Sheet Row 2:', { direct, indirect, unconfirmed, rawF: summaryRow[5], rawJ: summaryRow[9], rawN: summaryRow[13] });
+
+            return [
+                { name: 'Trực tiếp', count: direct, color: '#059669' },     // emerald-600
+                { name: 'Gián tiếp', count: indirect, color: '#2563eb' },   // blue-600
+                { name: 'Chưa xác nhận', count: unconfirmed, color: '#d97706' } // amber-600
+            ];
+        }
+
+        // Fallback: Đếm từ data rows (cho năm 2025 hoặc khi không có summary row)
         let direct = 0, indirect = 0, unconfirmed = 0;
         processedData.forEach(row => {
             // Check direct
@@ -578,8 +638,9 @@ const ExecutiveDirectives: React.FC = () => {
             { name: 'Gián tiếp', count: indirect, color: '#2563eb' },   // blue-600
             { name: 'Chưa xác nhận', count: unconfirmed, color: '#d97706' } // amber-600
         ];
-    }, [processedData, colIndices]);
+    }, [processedData, colIndices, selectedYear, directives]);
 
+    // Tổng Thông điệp = Trực tiếp + Gián tiếp (không bao gồm Chưa xác nhận)
     const totalDirectIndirect = useMemo(() => {
         const direct = typeStats.find(t => t.name === 'Trực tiếp')?.count || 0;
         const indirect = typeStats.find(t => t.name === 'Gián tiếp')?.count || 0;
@@ -1024,7 +1085,22 @@ const ExecutiveDirectives: React.FC = () => {
                             <div className="flex-1 space-y-6 min-w-0">
                                 {group.items.map((row, rIdx) => {
                                     const time = colIndices.time !== -1 ? row[colIndices.time] : '';
-                                    const pic = colIndices.pic !== -1 ? row[colIndices.pic] : '';
+                                    const rawPic = colIndices.pic !== -1 ? row[colIndices.pic] : '';
+                                    // Sanitize PIC: Google Sheets CSV exports "5.1" as "05/01/2026" (date format)
+                                    // Detect date-like PIC values and convert back to short form
+                                    const pic = (() => {
+                                        if (!rawPic) return '';
+                                        // Check if value matches date pattern: dd/mm/yyyy or mm/dd/yyyy
+                                        const dateMatch = rawPic.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+                                        if (dateMatch) {
+                                            // This is a date-like string in what should be a PIC column
+                                            // Convert "05/01/2026" back to compact form "5.1" (day.month without leading zeros)
+                                            const part1 = parseInt(dateMatch[1], 10);
+                                            const part2 = parseInt(dateMatch[2], 10);
+                                            return `${part1}.${part2}`;
+                                        }
+                                        return rawPic;
+                                    })();
 
                                     // Render separate cards for Direct / Indirect / Unconfirmed if they have data
                                     const variants = [
@@ -1208,22 +1284,37 @@ const ExecutiveDirectives: React.FC = () => {
                                                                                             );
                                                                                         }
 
-                                                                                        // 3. Image URL
+                                                                                        // 3. Image URL → xem trong app
                                                                                         if (/\.(jpg|jpeg|png|gif|webp)$/i.test(part)) {
                                                                                             return (
                                                                                                 <div key={i} className="my-2 block">
-                                                                                                    <a href={part} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>
+                                                                                                    <button
+                                                                                                        onClick={(e) => {
+                                                                                                            e.preventDefault();
+                                                                                                            e.stopPropagation();
+                                                                                                            setPreviewDocUrl(part);
+                                                                                                        }}
+                                                                                                        className="cursor-pointer"
+                                                                                                    >
                                                                                                         <img src={part} alt="Attachment" className="max-h-48 rounded border border-slate-200 dark:border-slate-700 shadow-sm hover:opacity-90 transition-opacity" />
-                                                                                                    </a>
+                                                                                                    </button>
                                                                                                 </div>
                                                                                             );
                                                                                         }
 
-                                                                                        // 4. Normal Link
+                                                                                        // 4. Normal Link → xem trong app
                                                                                         return (
-                                                                                            <a key={i} href={part} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline break-all" onClick={e => e.stopPropagation()}>
+                                                                                            <button
+                                                                                                key={i}
+                                                                                                onClick={(e) => {
+                                                                                                    e.preventDefault();
+                                                                                                    e.stopPropagation();
+                                                                                                    setPreviewDocUrl(part);
+                                                                                                }}
+                                                                                                className="text-blue-500 hover:underline break-all cursor-pointer inline"
+                                                                                            >
                                                                                                 {part}
-                                                                                            </a>
+                                                                                            </button>
                                                                                         );
                                                                                     }
                                                                                     return part;
@@ -1244,7 +1335,39 @@ const ExecutiveDirectives: React.FC = () => {
                                                                                             <ul className="space-y-2 text-sm list-disc pl-5 opacity-90 font-medium whitespace-pre-wrap break-words">
                                                                                                 {errorContent?.trim() && <li><span className="font-bold">Lỗi:</span> {renderContentWithLinks(errorContent)}</li>}
                                                                                                 {otherContent?.trim() && <li><span className="font-bold">Khác:</span> {renderContentWithLinks(otherContent)}</li>}
-                                                                                                {forwardContent?.trim() && <li><span className="font-bold">Chuyển tiếp:</span> {renderContentWithLinks(forwardContent)}</li>}
+                                                                                                {forwardContent?.trim() && (() => {
+                                                                                                    // Tách các URL / tài liệu chuyển tiếp
+                                                                                                    const parts = forwardContent.trim().split(/\s+/).filter((p: string) => p.trim());
+                                                                                                    const urls = parts.filter((p: string) => isUrl(p));
+                                                                                                    const nonUrlParts = parts.filter((p: string) => !isUrl(p));
+                                                                                                    const nonUrlText = nonUrlParts.join(' ').trim();
+
+                                                                                                    // Nếu chỉ có 1 tài liệu hoặc không có URL → render bình thường
+                                                                                                    if (urls.length <= 1) {
+                                                                                                        return <li><span className="font-bold">Chuyển tiếp:</span> {renderContentWithLinks(forwardContent)}</li>;
+                                                                                                    }
+
+                                                                                                    // Nhiều tài liệu (>1): đánh số thứ tự, sắp xếp theo hàng ngang
+                                                                                                    return (
+                                                                                                        <li>
+                                                                                                            <span className="font-bold">Chuyển tiếp:</span>
+                                                                                                            {nonUrlText && <span className="ml-1">{nonUrlText}</span>}
+                                                                                                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                                                                                {urls.map((url: string, urlIdx: number) => (
+                                                                                                                    <div key={urlIdx} className="flex items-center gap-1.5">
+                                                                                                                        <span
+                                                                                                                            className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white"
+                                                                                                                            style={{ backgroundColor: card.color === 'emerald' ? '#059669' : card.color === 'blue' ? '#2563eb' : card.color === 'indigo' ? '#4f46e5' : '#d97706' }}
+                                                                                                                        >
+                                                                                                                            {urlIdx + 1}
+                                                                                                                        </span>
+                                                                                                                        {renderContentWithLinks(url)}
+                                                                                                                    </div>
+                                                                                                                ))}
+                                                                                                            </div>
+                                                                                                        </li>
+                                                                                                    );
+                                                                                                })()}
                                                                                             </ul>
                                                                                         </div>
                                                                                     )}
@@ -1916,28 +2039,57 @@ const ExecutiveDirectives: React.FC = () => {
                                 )}
 
                                 {/* Zoom Wrapper Container */}
-                                <div
-                                    className="relative transition-all duration-200 ease-out origin-top-left"
-                                    style={{
-                                        width: zoomLevel === 1 ? '100%' : `${zoomLevel * 100}%`,
-                                        height: zoomLevel === 1 ? '100%' : `${zoomLevel * 100}%`,
-                                        overflow: 'hidden' // Hide internal scrollbars of the scaler, rely on Parent
-                                    }}
-                                >
-                                    <iframe
-                                        src={previewDocUrl || ''}
-                                        className={clsx("border-0 shadow-sm bg-white", isDocLoading ? 'opacity-0' : 'opacity-100')}
-                                        style={{
-                                            width: zoomLevel === 1 ? '100%' : `${100 / zoomLevel}%`,
-                                            height: zoomLevel === 1 ? '100%' : `${100 / zoomLevel}%`,
-                                            transform: zoomLevel === 1 ? 'none' : `scale(${zoomLevel})`,
-                                            transformOrigin: 'top left'
-                                        }}
-                                        allow="autoplay"
-                                        title="Document Preview"
-                                        onLoad={() => setIsDocLoading(false)}
-                                    />
-                                </div>
+                                {(() => {
+                                    const isImageUrl = previewDocUrl && /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(previewDocUrl);
+
+                                    if (isImageUrl) {
+                                        // Image preview - render as <img> with zoom
+                                        return (
+                                            <div
+                                                className="relative flex items-center justify-center w-full h-full"
+                                                style={{ overflow: 'auto' }}
+                                            >
+                                                <img
+                                                    src={previewDocUrl || ''}
+                                                    alt="Preview"
+                                                    className="max-w-none shadow-lg rounded-lg"
+                                                    style={{
+                                                        transform: `scale(${zoomLevel})`,
+                                                        transformOrigin: 'center center',
+                                                        transition: 'transform 0.2s ease-out'
+                                                    }}
+                                                    onLoad={() => setIsDocLoading(false)}
+                                                />
+                                            </div>
+                                        );
+                                    }
+
+                                    // Document / URL preview - render as <iframe>
+                                    return (
+                                        <div
+                                            className="relative transition-all duration-200 ease-out origin-top-left"
+                                            style={{
+                                                width: zoomLevel === 1 ? '100%' : `${zoomLevel * 100}%`,
+                                                height: zoomLevel === 1 ? '100%' : `${zoomLevel * 100}%`,
+                                                overflow: 'hidden' // Hide internal scrollbars of the scaler, rely on Parent
+                                            }}
+                                        >
+                                            <iframe
+                                                src={previewDocUrl || ''}
+                                                className={clsx("border-0 shadow-sm bg-white", isDocLoading ? 'opacity-0' : 'opacity-100')}
+                                                style={{
+                                                    width: zoomLevel === 1 ? '100%' : `${100 / zoomLevel}%`,
+                                                    height: zoomLevel === 1 ? '100%' : `${100 / zoomLevel}%`,
+                                                    transform: zoomLevel === 1 ? 'none' : `scale(${zoomLevel})`,
+                                                    transformOrigin: 'top left'
+                                                }}
+                                                allow="autoplay"
+                                                title="Document Preview"
+                                                onLoad={() => setIsDocLoading(false)}
+                                            />
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </motion.div>
                     </div>

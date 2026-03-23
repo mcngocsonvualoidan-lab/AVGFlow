@@ -23,6 +23,7 @@ const ALLOWED_ORIGINS = [
   'https://avgflow-dd822.firebaseapp.com',
   'http://localhost:5173',
   'http://localhost:4173',
+  'https://flow.auvietglobal.com',
 ];
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
