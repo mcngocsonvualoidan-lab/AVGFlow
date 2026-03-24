@@ -1,19 +1,16 @@
 /**
  * ============================================================
  *  AVGFlow — Product Catalog Service
- *  Supabase-first → Apps Script API fallback → CSV fallback
+ *  🔋 HYBRID MODE: JSONP → Apps Script API → CSV proxy (no Supabase)
  * ============================================================
  */
-import { supabase } from '../lib/supabase';
 
 const MODULE = '[CatalogService]';
 
-// ── Sheet config (fallback) ──
+// ── Sheet config ──
 const CATALOG_SHEET_ID = '1karhpP174qGeQudh3YopY3Zl68f_zXoqlsw8CYd1YhQ';
 const CATALOG_CSV_URL = `https://docs.google.com/spreadsheets/d/${CATALOG_SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`;
 const CATALOG_API_URL = 'https://script.google.com/macros/s/AKfycbzo7AAGf9FdFJ7zZKYBODo_LcZpmiFosnVjvvPAxTdS7uafydpeBzoyRx9Qnwgh6tKI7g/exec';
-
-const SUPABASE_TABLE = 'product_catalog';
 
 export interface CatalogItem {
     chungLoai: string;
@@ -28,59 +25,107 @@ export interface CatalogItem {
 // ── Cache ──
 let _cache: CatalogItem[] | null = null;
 let _cacheTs = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 min
+const CACHE_TTL = 10 * 60 * 1000; // 10 min (increased for hybrid mode)
 
 /**
- * Parse raw Supabase rows → CatalogItem[]
- * Column mapping: A=chungLoai, B=nhanHang, C=sku, D=tenSanPham, E=dvt, F=kichThuoc, G=chatLieu
+ * Parse GViz JSON response
  */
-function parseFromSupabase(rows: any[]): CatalogItem[] {
-    return rows.map(r => {
-        const c: string[] = r.row_content || [];
-        // Sheet columns: A=chungLoai, B=nhanHang, C=image(skip), D=sku, E=tenSanPham, F=dvt, ..., I=kichThuoc, J=chatLieu
-        return {
-            chungLoai: (c[0] || '').trim(),
-            nhanHang: (c[1] || '').trim(),
-            sku: (c[3] || '').trim(),       // Col D (skip C = Hình ảnh)
-            tenSanPham: (c[4] || '').trim(), // Col E
-            dvt: (c[5] || '').trim(),        // Col F
-            kichThuoc: (c[8] || '').trim(),  // Col I
-            chatLieu: (c[9] || '').trim(),   // Col J
-        };
-    }).filter(item => item.nhanHang || item.tenSanPham);
+function parseGVizToRows(responseText: string): string[][] {
+    const jsonMatch = responseText.match(/google\.visualization\.Query\.setResponse\((.+)\);?\s*$/s);
+    if (!jsonMatch) return [];
+    let parsed: any;
+    try { parsed = JSON.parse(jsonMatch[1]); } catch { return []; }
+    if (!parsed?.table?.rows) return [];
+
+    const extractValue = (cell: any): string => {
+        if (!cell) return '';
+        if (cell.f) return cell.f;
+        if (cell.v === null || cell.v === undefined) return '';
+        return String(cell.v);
+    };
+
+    const headers = (parsed.table.cols || []).map((col: any) => col.label || '');
+    const rows: string[][] = [headers];
+    for (const row of parsed.table.rows) {
+        rows.push((row.c || []).map((cell: any) => extractValue(cell)));
+    }
+    return rows;
 }
 
 /**
- * Fetch catalog — Supabase first, then API, then CSV
+ * JSONP fetch for catalog (bypasses CORS)
+ */
+function fetchCatalogViaJSONP(): Promise<string[][]> {
+    return new Promise((resolve, reject) => {
+        const cb = `__gviz_catalog_${Date.now()}`;
+        (window as any)[cb] = (response: any) => {
+            cleanup();
+            try {
+                const fakeText = `google.visualization.Query.setResponse(${JSON.stringify(response)});`;
+                resolve(parseGVizToRows(fakeText));
+            } catch (e) { reject(e); }
+        };
+        const script = document.createElement('script');
+        script.src = `https://docs.google.com/spreadsheets/d/${CATALOG_SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${cb}&gid=0`;
+        script.onerror = () => { cleanup(); reject(new Error('JSONP failed')); };
+        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 12000);
+        function cleanup() {
+            clearTimeout(timer);
+            delete (window as any)[cb];
+            if (script.parentNode) script.parentNode.removeChild(script);
+        }
+        document.head.appendChild(script);
+    });
+}
+
+/**
+ * Parse CSV rows → CatalogItem[]
+ */
+function parseRowsToCatalog(rows: string[][]): CatalogItem[] {
+    if (rows.length <= 1) return [];
+    const items: CatalogItem[] = [];
+    for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (r.length < 6) continue;
+        const item: CatalogItem = {
+            chungLoai: (r[0] || '').trim(),
+            nhanHang: (r[1] || '').trim(),
+            sku: (r[2] || '').trim(),
+            tenSanPham: (r[3] || '').trim(),
+            dvt: (r[4] || '').trim(),
+            kichThuoc: (r[5] || '').trim(),
+            chatLieu: (r[6] || '').trim(),
+        };
+        if (item.nhanHang || item.tenSanPham) items.push(item);
+    }
+    return items;
+}
+
+/**
+ * Fetch catalog — 🔋 HYBRID: JSONP → API → CSV proxy (no Supabase)
  */
 export async function fetchCatalog(): Promise<CatalogItem[]> {
-    // Cache hit
     if (_cache && Date.now() - _cacheTs < CACHE_TTL) {
         return _cache;
     }
 
-    // Strategy 1: Supabase
+    // Strategy 1: JSONP (bypasses CORS)
     try {
-        const { data, error } = await supabase
-            .from(SUPABASE_TABLE)
-            .select('row_index, row_content')
-            .order('row_index', { ascending: true });
-
-        if (!error && data && data.length > 0) {
-            const items = parseFromSupabase(data);
-            console.log(`${MODULE} ✅ Loaded from Supabase: ${items.length} items`);
+        const rows = await fetchCatalogViaJSONP();
+        const items = parseRowsToCatalog(rows);
+        if (items.length > 0) {
+            console.log(`${MODULE} ✅ JSONP loaded: ${items.length} items`);
             _cache = items;
             _cacheTs = Date.now();
             return items;
         }
-        if (error) console.warn(`${MODULE} Supabase error:`, error.message);
     } catch (e) {
-        console.warn(`${MODULE} Supabase fetch failed:`, e);
+        console.warn(`${MODULE} JSONP failed:`, e);
     }
 
     // Strategy 2: Apps Script API
     try {
-        const apiRes = await fetch(`${CATALOG_API_URL}?action=catalog&t=${Date.now()}`);
+        const apiRes = await fetch(`${CATALOG_API_URL}?action=catalog&t=${Date.now()}`, { signal: AbortSignal.timeout(15000) });
         const json = await apiRes.json();
         if (json.success && Array.isArray(json.items)) {
             const items: CatalogItem[] = json.items.map((item: Record<string, string>) => ({
@@ -92,44 +137,39 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
                 kichThuoc: item.kichThuoc || '',
                 chatLieu: item.chatLieu || '',
             }));
-            console.log(`${MODULE} ✅ Loaded from API: ${items.length} items`);
+            console.log(`${MODULE} ✅ API loaded: ${items.length} items`);
             _cache = items;
             _cacheTs = Date.now();
             return items;
         }
     } catch (e) {
-        console.warn(`${MODULE} API fetch failed:`, e);
+        console.warn(`${MODULE} API failed:`, e);
     }
 
-    // Strategy 3: CSV fallback
-    try {
-        const res = await fetch(CATALOG_CSV_URL);
-        const text = await res.text();
-        const rows = parseCSV(text);
-        if (rows.length <= 1) return [];
-
-        const items: CatalogItem[] = [];
-        for (let i = 1; i < rows.length; i++) {
-            const r = rows[i];
-            if (r.length < 6) continue;
-            items.push({
-                chungLoai: (r[0] || '').trim(),
-                nhanHang: (r[1] || '').trim(),
-                sku: (r[2] || '').trim(),
-                tenSanPham: (r[3] || '').trim(),
-                dvt: (r[4] || '').trim(),
-                kichThuoc: (r[5] || '').trim(),
-                chatLieu: (r[6] || '').trim(),
-            });
-        }
-        console.log(`${MODULE} ✅ Loaded from CSV: ${items.length} items`);
-        _cache = items;
-        _cacheTs = Date.now();
-        return items;
-    } catch (e) {
-        console.error(`${MODULE} ❌ All strategies failed:`, e);
-        return _cache || [];
+    // Strategy 3: CSV via proxy
+    const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(CATALOG_CSV_URL)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(CATALOG_CSV_URL)}`,
+    ];
+    for (const proxyUrl of proxies) {
+        try {
+            const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
+            if (!res.ok) continue;
+            const text = await res.text();
+            if (!text || text.length < 50) continue;
+            const rows = parseCSV(text);
+            const items = parseRowsToCatalog(rows);
+            if (items.length > 0) {
+                console.log(`${MODULE} ✅ CSV proxy loaded: ${items.length} items`);
+                _cache = items;
+                _cacheTs = Date.now();
+                return items;
+            }
+        } catch { /* try next */ }
     }
+
+    console.error(`${MODULE} ❌ All strategies failed`);
+    return _cache || [];
 }
 
 /**

@@ -1,19 +1,16 @@
 /**
  * ============================================================
  *  AVGFlow — Customer Service
- *  Supabase-first → CSV fallback
+ *  🔋 HYBRID MODE: Google Sheets (JSONP) primary — saves Supabase bandwidth
  * ============================================================
  */
-import { supabase } from '../lib/supabase';
 
 const MODULE = '[CustomerService]';
 
-// ── Sheet config (fallback) ──
+// ── Sheet config ──
 const CUSTOMER_SHEET_ID = '1ZtqPNzUupl57Z2806sohQGNqj4W8GnzXOAGA3kbAqIQ';
 const CUSTOMER_GID = '1450599696';
 const CSV_URL = `https://docs.google.com/spreadsheets/d/${CUSTOMER_SHEET_ID}/gviz/tq?tqx=out:csv&gid=${CUSTOMER_GID}`;
-
-const SUPABASE_TABLE = 'customers';
 
 export interface CustomerContact {
     company: string;
@@ -28,88 +25,128 @@ export interface CustomerContact {
 // ── Cache ──
 let _cache: CustomerContact[] | null = null;
 let _cacheTs = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 min
+const CACHE_TTL = 10 * 60 * 1000; // 10 min (increased from 5 for hybrid mode)
 
 /**
- * Parse raw Supabase rows → CustomerContact[]
- * Sheet columns: A(0)=STT/Company, B(1)=Company, C(2)=Bộ phận, D(3)=Chức vụ, E(4)=Tên, F(5)=Địa chỉ, G(6)=SĐT, H(7)=Email
- * Note: company may be empty for sub-rows — we carry forward the last known company
+ * Parse GViz JSON response
  */
-function parseFromSupabase(rows: any[]): CustomerContact[] {
-    let lastCompany = '';
-    return rows.map(r => {
-        const c: string[] = r.row_content || [];
-        const company = (c[1] || '').trim();     // Col B
-        const department = (c[2] || '').trim();  // Col C - Bộ phận
-        const position = (c[3] || '').trim();    // Col D - Chức vụ
-        const name = (c[4] || '').trim();        // Col E - Tên đối tác AV
-        const address = (c[5] || '').trim();     // Col F - Địa chỉ
-        const phone = (c[6] || '').trim();       // Col G - SĐT
-        const email = (c[7] || '').trim();       // Col H - Email
-        if (!name) return null;
-        if (company && company !== '-') lastCompany = company;
-        return { company: lastCompany, department, position, name, address, phone, email };
-    }).filter((item): item is CustomerContact => item !== null);
+function parseGVizToRows(responseText: string): string[][] {
+    const jsonMatch = responseText.match(/google\.visualization\.Query\.setResponse\((.+)\);?\s*$/s);
+    if (!jsonMatch) return [];
+    let parsed: any;
+    try { parsed = JSON.parse(jsonMatch[1]); } catch { return []; }
+    if (!parsed?.table?.rows) return [];
+
+    const extractValue = (cell: any): string => {
+        if (!cell) return '';
+        if (cell.f) return cell.f;
+        if (cell.v === null || cell.v === undefined) return '';
+        return String(cell.v);
+    };
+
+    const headers = (parsed.table.cols || []).map((col: any) => col.label || '');
+    const rows: string[][] = [headers];
+    for (const row of parsed.table.rows) {
+        rows.push((row.c || []).map((cell: any) => extractValue(cell)));
+    }
+    return rows;
 }
 
 /**
- * Fetch customers — Supabase first, then CSV
+ * JSONP fetch (bypasses CORS)
+ */
+function fetchCustomersViaJSONP(): Promise<string[][]> {
+    return new Promise((resolve, reject) => {
+        const cb = `__gviz_customer_${Date.now()}`;
+        (window as any)[cb] = (response: any) => {
+            cleanup();
+            try {
+                const fakeText = `google.visualization.Query.setResponse(${JSON.stringify(response)});`;
+                resolve(parseGVizToRows(fakeText));
+            } catch (e) { reject(e); }
+        };
+        const script = document.createElement('script');
+        script.src = `https://docs.google.com/spreadsheets/d/${CUSTOMER_SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${cb}&gid=${CUSTOMER_GID}`;
+        script.onerror = () => { cleanup(); reject(new Error('JSONP failed')); };
+        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 12000);
+        function cleanup() {
+            clearTimeout(timer);
+            delete (window as any)[cb];
+            if (script.parentNode) script.parentNode.removeChild(script);
+        }
+        document.head.appendChild(script);
+    });
+}
+
+/**
+ * Parse rows → CustomerContact[]
+ */
+function parseRowsToCustomers(rows: string[][]): CustomerContact[] {
+    if (rows.length <= 1) return [];
+    const items: CustomerContact[] = [];
+    let lastCompany = '';
+    for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        const company = (r[1] || '').trim();
+        const department = (r[2] || '').trim();
+        const position = (r[3] || '').trim();
+        const name = (r[4] || '').trim();
+        const address = (r[5] || '').trim();
+        const phone = (r[6] || '').trim();
+        const email = (r[7] || '').trim();
+        if (!name) continue;
+        if (company && company !== '-') lastCompany = company;
+        items.push({ company: lastCompany, department, position, name, address, phone, email });
+    }
+    return items;
+}
+
+/**
+ * Fetch customers — 🔋 HYBRID: JSONP → CSV proxy (no Supabase)
  */
 export async function fetchCustomers(): Promise<CustomerContact[]> {
-    // Cache hit
     if (_cache && Date.now() - _cacheTs < CACHE_TTL) {
         return _cache;
     }
 
-    // Strategy 1: Supabase
+    // Strategy 1: JSONP (bypasses CORS)
     try {
-        const { data, error } = await supabase
-            .from(SUPABASE_TABLE)
-            .select('row_index, row_content')
-            .order('row_index', { ascending: true });
-
-        if (!error && data && data.length > 0) {
-            const items = parseFromSupabase(data);
-            console.log(`${MODULE} ✅ Loaded from Supabase: ${items.length} contacts`);
+        const rows = await fetchCustomersViaJSONP();
+        const items = parseRowsToCustomers(rows);
+        if (items.length > 0) {
+            console.log(`${MODULE} ✅ JSONP loaded: ${items.length} contacts`);
             _cache = items;
             _cacheTs = Date.now();
             return items;
         }
-        if (error) console.warn(`${MODULE} Supabase error:`, error.message);
     } catch (e) {
-        console.warn(`${MODULE} Supabase fetch failed:`, e);
+        console.warn(`${MODULE} JSONP failed:`, e);
     }
 
-    // Strategy 2: CSV fallback
-    try {
-        const res = await fetch(CSV_URL);
-        const text = await res.text();
-        const rows = parseCSV(text);
-        if (rows.length <= 1) return [];
-
-        const items: CustomerContact[] = [];
-        let lastCompany = '';
-        for (let i = 1; i < rows.length; i++) {
-            const r = rows[i];
-            const company = (r[1] || '').trim();     // Col B
-            const department = (r[2] || '').trim();  // Col C - Bộ phận
-            const position = (r[3] || '').trim();    // Col D - Chức vụ
-            const name = (r[4] || '').trim();        // Col E
-            const address = (r[5] || '').trim();     // Col F
-            const phone = (r[6] || '').trim();       // Col G
-            const email = (r[7] || '').trim();       // Col H
-            if (!name) continue;
-            if (company && company !== '-') lastCompany = company;
-            items.push({ company: lastCompany, department, position, name, address, phone, email });
-        }
-        console.log(`${MODULE} ✅ Loaded from CSV: ${items.length} contacts`);
-        _cache = items;
-        _cacheTs = Date.now();
-        return items;
-    } catch (e) {
-        console.error(`${MODULE} ❌ All strategies failed:`, e);
-        return _cache || [];
+    // Strategy 2: CSV via proxy
+    const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(CSV_URL)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(CSV_URL)}`,
+    ];
+    for (const proxyUrl of proxies) {
+        try {
+            const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
+            if (!res.ok) continue;
+            const text = await res.text();
+            if (!text || text.length < 50) continue;
+            const rows = parseCSV(text);
+            const items = parseRowsToCustomers(rows);
+            if (items.length > 0) {
+                console.log(`${MODULE} ✅ CSV proxy loaded: ${items.length} contacts`);
+                _cache = items;
+                _cacheTs = Date.now();
+                return items;
+            }
+        } catch { /* try next */ }
     }
+
+    console.error(`${MODULE} ❌ All strategies failed`);
+    return _cache || [];
 }
 
 /**

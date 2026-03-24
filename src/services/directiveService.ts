@@ -1,5 +1,6 @@
 
-import { supabase } from '../lib/supabase';
+// 🔋 HYBRID: Use working Supabase instance (#2) for directives sync only
+import { supabase } from '../utils/supabaseClient';
 
 // ==================== LOCAL CACHE LAYER ====================
 const CACHE_KEY = 'avgflow_directives_cache';
