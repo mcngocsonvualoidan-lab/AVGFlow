@@ -282,13 +282,31 @@ function parseMeetingsFromGViz(data: any): Meeting[] {
 
     const extractValue = (cell: any): string => {
         if (!cell) return '';
+        // Prefer formatted value (human-readable)
         if (cell.f) return cell.f;
         if (cell.v === null || cell.v === undefined) return '';
-        return String(cell.v);
+        const v = cell.v;
+        // Handle GViz Date format: "Date(2026,2,2)" → "02/03/2026"
+        if (typeof v === 'string') {
+            const dateMatch = v.match(/^Date\((\d+),(\d+),(\d+)\)$/);
+            if (dateMatch) {
+                const [, y, m, d] = dateMatch;
+                return `${d.padStart(2, '0')}/${(parseInt(m) + 1).toString().padStart(2, '0')}/${y}`;
+            }
+            // Handle GViz Time format: "Date(1899,11,30,16,0,0)" → "16:00"
+            const timeMatch = v.match(/^Date\(1899,\d+,\d+,(\d+),(\d+)/);
+            if (timeMatch) {
+                return `${timeMatch[1]}:${timeMatch[2].padStart(2, '0')}`;
+            }
+        }
+        return String(v);
     };
 
     const cleanTime = (val: string): string => {
         if (!val) return '';
+        // Handle "Date(1899,11,30,16,0,0)" format from raw GViz
+        const gvizTime = val.match(/^Date\(1899,\d+,\d+,(\d+),(\d+)/);
+        if (gvizTime) return `${gvizTime[1]}:${gvizTime[2].padStart(2, '0')}`;
         const epochMatch = val.match(/^30\/12\/1899\s+(\d{1,2}:\d{2})(:\d{2})?$/);
         if (epochMatch) return epochMatch[1];
         const timeOnly = val.match(/^(\d{1,2}:\d{2})(:\d{2})?$/);
