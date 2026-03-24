@@ -93,25 +93,43 @@ function parseGVizObject(data: any): string[][] {
 
 /**
  * JSONP fetch for print orders (bypasses CORS)
+ * Uses default google.visualization.Query.setResponse callback
  */
 function fetchPrintOrdersViaJSONP(): Promise<string[][]> {
     return new Promise((resolve, reject) => {
-        const cb = `__gviz_print_${Date.now()}`;
-        (window as any)[cb] = (response: any) => {
+        const uid = `print_${Date.now()}`;
+        const scriptId = `__gviz_script_${uid}`;
+
+        // Temporarily override the default callback
+        const origSetResponse = (window as any).google?.visualization?.Query?.setResponse;
+
+        // Ensure the namespace exists
+        if (!(window as any).google) (window as any).google = {};
+        if (!(window as any).google.visualization) (window as any).google.visualization = {};
+        if (!(window as any).google.visualization.Query) (window as any).google.visualization.Query = {};
+
+        (window as any).google.visualization.Query.setResponse = (response: any) => {
             cleanup();
             try {
                 const rows = parseGVizObject(response);
                 resolve(rows);
             } catch (e) { reject(e); }
         };
+
         const script = document.createElement('script');
-        script.src = `https://docs.google.com/spreadsheets/d/${PRINT_SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${cb}&gid=0`;
+        script.id = scriptId;
+        script.src = `https://docs.google.com/spreadsheets/d/${PRINT_SHEET_ID}/gviz/tq?tqx=out:json&gid=0`;
         script.onerror = () => { cleanup(); reject(new Error('JSONP failed')); };
-        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 12000);
+        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 15000);
+
         function cleanup() {
             clearTimeout(timer);
-            delete (window as any)[cb];
-            if (script.parentNode) script.parentNode.removeChild(script);
+            // Restore original callback
+            if (origSetResponse) {
+                (window as any).google.visualization.Query.setResponse = origSetResponse;
+            }
+            const el = document.getElementById(scriptId);
+            if (el) el.remove();
         }
         document.head.appendChild(script);
     });

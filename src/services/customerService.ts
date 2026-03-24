@@ -28,51 +28,59 @@ let _cacheTs = 0;
 const CACHE_TTL = 10 * 60 * 1000; // 10 min (increased from 5 for hybrid mode)
 
 /**
- * Parse GViz JSON response
+ * Parse GViz response OBJECT to string[][]
  */
-function parseGVizToRows(responseText: string): string[][] {
-    const jsonMatch = responseText.match(/google\.visualization\.Query\.setResponse\((.+)\);?\s*$/s);
-    if (!jsonMatch) return [];
-    let parsed: any;
-    try { parsed = JSON.parse(jsonMatch[1]); } catch { return []; }
-    if (!parsed?.table?.rows) return [];
-
+function parseGVizObject(data: any): string[][] {
+    if (!data?.table?.rows) return [];
     const extractValue = (cell: any): string => {
         if (!cell) return '';
         if (cell.f) return cell.f;
         if (cell.v === null || cell.v === undefined) return '';
         return String(cell.v);
     };
-
-    const headers = (parsed.table.cols || []).map((col: any) => col.label || '');
+    const headers = (data.table.cols || []).map((col: any) => col.label || '');
     const rows: string[][] = [headers];
-    for (const row of parsed.table.rows) {
+    for (const row of data.table.rows) {
         rows.push((row.c || []).map((cell: any) => extractValue(cell)));
     }
     return rows;
 }
 
 /**
- * JSONP fetch (bypasses CORS)
+ * JSONP fetch (bypasses CORS) - uses default setResponse callback
  */
 function fetchCustomersViaJSONP(): Promise<string[][]> {
     return new Promise((resolve, reject) => {
-        const cb = `__gviz_customer_${Date.now()}`;
-        (window as any)[cb] = (response: any) => {
+        const uid = `customer_${Date.now()}`;
+        const scriptId = `__gviz_script_${uid}`;
+
+        const origSetResponse = (window as any).google?.visualization?.Query?.setResponse;
+
+        if (!(window as any).google) (window as any).google = {};
+        if (!(window as any).google.visualization) (window as any).google.visualization = {};
+        if (!(window as any).google.visualization.Query) (window as any).google.visualization.Query = {};
+
+        (window as any).google.visualization.Query.setResponse = (response: any) => {
             cleanup();
             try {
-                const fakeText = `google.visualization.Query.setResponse(${JSON.stringify(response)});`;
-                resolve(parseGVizToRows(fakeText));
+                const rows = parseGVizObject(response);
+                resolve(rows);
             } catch (e) { reject(e); }
         };
+
         const script = document.createElement('script');
-        script.src = `https://docs.google.com/spreadsheets/d/${CUSTOMER_SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${cb}&gid=${CUSTOMER_GID}`;
+        script.id = scriptId;
+        script.src = `https://docs.google.com/spreadsheets/d/${CUSTOMER_SHEET_ID}/gviz/tq?tqx=out:json&gid=${CUSTOMER_GID}`;
         script.onerror = () => { cleanup(); reject(new Error('JSONP failed')); };
-        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 12000);
+        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 15000);
+
         function cleanup() {
             clearTimeout(timer);
-            delete (window as any)[cb];
-            if (script.parentNode) script.parentNode.removeChild(script);
+            if (origSetResponse) {
+                (window as any).google.visualization.Query.setResponse = origSetResponse;
+            }
+            const el = document.getElementById(scriptId);
+            if (el) el.remove();
         }
         document.head.appendChild(script);
     });

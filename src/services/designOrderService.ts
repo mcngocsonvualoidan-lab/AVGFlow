@@ -147,17 +147,22 @@ function parseGVizJSONToRows(responseText: string): string[][] {
 
 /**
  * JSONP-based fetch: Injects a <script> tag to load data from Google Visualization API.
- * Completely bypasses CORS since <script> tags are not subject to same-origin policy.
+ * Uses default google.visualization.Query.setResponse callback.
  */
 function fetchDesignOrdersViaJSONP(): Promise<string[][]> {
     return new Promise((resolve, reject) => {
-        const callbackName = `__gviz_design_${Date.now()}`;
-        const timeoutMs = 12000;
+        const uid = `design_${Date.now()}`;
+        const scriptId = `__gviz_script_${uid}`;
 
-        (window as any)[callbackName] = (response: any) => {
+        const origSetResponse = (window as any).google?.visualization?.Query?.setResponse;
+
+        if (!(window as any).google) (window as any).google = {};
+        if (!(window as any).google.visualization) (window as any).google.visualization = {};
+        if (!(window as any).google.visualization.Query) (window as any).google.visualization.Query = {};
+
+        (window as any).google.visualization.Query.setResponse = (response: any) => {
             cleanup();
             try {
-                // Parse directly from response object (JSONP already parsed it)
                 const rows = parseGVizObject(response);
                 resolve(rows);
             } catch (e) {
@@ -166,8 +171,8 @@ function fetchDesignOrdersViaJSONP(): Promise<string[][]> {
         };
 
         const script = document.createElement('script');
-        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json;responseHandler:${callbackName}&gid=${GID}`;
-        script.src = url;
+        script.id = scriptId;
+        script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${GID}`;
         script.onerror = () => {
             cleanup();
             reject(new Error('JSONP script load failed'));
@@ -176,12 +181,15 @@ function fetchDesignOrdersViaJSONP(): Promise<string[][]> {
         const timer = setTimeout(() => {
             cleanup();
             reject(new Error('JSONP timeout'));
-        }, timeoutMs);
+        }, 15000);
 
         function cleanup() {
             clearTimeout(timer);
-            delete (window as any)[callbackName];
-            if (script.parentNode) script.parentNode.removeChild(script);
+            if (origSetResponse) {
+                (window as any).google.visualization.Query.setResponse = origSetResponse;
+            }
+            const el = document.getElementById(scriptId);
+            if (el) el.remove();
         }
 
         document.head.appendChild(script);
