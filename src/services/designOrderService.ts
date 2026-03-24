@@ -109,97 +109,12 @@ export async function fetchDesignOrdersFromSupabase(): Promise<string[][]> {
     return rows;
 }
 
-/**
- * Extract cell value from GViz cell object
- */
-function extractGVizCellValue(cell: any): string {
-    if (!cell) return '';
-    if (cell.f) return cell.f;
-    if (cell.v === null || cell.v === undefined) return '';
-    if (typeof cell.v === 'boolean') return cell.v ? 'TRUE' : 'FALSE';
-    return String(cell.v);
-}
-
-/**
- * Parse GViz response OBJECT directly to string[][] (used by JSONP callback)
- */
-function parseGVizObject(data: any): string[][] {
-    if (!data?.table?.rows) return [];
-    const headers = (data.table.cols || []).map((col: any) => col.label || '');
-    const rows: string[][] = [headers];
-    for (const row of data.table.rows) {
-        rows.push((row.c || []).map((cell: any) => extractGVizCellValue(cell)));
-    }
-    return rows;
-}
-
-/**
- * Parse Google Visualization JSON TEXT response → string[][]
- * The response wraps data in google.visualization.Query.setResponse({...})
- */
-function parseGVizJSONToRows(responseText: string): string[][] {
-    const jsonMatch = responseText.match(/google\.visualization\.Query\.setResponse\((.+)\);?\s*$/s);
-    if (!jsonMatch) return [];
-    let parsed: any;
-    try { parsed = JSON.parse(jsonMatch[1]); } catch { return []; }
-    return parseGVizObject(parsed);
-}
-
-/**
- * JSONP-based fetch: Injects a <script> tag to load data from Google Visualization API.
- * Uses default google.visualization.Query.setResponse callback.
- */
-function fetchDesignOrdersViaJSONP(): Promise<string[][]> {
-    return new Promise((resolve, reject) => {
-        const uid = `design_${Date.now()}`;
-        const scriptId = `__gviz_script_${uid}`;
-
-        const origSetResponse = (window as any).google?.visualization?.Query?.setResponse;
-
-        if (!(window as any).google) (window as any).google = {};
-        if (!(window as any).google.visualization) (window as any).google.visualization = {};
-        if (!(window as any).google.visualization.Query) (window as any).google.visualization.Query = {};
-
-        (window as any).google.visualization.Query.setResponse = (response: any) => {
-            cleanup();
-            try {
-                const rows = parseGVizObject(response);
-                resolve(rows);
-            } catch (e) {
-                reject(e);
-            }
-        };
-
-        const script = document.createElement('script');
-        script.id = scriptId;
-        script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${GID}`;
-        script.onerror = () => {
-            cleanup();
-            reject(new Error('JSONP script load failed'));
-        };
-
-        const timer = setTimeout(() => {
-            cleanup();
-            reject(new Error('JSONP timeout'));
-        }, 15000);
-
-        function cleanup() {
-            clearTimeout(timer);
-            if (origSetResponse) {
-                (window as any).google.visualization.Query.setResponse = origSetResponse;
-            }
-            const el = document.getElementById(scriptId);
-            if (el) el.remove();
-        }
-
-        document.head.appendChild(script);
-    });
-}
+import { fetchViaJSONP, parseGVizToRows } from '../lib/jsonpQueue';
 
 export async function fetchDesignOrdersFromCSV(): Promise<string[][]> {
-    // Strategy 1: JSONP via script tag (bypasses ALL CORS)
+    // Strategy 1: JSONP via shared queue (bypasses ALL CORS)
     try {
-        const rows = await fetchDesignOrdersViaJSONP();
+        const rows = await fetchViaJSONP(SHEET_ID, GID, parseGVizToRows);
         if (rows.length > 1) {
             console.log(`[DesignOrderService] ✅ JSONP loaded: ${rows.length} rows`);
             setCachedOrders(rows, 'csv');
@@ -209,17 +124,24 @@ export async function fetchDesignOrdersFromCSV(): Promise<string[][]> {
         console.warn('[DesignOrderService] JSONP failed:', e);
     }
 
-    // Strategy 2: Direct GViz JSON fetch (works if published)
+    // Strategy 2: Direct GViz JSON fetch (works if published, may hit CORS)
     try {
         const gvizUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${GID}`;
         const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(10000) });
         if (res.ok) {
             const text = await res.text();
-            const rows = parseGVizJSONToRows(text);
-            if (rows.length > 1) {
-                console.log(`[DesignOrderService] ✅ GViz direct loaded: ${rows.length} rows`);
-                setCachedOrders(rows, 'csv');
-                return rows;
+            // Parse text: extract JSON from google.visualization.Query.setResponse({...})
+            const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\((.+)\);?\s*$/s);
+            if (jsonMatch) {
+                try {
+                    const parsed = JSON.parse(jsonMatch[1]);
+                    const rows = parseGVizToRows(parsed);
+                    if (rows.length > 1) {
+                        console.log(`[DesignOrderService] ✅ GViz direct loaded: ${rows.length} rows`);
+                        setCachedOrders(rows, 'csv');
+                        return rows;
+                    }
+                } catch { /* parse failed, try next */ }
             }
         }
     } catch (e) {

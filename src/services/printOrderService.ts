@@ -64,76 +64,8 @@ export interface PrintOrder {
     updatedAt: string;
 }
 
-/**
- * Extract cell value from GViz cell object
- */
-function extractGVizCellValue(cell: any): string {
-    if (!cell) return '';
-    if (cell.f) return cell.f;
-    if (cell.v === null || cell.v === undefined) return '';
-    if (typeof cell.v === 'boolean') return cell.v ? 'TRUE' : 'FALSE';
-    return String(cell.v);
-}
+import { fetchViaJSONP, parseGVizToRows } from '../lib/jsonpQueue';
 
-/**
- * Parse GViz response OBJECT to string[][] (used by JSONP callback)
- */
-function parseGVizObject(data: any): string[][] {
-    if (!data?.table?.rows) return [];
-    const headers = (data.table.cols || []).map((col: any) => col.label || '');
-    const rows: string[][] = [headers];
-    for (const row of data.table.rows) {
-        rows.push((row.c || []).map((cell: any) => extractGVizCellValue(cell)));
-    }
-    return rows;
-}
-
-
-
-
-/**
- * JSONP fetch for print orders (bypasses CORS)
- * Uses default google.visualization.Query.setResponse callback
- */
-function fetchPrintOrdersViaJSONP(): Promise<string[][]> {
-    return new Promise((resolve, reject) => {
-        const uid = `print_${Date.now()}`;
-        const scriptId = `__gviz_script_${uid}`;
-
-        // Temporarily override the default callback
-        const origSetResponse = (window as any).google?.visualization?.Query?.setResponse;
-
-        // Ensure the namespace exists
-        if (!(window as any).google) (window as any).google = {};
-        if (!(window as any).google.visualization) (window as any).google.visualization = {};
-        if (!(window as any).google.visualization.Query) (window as any).google.visualization.Query = {};
-
-        (window as any).google.visualization.Query.setResponse = (response: any) => {
-            cleanup();
-            try {
-                const rows = parseGVizObject(response);
-                resolve(rows);
-            } catch (e) { reject(e); }
-        };
-
-        const script = document.createElement('script');
-        script.id = scriptId;
-        script.src = `https://docs.google.com/spreadsheets/d/${PRINT_SHEET_ID}/gviz/tq?tqx=out:json&gid=0`;
-        script.onerror = () => { cleanup(); reject(new Error('JSONP failed')); };
-        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 15000);
-
-        function cleanup() {
-            clearTimeout(timer);
-            // Restore original callback
-            if (origSetResponse) {
-                (window as any).google.visualization.Query.setResponse = origSetResponse;
-            }
-            const el = document.getElementById(scriptId);
-            if (el) el.remove();
-        }
-        document.head.appendChild(script);
-    });
-}
 
 /**
  * Fetch raw rows — 🔋 HYBRID: Google Sheets first (JSONP → CSV), skip Supabase
@@ -147,7 +79,7 @@ export async function fetchPrintOrderRows(): Promise<string[][]> {
 
     // Strategy 1: JSONP (bypasses CORS)
     try {
-        const rows = await fetchPrintOrdersViaJSONP();
+        const rows = await fetchViaJSONP(PRINT_SHEET_ID, '0', parseGVizToRows);
         if (rows.length > 1) {
             cachedRows = rows;
             cacheTimestamp = Date.now();

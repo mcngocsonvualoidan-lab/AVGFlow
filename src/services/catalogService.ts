@@ -27,68 +27,8 @@ let _cache: CatalogItem[] | null = null;
 let _cacheTs = 0;
 const CACHE_TTL = 10 * 60 * 1000; // 10 min (increased for hybrid mode)
 
-/**
- * Extract cell value from GViz cell object
- */
-function extractGVizCellValue(cell: any): string {
-    if (!cell) return '';
-    if (cell.f) return cell.f;
-    if (cell.v === null || cell.v === undefined) return '';
-    return String(cell.v);
-}
+import { fetchViaJSONP, parseGVizToRows } from '../lib/jsonpQueue';
 
-/**
- * Parse GViz response OBJECT to string[][] (used by JSONP callback)
- */
-function parseGVizObject(data: any): string[][] {
-    if (!data?.table?.rows) return [];
-    const headers = (data.table.cols || []).map((col: any) => col.label || '');
-    const rows: string[][] = [headers];
-    for (const row of data.table.rows) {
-        rows.push((row.c || []).map((cell: any) => extractGVizCellValue(cell)));
-    }
-    return rows;
-}
-
-/**
- * JSONP fetch for catalog (bypasses CORS)
- */
-function fetchCatalogViaJSONP(): Promise<string[][]> {
-    return new Promise((resolve, reject) => {
-        const uid = `catalog_${Date.now()}`;
-        const scriptId = `__gviz_script_${uid}`;
-
-        const origSetResponse = (window as any).google?.visualization?.Query?.setResponse;
-
-        if (!(window as any).google) (window as any).google = {};
-        if (!(window as any).google.visualization) (window as any).google.visualization = {};
-        if (!(window as any).google.visualization.Query) (window as any).google.visualization.Query = {};
-
-        (window as any).google.visualization.Query.setResponse = (response: any) => {
-            cleanup();
-            try {
-                const rows = parseGVizObject(response);
-                resolve(rows);
-            } catch (e) { reject(e); }
-        };
-
-        const script = document.createElement('script');
-        script.id = scriptId;
-        script.src = `https://docs.google.com/spreadsheets/d/${CATALOG_SHEET_ID}/gviz/tq?tqx=out:json&gid=0`;
-        script.onerror = () => { cleanup(); reject(new Error('JSONP failed')); };
-        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 15000);
-
-        function cleanup() {
-            clearTimeout(timer);
-            if (origSetResponse) {
-                (window as any).google.visualization.Query.setResponse = origSetResponse;
-            }
-            const el = document.getElementById(scriptId);
-            if (el) el.remove();
-        }
-        document.head.appendChild(script);
-    });
-}
 
 /**
  * Parse CSV rows → CatalogItem[]
@@ -123,7 +63,7 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
 
     // Strategy 1: JSONP (bypasses CORS)
     try {
-        const rows = await fetchCatalogViaJSONP();
+        const rows = await fetchViaJSONP(CATALOG_SHEET_ID, '0', parseGVizToRows);
         const items = parseRowsToCatalog(rows);
         if (items.length > 0) {
             console.log(`${MODULE} ✅ JSONP loaded: ${items.length} items`);

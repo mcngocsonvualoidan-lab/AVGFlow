@@ -219,7 +219,7 @@ function parseGVizJSON(responseText: string): Meeting[] {
 async function fetchFromGoogleSheets(gid: string): Promise<Meeting[]> {
     // Strategy 1: JSONP via script tag injection (bypasses ALL CORS restrictions)
     try {
-        const meetings = await fetchViaJSONP(gid);
+        const meetings = await fetchMeetingViaJSONP(gid);
         if (meetings.length > 0) {
             console.log(`[MeetingHook] ✅ JSONP loaded: ${meetings.length} meetings`);
             return meetings;
@@ -277,7 +277,7 @@ async function fetchFromGoogleSheets(gid: string): Promise<Meeting[]> {
 /**
  * Parse GViz response object directly to Meeting[] (for JSONP callback)
  */
-function parseGVizObject(data: any): Meeting[] {
+function parseMeetingsFromGViz(data: any): Meeting[] {
     if (!data?.table?.rows) return [];
 
     const extractValue = (cell: any): string => {
@@ -325,54 +325,10 @@ function parseGVizObject(data: any): Meeting[] {
         .filter((m: Meeting | null): m is Meeting => m !== null && (!!m.date || !!m.content));
 }
 
-/**
- * JSONP-based fetch: Uses default google.visualization.Query.setResponse callback.
- */
-function fetchViaJSONP(gid: string): Promise<Meeting[]> {
-    return new Promise((resolve, reject) => {
-        const uid = `meeting_${gid}_${Date.now()}`;
-        const scriptId = `__gviz_script_${uid}`;
+import { fetchViaJSONP as fetchViaJSONPQueue } from '../lib/jsonpQueue';
 
-        const origSetResponse = (window as any).google?.visualization?.Query?.setResponse;
-
-        if (!(window as any).google) (window as any).google = {};
-        if (!(window as any).google.visualization) (window as any).google.visualization = {};
-        if (!(window as any).google.visualization.Query) (window as any).google.visualization.Query = {};
-
-        (window as any).google.visualization.Query.setResponse = (response: any) => {
-            cleanup();
-            try {
-                const meetings = parseGVizObject(response);
-                resolve(meetings);
-            } catch (e) {
-                reject(e);
-            }
-        };
-
-        const script = document.createElement('script');
-        script.id = scriptId;
-        script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${gid}`;
-        script.onerror = () => {
-            cleanup();
-            reject(new Error('JSONP script load failed'));
-        };
-
-        const timer = setTimeout(() => {
-            cleanup();
-            reject(new Error('JSONP timeout'));
-        }, 15000);
-
-        function cleanup() {
-            clearTimeout(timer);
-            if (origSetResponse) {
-                (window as any).google.visualization.Query.setResponse = origSetResponse;
-            }
-            const el = document.getElementById(scriptId);
-            if (el) el.remove();
-        }
-
-        document.head.appendChild(script);
-    });
+function fetchMeetingViaJSONP(gid: string): Promise<Meeting[]> {
+    return fetchViaJSONPQueue<Meeting[]>(SHEET_ID, gid, parseMeetingsFromGViz);
 }
 
 export const useMeetingSchedule = (gid: string = CURRENT_MONTH_GID, filterMonth?: number, filterYear?: number) => {

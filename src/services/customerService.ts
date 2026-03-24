@@ -27,64 +27,8 @@ let _cache: CustomerContact[] | null = null;
 let _cacheTs = 0;
 const CACHE_TTL = 10 * 60 * 1000; // 10 min (increased from 5 for hybrid mode)
 
-/**
- * Parse GViz response OBJECT to string[][]
- */
-function parseGVizObject(data: any): string[][] {
-    if (!data?.table?.rows) return [];
-    const extractValue = (cell: any): string => {
-        if (!cell) return '';
-        if (cell.f) return cell.f;
-        if (cell.v === null || cell.v === undefined) return '';
-        return String(cell.v);
-    };
-    const headers = (data.table.cols || []).map((col: any) => col.label || '');
-    const rows: string[][] = [headers];
-    for (const row of data.table.rows) {
-        rows.push((row.c || []).map((cell: any) => extractValue(cell)));
-    }
-    return rows;
-}
+import { fetchViaJSONP, parseGVizToRows } from '../lib/jsonpQueue';
 
-/**
- * JSONP fetch (bypasses CORS) - uses default setResponse callback
- */
-function fetchCustomersViaJSONP(): Promise<string[][]> {
-    return new Promise((resolve, reject) => {
-        const uid = `customer_${Date.now()}`;
-        const scriptId = `__gviz_script_${uid}`;
-
-        const origSetResponse = (window as any).google?.visualization?.Query?.setResponse;
-
-        if (!(window as any).google) (window as any).google = {};
-        if (!(window as any).google.visualization) (window as any).google.visualization = {};
-        if (!(window as any).google.visualization.Query) (window as any).google.visualization.Query = {};
-
-        (window as any).google.visualization.Query.setResponse = (response: any) => {
-            cleanup();
-            try {
-                const rows = parseGVizObject(response);
-                resolve(rows);
-            } catch (e) { reject(e); }
-        };
-
-        const script = document.createElement('script');
-        script.id = scriptId;
-        script.src = `https://docs.google.com/spreadsheets/d/${CUSTOMER_SHEET_ID}/gviz/tq?tqx=out:json&gid=${CUSTOMER_GID}`;
-        script.onerror = () => { cleanup(); reject(new Error('JSONP failed')); };
-        const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, 15000);
-
-        function cleanup() {
-            clearTimeout(timer);
-            if (origSetResponse) {
-                (window as any).google.visualization.Query.setResponse = origSetResponse;
-            }
-            const el = document.getElementById(scriptId);
-            if (el) el.remove();
-        }
-        document.head.appendChild(script);
-    });
-}
 
 /**
  * Parse rows → CustomerContact[]
@@ -119,7 +63,7 @@ export async function fetchCustomers(): Promise<CustomerContact[]> {
 
     // Strategy 1: JSONP (bypasses CORS)
     try {
-        const rows = await fetchCustomersViaJSONP();
+        const rows = await fetchViaJSONP(CUSTOMER_SHEET_ID, CUSTOMER_GID, parseGVizToRows);
         const items = parseRowsToCustomers(rows);
         if (items.length > 0) {
             console.log(`${MODULE} ✅ JSONP loaded: ${items.length} contacts`);
