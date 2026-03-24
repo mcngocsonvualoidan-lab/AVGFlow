@@ -65,30 +65,31 @@ export interface PrintOrder {
 }
 
 /**
- * Parse GViz JSON response to string[][]
+ * Extract cell value from GViz cell object
  */
-function parseGVizToRows(responseText: string): string[][] {
-    const jsonMatch = responseText.match(/google\.visualization\.Query\.setResponse\((.+)\);?\s*$/s);
-    if (!jsonMatch) return [];
-    let parsed: any;
-    try { parsed = JSON.parse(jsonMatch[1]); } catch { return []; }
-    if (!parsed?.table?.rows) return [];
+function extractGVizCellValue(cell: any): string {
+    if (!cell) return '';
+    if (cell.f) return cell.f;
+    if (cell.v === null || cell.v === undefined) return '';
+    if (typeof cell.v === 'boolean') return cell.v ? 'TRUE' : 'FALSE';
+    return String(cell.v);
+}
 
-    const extractValue = (cell: any): string => {
-        if (!cell) return '';
-        if (cell.f) return cell.f;
-        if (cell.v === null || cell.v === undefined) return '';
-        if (typeof cell.v === 'boolean') return cell.v ? 'TRUE' : 'FALSE';
-        return String(cell.v);
-    };
-
-    const headers = (parsed.table.cols || []).map((col: any) => col.label || '');
+/**
+ * Parse GViz response OBJECT to string[][] (used by JSONP callback)
+ */
+function parseGVizObject(data: any): string[][] {
+    if (!data?.table?.rows) return [];
+    const headers = (data.table.cols || []).map((col: any) => col.label || '');
     const rows: string[][] = [headers];
-    for (const row of parsed.table.rows) {
-        rows.push((row.c || []).map((cell: any) => extractValue(cell)));
+    for (const row of data.table.rows) {
+        rows.push((row.c || []).map((cell: any) => extractGVizCellValue(cell)));
     }
     return rows;
 }
+
+
+
 
 /**
  * JSONP fetch for print orders (bypasses CORS)
@@ -99,8 +100,8 @@ function fetchPrintOrdersViaJSONP(): Promise<string[][]> {
         (window as any)[cb] = (response: any) => {
             cleanup();
             try {
-                const fakeText = `google.visualization.Query.setResponse(${JSON.stringify(response)});`;
-                resolve(parseGVizToRows(fakeText));
+                const rows = parseGVizObject(response);
+                resolve(rows);
             } catch (e) { reject(e); }
         };
         const script = document.createElement('script');

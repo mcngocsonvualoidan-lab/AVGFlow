@@ -275,6 +275,57 @@ async function fetchFromGoogleSheets(gid: string): Promise<Meeting[]> {
 }
 
 /**
+ * Parse GViz response object directly to Meeting[] (for JSONP callback)
+ */
+function parseGVizObject(data: any): Meeting[] {
+    if (!data?.table?.rows) return [];
+
+    const extractValue = (cell: any): string => {
+        if (!cell) return '';
+        if (cell.f) return cell.f;
+        if (cell.v === null || cell.v === undefined) return '';
+        return String(cell.v);
+    };
+
+    const cleanTime = (val: string): string => {
+        if (!val) return '';
+        const epochMatch = val.match(/^30\/12\/1899\s+(\d{1,2}:\d{2})(:\d{2})?$/);
+        if (epochMatch) return epochMatch[1];
+        const timeOnly = val.match(/^(\d{1,2}:\d{2})(:\d{2})?$/);
+        if (timeOnly) return timeOnly[1];
+        const durationMatch = val.match(/^(\d+:\d{2})(:\d{2})$/);
+        if (durationMatch) return durationMatch[1];
+        return val;
+    };
+
+    const rows = data.table.rows;
+    return rows
+        .map((row: any, idx: number) => {
+            const cells = row.c || [];
+            const content = extractValue(cells[8]);
+            const date = extractValue(cells[4]);
+            if (!date && (!content || content === '`')) return null;
+            return {
+                id: `gviz-${idx}`,
+                scope: extractValue(cells[2]),
+                day: extractValue(cells[3]),
+                date: date,
+                startTime: cleanTime(extractValue(cells[5])),
+                endTime: cleanTime(extractValue(cells[6])),
+                duration: cleanTime(extractValue(cells[7])),
+                content: content,
+                pic: extractValue(cells[9]),
+                participants: extractValue(cells[10]),
+                secretary: extractValue(cells[11]),
+                note: extractValue(cells[12]),
+                link: extractValue(cells[13]),
+                isHighlight: content.toLowerCase().includes('quan trọng'),
+            };
+        })
+        .filter((m: Meeting | null): m is Meeting => m !== null && (!!m.date || !!m.content));
+}
+
+/**
  * JSONP-based fetch: Injects a <script> tag to load data from Google Visualization API.
  * This completely bypasses CORS since <script> tags are not subject to same-origin policy.
  */
@@ -283,17 +334,11 @@ function fetchViaJSONP(gid: string): Promise<Meeting[]> {
         const callbackName = `__gviz_cb_${gid}_${Date.now()}`;
         const timeoutMs = 12000;
 
-        // Set up global callback
         (window as any)[callbackName] = (response: any) => {
             cleanup();
             try {
-                if (!response?.table?.rows) {
-                    resolve([]);
-                    return;
-                }
-                // Re-wrap response to match parseGVizJSON format
-                const fakeText = `google.visualization.Query.setResponse(${JSON.stringify(response)});`;
-                const meetings = parseGVizJSON(fakeText);
+                // Parse directly from response object (JSONP already parsed it)
+                const meetings = parseGVizObject(response);
                 resolve(meetings);
             } catch (e) {
                 reject(e);

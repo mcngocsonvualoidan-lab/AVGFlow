@@ -109,44 +109,40 @@ export async function fetchDesignOrdersFromSupabase(): Promise<string[][]> {
     return rows;
 }
 
-// ==================== FETCH FROM GOOGLE SHEETS (JSONP + CSV FALLBACK) ====================
+/**
+ * Extract cell value from GViz cell object
+ */
+function extractGVizCellValue(cell: any): string {
+    if (!cell) return '';
+    if (cell.f) return cell.f;
+    if (cell.v === null || cell.v === undefined) return '';
+    if (typeof cell.v === 'boolean') return cell.v ? 'TRUE' : 'FALSE';
+    return String(cell.v);
+}
 
 /**
- * Parse Google Visualization JSON response → string[][]
+ * Parse GViz response OBJECT directly to string[][] (used by JSONP callback)
+ */
+function parseGVizObject(data: any): string[][] {
+    if (!data?.table?.rows) return [];
+    const headers = (data.table.cols || []).map((col: any) => col.label || '');
+    const rows: string[][] = [headers];
+    for (const row of data.table.rows) {
+        rows.push((row.c || []).map((cell: any) => extractGVizCellValue(cell)));
+    }
+    return rows;
+}
+
+/**
+ * Parse Google Visualization JSON TEXT response → string[][]
  * The response wraps data in google.visualization.Query.setResponse({...})
  */
 function parseGVizJSONToRows(responseText: string): string[][] {
     const jsonMatch = responseText.match(/google\.visualization\.Query\.setResponse\((.+)\);?\s*$/s);
     if (!jsonMatch) return [];
-
     let parsed: any;
-    try {
-        parsed = JSON.parse(jsonMatch[1]);
-    } catch {
-        return [];
-    }
-
-    if (!parsed?.table?.rows) return [];
-
-    const extractValue = (cell: any): string => {
-        if (!cell) return '';
-        if (cell.f) return cell.f;
-        if (cell.v === null || cell.v === undefined) return '';
-        if (typeof cell.v === 'boolean') return cell.v ? 'TRUE' : 'FALSE';
-        return String(cell.v);
-    };
-
-    // Build header row from column labels
-    const headers = (parsed.table.cols || []).map((col: any) => col.label || '');
-    const rows: string[][] = [headers];
-
-    for (const row of parsed.table.rows) {
-        const cells = row.c || [];
-        const rowData = cells.map((cell: any) => extractValue(cell));
-        rows.push(rowData);
-    }
-
-    return rows;
+    try { parsed = JSON.parse(jsonMatch[1]); } catch { return []; }
+    return parseGVizObject(parsed);
 }
 
 /**
@@ -161,12 +157,8 @@ function fetchDesignOrdersViaJSONP(): Promise<string[][]> {
         (window as any)[callbackName] = (response: any) => {
             cleanup();
             try {
-                if (!response?.table?.rows) {
-                    resolve([]);
-                    return;
-                }
-                const fakeText = `google.visualization.Query.setResponse(${JSON.stringify(response)});`;
-                const rows = parseGVizJSONToRows(fakeText);
+                // Parse directly from response object (JSONP already parsed it)
+                const rows = parseGVizObject(response);
                 resolve(rows);
             } catch (e) {
                 reject(e);
