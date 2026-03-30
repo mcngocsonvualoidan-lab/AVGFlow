@@ -6,7 +6,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { streamGeminiResponse, saveGeminiKey, getGeminiKey, initializeGemini } from '../../lib/gemini';
-import { collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from '@/lib/firestore';
 import { db } from '../../lib/firebase';
 import { clsx } from 'clsx';
 

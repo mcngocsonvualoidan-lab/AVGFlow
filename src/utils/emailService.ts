@@ -1,4 +1,4 @@
-import { getFirestore, collection, addDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc } from '@/lib/firestore';
 
 export const sendInviteEmail = async (user: { name: string; email: string }) => {
     try {

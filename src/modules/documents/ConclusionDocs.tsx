@@ -3,7 +3,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useMeetingSchedule, Meeting, MEETING_ARCHIVES } from '../../hooks/useMeetingSchedule';
 import { db } from '../../lib/firebase';
-import { collection, addDoc, query, onSnapshot, orderBy, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, query, onSnapshot, orderBy, doc, deleteDoc, updateDoc } from '@/lib/firestore';
 import { uploadToDrive } from '../../services/driveUploadService';
 import {
     Loader2, Upload, FileText, BarChart2, Clock, Eye, X, Search,

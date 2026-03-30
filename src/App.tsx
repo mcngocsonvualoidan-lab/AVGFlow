@@ -33,6 +33,10 @@ import { ThemeProvider } from './context/ThemeContext';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { isBiometricEnabled, isPlatformAuthenticatorAvailable, isWebAuthnSupported } from './utils/biometricAuth';
+import { dailyCleanup } from './utils/firestoreTracker';
+
+// 🔋 Resource Tracker: Archive old data + initialize today's counters on app start
+dailyCleanup();
 
 // Constants for localStorage keys
 const FIRST_LOGIN_KEY = 'avgflow_first_login_done';

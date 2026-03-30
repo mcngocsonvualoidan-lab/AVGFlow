@@ -15,7 +15,7 @@ import ActiveUsersWidget from '../../components/ActiveUsersWidget';
 import InternalNewsBoard from './components/InternalNewsBoard';
 import { useMeetingSchedule } from '../../hooks/useMeetingSchedule';
 import { db } from '../../lib/firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot } from '@/lib/firestore';
 import { fetchDesignOrders } from '../../services/designOrderService';
 
 const COLORS = ['#10b981', '#3b82f6', '#ef4444'];

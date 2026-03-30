@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://hbcfslgxosdzlfuljxxn.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_RZmqGM8T25niehlC2NgIqg_oTrtnOcR';
+const SUPABASE_URL = 'https://hqekfvfarxscxozpxouh.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_GfeGsFqVLwQ4_DPuJaB4sA_B-ZHqcrz';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     realtime: {
@@ -39,6 +39,7 @@ export interface SupabaseDesignTicket {
 export interface SupabaseTicketMessage {
     id: string;
     ticket_id: string;
+    ticket_code: string | null; // Hybrid: ticketCode liên kết Chat ↔ Sheet Ticket
     text: string;
     sender: string;
     sender_role: 'customer' | 'admin';

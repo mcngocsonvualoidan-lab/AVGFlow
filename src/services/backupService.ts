@@ -4,7 +4,7 @@
  */
 
 import { db, realtimeDb } from '../lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs } from '@/lib/firestore';
 import { ref, get } from 'firebase/database';
 
 // Same Apps Script URL for upload
@@ -350,7 +350,7 @@ export async function restoreFromBackup(
             if (!documents || documents.length === 0) continue;
 
             // Use batched writes (max 500 per batch)
-            const { writeBatch, doc: firestoreDoc } = await import('firebase/firestore');
+            const { writeBatch, doc: firestoreDoc } = await import('@/lib/firestore');
             let batch = writeBatch(db);
             let batchCount = 0;
 

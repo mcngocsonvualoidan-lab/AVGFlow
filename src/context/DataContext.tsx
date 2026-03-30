@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { db } from '../lib/firebase';
-import { supabase } from '../lib/supabase';
-import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, orderBy, limit } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, query, orderBy, limit } from '@/lib/firestore';
 import { useAuth } from './AuthContext';
 import { fullBackupToDrive } from '../services/backupService';
 
@@ -947,28 +946,34 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             // USERS handled in separate Effect for Bi-Directional Sync
 
             // FIREBASE COLLECTIONS
-            unsubs.push(onSnapshot(collection(db, 'tasks'), s => setTasks(s.docs.map(d => d.data() as Task))));
+            unsubs.push(onSnapshot(collection(db, 'tasks'), s => { setTasks(s.docs.map(d => d.data() as Task)); }));
 
             // Optimized: Limit Logs and Notifications to prevent initial load bloat
             // logs: limit 200 recent
             unsubs.push(onSnapshot(
                 query(collection(db, 'logs'), orderBy('created', 'desc'), limit(200)),
-                s => setLogs(s.docs.map(d => d.data() as OrderLog))
+                s => { setLogs(s.docs.map(d => d.data() as OrderLog)); }
             ));
 
             // notifications: limit 50 recent
             unsubs.push(onSnapshot(
                 query(collection(db, 'notifications'), orderBy('time', 'desc'), limit(50)),
-                s => setNotifications(s.docs.map(d => d.data() as Notification))
+                s => { setNotifications(s.docs.map(d => d.data() as Notification)); }
             ));
 
-            unsubs.push(onSnapshot(collection(db, 'wishes'), s => setBirthdayWishes(s.docs.map(d => d.data() as BirthdayWish))));
-            unsubs.push(onSnapshot(collection(db, 'events'), s => setActiveEvents(s.docs.map(d => d.data() as ActiveEvent))));
+            unsubs.push(onSnapshot(
+                query(collection(db, 'wishes'), orderBy('timestamp', 'desc'), limit(50)),
+                s => { setBirthdayWishes(s.docs.map(d => d.data() as BirthdayWish)); }
+            ));
+            unsubs.push(onSnapshot(
+                query(collection(db, 'events'), limit(20)),
+                s => { setActiveEvents(s.docs.map(d => d.data() as ActiveEvent)); }
+            ));
 
             // CONFESSIONS
             unsubs.push(onSnapshot(
                 query(collection(db, 'confessions'), orderBy('timestamp', 'desc'), limit(100)),
-                s => setConfessionMessages(s.docs.map(d => d.data() as ConfessionMessage))
+                s => { setConfessionMessages(s.docs.map(d => d.data() as ConfessionMessage)); }
             ));
 
 
@@ -976,15 +981,13 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             // (mapPayrollRecord moved to module scope)
 
             // FIREBASE: Payroll (Replaces Supabase due to Quota Limit)
-            unsubs.push(onSnapshot(collection(db, 'payroll'), s => {
-                setPayrollRecords(s.docs.map(d => mapPayrollRecord(d.data())));
+            unsubs.push(onSnapshot(collection(db, 'payroll'), s => { setPayrollRecords(s.docs.map(d => mapPayrollRecord(d.data())));
             }));
 
             // Legacy Supabase cleanup (no longer used)
             // supabase.removeChannel(payrollChannel);
 
-            unsubs.push(onSnapshot(collection(db, 'meetings'), snap => {
-                if (snap.empty) {
+            unsubs.push(onSnapshot(collection(db, 'meetings'), snap => { if (snap.empty) {
                     const batch = writeBatch(db);
                     initialMeetings.forEach(m => batch.set(doc(db, 'meetings', m.id), m));
                     batch.commit().catch(e => console.error('Seeding meetings error:', e));
@@ -999,7 +1002,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         return () => unsubs.forEach(u => u());
     }, [currentUser]);
 
-    // PRESENCE HEARTBEAT (Dual Update: Firestore + Supabase)
+    // PRESENCE HEARTBEAT (Firestore only — Supabase removed to save quota)
     useEffect(() => {
         if (!currentUser || !isLoaded) return;
 
@@ -1008,33 +1011,21 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             const appUser = usersRef.current.find(u => (u.email || '').toLowerCase().trim() === currentEmail);
 
             if (!appUser) {
-                console.warn(`[Presence] Heartbeat skip: User with email ${currentEmail} not found in database. Found ${usersRef.current.length} users.`);
+                console.warn(`[Presence] Heartbeat skip: User with email ${currentEmail} not found.`);
                 return;
             }
 
             const nowIso = new Date().toISOString();
-            console.log(`[Presence] Sending heartbeat for ${appUser.name} (${appUser.id}) at ${nowIso}`);
 
-            // 1. Direct Firestore update
+            // Firestore-only update
             const userDocRef = doc(db, 'users', appUser.id);
-            updateDoc(userDocRef, { lastSeen: nowIso }).then(() => {
-                console.log(`[Presence] Firestore heartbeat success for ${appUser.id}`);
-            }).catch(_err => {
-                console.warn(`[Presence] Firestore updateDoc fail, trying setDoc merge for ${appUser.id}`);
-                setDoc(userDocRef, { lastSeen: nowIso }, { merge: true }).catch(e => console.error('[Presence] Firestore heartbeat permanent fail', e));
-            });
-
-            // 2. Supabase update
-            supabase.from('users').update({ last_seen: nowIso }).eq('id', appUser.id).then(({ error }) => {
-                if (error) console.warn('[Presence] Supabase heartbeat fail', error);
-                else console.log(`[Presence] Supabase heartbeat success for ${appUser.id}`);
+            updateDoc(userDocRef, { lastSeen: nowIso }).catch(_err => {
+                setDoc(userDocRef, { lastSeen: nowIso }, { merge: true }).catch(e => console.error('[Presence] Heartbeat fail', e));
             });
         };
 
-        // Send immediately
         sendHeartbeat();
-
-        const interval = setInterval(sendHeartbeat, 60000); // 1 minute
+        const interval = setInterval(sendHeartbeat, 120000); // 2 minutes (was 1 min)
         return () => clearInterval(interval);
     }, [currentUser?.email, isLoaded]);
 
@@ -1060,36 +1051,15 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     // CLEANUP: Remove Nguyen Thi Hao (Run once on client load)
     // REPAIR: Ensure User 2 (Trần Hải Lưu) exists in Firestore
     useEffect(() => {
+        const MIGRATION_KEY = 'repair_user2_done';
+        if (localStorage.getItem(MIGRATION_KEY)) return;
+
         const repairMissingUser = async () => {
-            console.log('Checking for missing user: Trần Hải Lưu (2)...');
             try {
-                // Force Update User 2 from Initial Data
                 const targetUser = initialUsers.find(u => u.id === '2');
                 if (targetUser) {
-                    // 1. Update Firestore
                     await setDoc(doc(db, 'users', '2'), targetUser, { merge: true });
-                    console.log('Restored User 2 to Firestore.');
-
-                    // 2. Ensure Supabase entry is up to date (Code 24009)
-                    await supabase.from('users').upsert({
-                        id: targetUser.id,
-                        name: targetUser.name,
-                        alias: targetUser.alias,
-                        email: targetUser.email,
-                        role: targetUser.role,
-                        dept: targetUser.dept,
-                        phone: targetUser.phone,
-                        avatar: targetUser.avatar,
-                        bank_acc: targetUser.bankAcc,
-                        bank_name: targetUser.bankName,
-                        is_admin: targetUser.isAdmin,
-                        verified: targetUser.verified,
-                        dob: targetUser.dob,
-                        start_date: targetUser.startDate,
-                        employee_code: targetUser.employeeCode,
-                        contract_no: targetUser.contractNo
-                    });
-                    console.log(' synced User 2 to Supabase.');
+                    localStorage.setItem(MIGRATION_KEY, 'true');
                 }
             } catch (err) {
                 console.error('Repair failed:', err);
@@ -1130,6 +1100,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
     // MIGRATION: Fix Leave for Le Thi Anh Nguyet and Ha Ngoc Doanh (Jan 2026 updates)
     useEffect(() => {
+        const MIGRATION_KEY = 'fix_user_leave_v3_done';
+        if (localStorage.getItem(MIGRATION_KEY)) return;
         if (!users || users.length === 0) return;
 
         const fixUserLeave = async () => {
@@ -1234,143 +1206,79 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             }
         };
 
-        fixUserLeave();
+        fixUserLeave().then(() => {
+            localStorage.setItem(MIGRATION_KEY, 'true');
+        });
+    }, [users]);
+
+    // MIGRATION: Add leave record for Nguyễn Ngọc Sơn - March 28, 2026 (Lý do cá nhân)
+    useEffect(() => {
+        const MIGRATION_KEY = 'fix_son_leave_0328_done';
+        if (localStorage.getItem(MIGRATION_KEY)) return;
+        if (!users || users.length === 0) return;
+
+        const addSonLeave = async () => {
+            const user5 = users.find(u => u.id === '5');
+            if (!user5) return;
+
+            const leaveId = 'l_son_leave_0328';
+            const hasRecord = user5.leaves?.some(l => l.id === leaveId);
+
+            if (!hasRecord) {
+                console.log('Syncing Ngọc Sơn leave 28/03...');
+                const newLeave: LeaveRecord = {
+                    id: leaveId,
+                    type: 'leave',
+                    start: '2026-03-28',
+                    end: '2026-03-28',
+                    reason: 'Nghỉ phép (Lý do cá nhân)',
+                    session: 'full'
+                };
+                const updatedLeaves = [...(user5.leaves || []), newLeave];
+                await setDoc(doc(db, 'users', user5.id), sanitize({ ...user5, leaves: updatedLeaves }));
+            }
+
+            localStorage.setItem(MIGRATION_KEY, 'true');
+        };
+
+        addSonLeave();
     }, [users]);
 
     // USERS (Primary Source: Firestore)
     const sanitize = (obj: any) => JSON.parse(JSON.stringify(obj));
 
-    const addUser = (user: User) => setDoc(doc(db, 'users', user.id), sanitize(user), { merge: true });
-    const updateUser = (user: User) => setDoc(doc(db, 'users', user.id), sanitize(user), { merge: true });
-    const deleteUser = (id: string) => deleteDoc(doc(db, 'users', id));
+    const addUser = (user: User) => { return setDoc(doc(db, 'users', user.id), sanitize(user), { merge: true }); };
+    const updateUser = (user: User) => { return setDoc(doc(db, 'users', user.id), sanitize(user), { merge: true }); };
+    const deleteUser = (id: string) => { return deleteDoc(doc(db, 'users', id)); };
 
-    // SYNC: Listen for Supabase changes (Source of Truth) -> Update Local State
+    // USERS (Primary Source: Firestore — Supabase mirror REMOVED to save quota)
     useEffect(() => {
-        // Removed currentUser check to allow background sync / public access if rules permit
-
         const unsub = onSnapshot(collection(db, 'users'), (snap) => {
             const currentUsers = snap.docs.map(d => {
                 const data = d.data() as User;
                 return {
                     ...data,
-                    id: d.id, // Ensure ID consistency
-                    lastSeen: data.lastSeen || (data as any).last_seen // Support both formats
+                    id: d.id,
+                    lastSeen: data.lastSeen || (data as any).last_seen
                 };
-            });
-            setUsers(currentUsers);
+            }); setUsers(currentUsers);
             setIsLoaded(true);
-
-            // Mirror to Supabase (One-way Sync Logic)
-            snap.docChanges().forEach(async (change) => {
-                const userData = change.doc.data() as User;
-
-                if (change.type === 'added' || change.type === 'modified') {
-                    // Check if Supabase already has this data to avoid loop
-                    // We can't easily check remote without a fetch, so we rely on optimistically sending
-                    // But to prevent loops, we could check a timestamp or rely on DB deduplication.
-                    // For now, we perform the Upsert.
-                    try {
-                        await supabase.from('users').upsert({
-                            id: userData.id,
-                            name: userData.name,
-                            alias: userData.alias,
-                            email: userData.email,
-                            role: userData.role,
-                            dept: userData.dept,
-                            phone: userData.phone,
-                            avatar: userData.avatar,
-                            bank_acc: userData.bankAcc,
-                            bank_name: userData.bankName,
-                            is_admin: userData.isAdmin,
-                            verified: userData.verified,
-                            dob: userData.dob,
-                            start_date: userData.startDate,
-                            employee_code: userData.employeeCode,
-                            contract_no: userData.contractNo,
-                            leaves: userData.leaves || [],
-                            custom_qr_url: userData.customQrUrl,
-                            // last_seen: userData.lastSeen // REMOVED: Prevent Sync Loop. Supabase is Source of Truth for Heartbeat.
-                        });
-                    } catch (err) {
-                        console.error('Sync to Supabase failed', err);
-                    }
-                } else if (change.type === 'removed') {
-                    await supabase.from('users').delete().eq('id', userData.id);
-                }
-            });
         }, (error) => {
-            console.warn("Firestore Sync Error (likely permission):", error.message);
+            console.warn("Firestore Sync Error:", error.message);
         });
 
-        // SYNC 2: Supabase -> Firestore (Bi-directional)
-        const channel = supabase
-            .channel('public:users')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, async (payload) => {
-                console.log('🔥 SUPABASE EVENT:', payload);
-                const { eventType, new: newRecord, old: oldRecord } = payload;
-
-                if (eventType === 'INSERT' || eventType === 'UPDATE') {
-                    const mappedUser: User = {
-                        id: newRecord.id,
-                        name: newRecord.name,
-                        alias: newRecord.alias,
-                        email: newRecord.email,
-                        role: newRecord.role,
-                        dept: newRecord.dept,
-                        phone: newRecord.phone,
-                        avatar: newRecord.avatar,
-                        bankAcc: newRecord.bank_acc,
-                        bankName: newRecord.bank_name,
-                        isAdmin: newRecord.is_admin,
-                        verified: newRecord.verified,
-                        dob: newRecord.dob,
-                        startDate: newRecord.start_date,
-                        employeeCode: newRecord.employee_code,
-                        contractNo: newRecord.contract_no,
-                        leaves: newRecord.leaves, // Ensure this JSON matches
-                        customQrUrl: newRecord.custom_qr_url,
-                        lastSeen: newRecord.last_seen
-                    };
-
-                    // LOOP PREVENTION:
-                    // Check if the incoming Supabase data is already identical to what we have in Firestore (via usersRef)
-                    const existingUser = usersRef.current.find(u => u.id === mappedUser.id);
-
-                    // We only compare fields present in mappedUser, assuming Supabase is the "Diff" source
-                    // Actually, let's just sanitise both and compare
-                    const shouldUpdate = !existingUser ||
-                        JSON.stringify(sanitize(existingUser)) !== JSON.stringify(sanitize(mappedUser));
-
-                    if (shouldUpdate) {
-                        console.log('🔄 Sync Supabase -> Firestore:', mappedUser.name);
-                        await setDoc(doc(db, 'users', mappedUser.id), sanitize(mappedUser), { merge: true });
-                    } else {
-                        console.log('start_sync_check: Data identical, skipping write to Firestore to prevent loop.');
-                    }
-
-                } else if (eventType === 'DELETE') {
-                    if (oldRecord?.id) {
-                        await deleteDoc(doc(db, 'users', oldRecord.id));
-                    }
-                }
-            })
-            .subscribe();
-
-        return () => {
-            unsub();
-            supabase.removeChannel(channel);
-        };
+        return () => unsub();
     }, []);
 
     // TASKS
-    const addTask = (task: Task) => setDoc(doc(db, 'tasks', task.id), task);
-    const updateTask = (task: Task) => setDoc(doc(db, 'tasks', task.id), task);
-    const deleteTask = (id: string) => deleteDoc(doc(db, 'tasks', id));
-    const markTaskAsAccepted = (taskId: string) => updateDoc(doc(db, 'tasks', taskId), { acceptedAt: new Date().toISOString(), status: 'active' });
+    const addTask = (task: Task) => { return setDoc(doc(db, 'tasks', task.id), task); };
+    const updateTask = (task: Task) => { return setDoc(doc(db, 'tasks', task.id), task); };
+    const deleteTask = (id: string) => { return deleteDoc(doc(db, 'tasks', id)); };
+    const markTaskAsAccepted = (taskId: string) => { return updateDoc(doc(db, 'tasks', taskId), { acceptedAt: new Date().toISOString(), status: 'active' }); };
 
     // LOGS
-    const addLog = (log: OrderLog) => setDoc(doc(db, 'logs', log.id), log);
-    const updateLog = (log: OrderLog) => setDoc(doc(db, 'logs', log.id), log);
+    const addLog = (log: OrderLog) => { return setDoc(doc(db, 'logs', log.id), log); };
+    const updateLog = (log: OrderLog) => { return setDoc(doc(db, 'logs', log.id), log); };
 
     // NOTIFICATIONS & TOASTS
     const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));

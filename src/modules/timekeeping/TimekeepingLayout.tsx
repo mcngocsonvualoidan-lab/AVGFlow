@@ -89,6 +89,16 @@ const TimekeepingLayout = () => {
             }]
         },
         {
+            userId: '5', // Nguyễn Ngọc Sơn
+            leaves: [{
+                id: 'l_son_leave_0328',
+                type: 'leave' as const,
+                start: '2026-03-28',
+                end: '2026-03-28',
+                reason: 'Nghỉ phép (Lý do cá nhân)'
+            }]
+        },
+        {
             userId: 'unknown_luu',
             userName: 'Trần Hải Lưu',
             leaves: [{
@@ -190,6 +200,7 @@ const TimekeepingLayout = () => {
         }
         setLeaveUserId(loggedInUser.id);
         setLeaveType(type);
+        setLeaveSession('full');
         setLeaveStartDate('');
         setLeaveEndDate('');
         setLeaveReason('');
@@ -261,16 +272,43 @@ const TimekeepingLayout = () => {
             let usedQuota = 0;
             const maxQuota = 1;
 
+            // We may need to add split records
+            const leavesToAdd: any[] = [];
+
             monthLeaves.forEach(l => {
-                const duration = l.session === 'full' ? 1 : 0.5; // Simplification for 1 day
+                const duration = l.session === 'full' ? 1 : 0.5;
 
                 if (usedQuota + duration <= maxQuota) {
-                    // It fits in quota, make it a paid leave
+                    // It fully fits in quota — keep as paid leave
                     l.type = 'leave';
                     l.reason = l.reason.replace(' (Hết phép -> KP)', '').replace(' (Nghỉ phép -> KP)', '');
                     usedQuota += duration;
+                } else if (usedQuota < maxQuota && l.session === 'full') {
+                    // SPLIT CASE: Remaining quota = 0.5, requesting full day
+                    // → Split into half-day leave (P/2) + half-day absence (KP/2)
+                    const remainingQuota = maxQuota - usedQuota; // 0.5
+
+                    // Convert current record to half-day PAID leave (morning)
+                    l.type = 'leave';
+                    l.session = 'morning';
+                    l.reason = l.reason.replace(' (Hết phép -> KP)', '');
+                    usedQuota += remainingQuota;
+
+                    // Create a NEW record for the other half as UNPAID absence (afternoon)
+                    const splitAbsence = {
+                        id: `${l.id}_kp_split`,
+                        type: 'absence' as const,
+                        start: l.start,
+                        end: l.end || l.start,
+                        session: 'afternoon' as const,
+                        reason: `${l.reason.replace(' (Hết phép -> KP)', '')} (Hết phép -> KP)`
+                    };
+                    leavesToAdd.push(splitAbsence);
+                    shouldAlertQuota = true;
+                    alertContext = `${targetM}/${targetY}`;
+                    usedQuota += 0.5;
                 } else {
-                    // It exceeds quota, make it absence
+                    // It fully exceeds quota — convert entire leave to absence
                     if (l.type === 'leave') {
                         l.type = 'absence';
                         if (!l.reason.includes('Hết phép')) {
@@ -279,9 +317,14 @@ const TimekeepingLayout = () => {
                             alertContext = `${targetM}/${targetY}`;
                         }
                     }
-                    usedQuota += duration; // Keep accumulating to see total requested
+                    usedQuota += duration;
                 }
             });
+
+            // Add any split records to the main leaves array
+            if (leavesToAdd.length > 0) {
+                updatedLeaves.push(...leavesToAdd);
+            }
 
             // Re-integrate back into the main leaves array (references were kept, so updatedLeaves is already mutated)
         } else {
@@ -404,6 +447,7 @@ const TimekeepingLayout = () => {
                             ? "bg-amber-50 dark:bg-amber-900/10 text-amber-600 dark:text-amber-500 border-amber-200 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-900/20"
                             : "bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-70"
                     )}
+                    disabled={!hasQuotaInViewMonth}
                     title={hasQuotaInViewMonth ? `Đăng ký nghỉ phép (Còn ${1 - usedLeaveInViewMonth} ngày)` : "Đã hết phép tháng này"}
                 >
                     <Calendar size={18} />
@@ -416,6 +460,20 @@ const TimekeepingLayout = () => {
                         <span className="ml-1 text-[10px] bg-slate-500 text-white px-1.5 py-0.5 rounded-full">Hết</span>
                     )}
                 </button>
+
+                {!hasQuotaInViewMonth && (
+                    <button
+                        onClick={() => {
+                            handleOpenLeaveModal('absence');
+                            setLeaveReason('Nghỉ không phép (Hết phép tháng)');
+                        }}
+                        className="px-4 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 shadow-sm hover:shadow-md active:scale-95 border bg-rose-50 dark:bg-rose-900/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20 hover:bg-rose-100 dark:hover:bg-rose-900/20 animate-in fade-in slide-in-from-left-2 duration-300"
+                        title="Đã hết phép — Đăng ký nghỉ không phép"
+                    >
+                        <X size={18} />
+                        Nghỉ không phép
+                    </button>
+                )}
 
                 <button
                     onClick={() => handleOpenLeaveModal('absence')}

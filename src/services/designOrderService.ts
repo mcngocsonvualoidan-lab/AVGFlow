@@ -3,19 +3,19 @@
  * AVGFlow — Design Order Service
  * =====================================================
  * Centralized service for design order data.
- * Architecture: Sheet → Apps Script → Supabase → App
+ * Architecture: Google Sheets → JSONP/CSV → App (with Firestore cache)
  * 
  * Features:
- * - Primary: Fetch from Supabase (protected data)
- * - Fallback: Direct CSV from Google Sheets (if Supabase empty)
+ * - Primary: Fetch from Google Sheets (JSONP → GViz → CSV proxies)
  * - Cache: LocalStorage with 10-minute TTL
- * - Realtime: Supabase Realtime subscription for instant updates
+ * - Sync: Firestore backup for data persistence
  */
 
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, doc, writeBatch, getDocs, query, orderBy, limit } from '@/lib/firestore';
 
 // ==================== CONSTANTS ====================
-const SUPABASE_TABLE = 'design_orders';
+const FIRESTORE_COLLECTION = 'design_orders';
 const CACHE_KEY = 'avgflow_design_orders_cache';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -45,7 +45,7 @@ export interface ParsedDesignOrder {
 interface CacheEntry {
     data: string[][];
     timestamp: number;
-    source: 'supabase' | 'csv';
+    source: 'firestore' | 'csv';
 }
 
 function getCachedOrders(): CacheEntry | null {
@@ -62,7 +62,7 @@ function getCachedOrders(): CacheEntry | null {
     }
 }
 
-function setCachedOrders(data: string[][], source: 'supabase' | 'csv'): void {
+function setCachedOrders(data: string[][], source: 'firestore' | 'csv'): void {
     try {
         const entry: CacheEntry = { data, timestamp: Date.now(), source };
         localStorage.setItem(CACHE_KEY, JSON.stringify(entry));
@@ -71,42 +71,27 @@ function setCachedOrders(data: string[][], source: 'supabase' | 'csv'): void {
     }
 }
 
-// ==================== FETCH FROM SUPABASE ====================
+// ==================== FETCH FROM FIRESTORE ====================
+export async function fetchDesignOrdersFromFirestore(): Promise<string[][]> {
+    try {
+        const ordersRef = collection(db, FIRESTORE_COLLECTION);
+        const q = query(ordersRef, orderBy('row_index', 'asc'), limit(5000));
+        const snapshot = await getDocs(q);
 
-/** Race a promise against a timeout */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-    return Promise.race([
-        promise,
-        new Promise<T>((_, reject) =>
-            setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms)
-        ),
-    ]);
-}
+        if (snapshot.empty) return [];
 
-export async function fetchDesignOrdersFromSupabase(): Promise<string[][]> {
-    // Wrap in a real Promise for timeout support
-    const fetchPromise = (async () => {
-        const { data, error } = await supabase
-            .from(SUPABASE_TABLE)
-            .select('row_index, row_content')
-            .order('row_index', { ascending: true })
-            .limit(5000);
-        return { data, error };
-    })();
+        const rows = snapshot.docs.map(d => {
+            const data = d.data();
+            return data.row_content as string[];
+        });
 
-    // 5-second timeout to fail fast when Supabase is down/paused
-    const { data, error } = await withTimeout(fetchPromise, 5000, 'Supabase');
-
-    if (error) {
-        console.error('[DesignOrderService] Supabase fetch error:', error);
-        throw error;
+        setCachedOrders(rows, 'firestore');
+        console.log(`[DesignOrderService] ✅ Firestore loaded: ${rows.length} rows`);
+        return rows;
+    } catch (err) {
+        console.warn('[DesignOrderService] Firestore fetch failed:', err);
+        throw err;
     }
-
-    if (!data || data.length === 0) return [];
-
-    const rows = (data as DesignOrderRow[]).map(item => item.row_content);
-    setCachedOrders(rows, 'supabase');
-    return rows;
 }
 
 import { fetchViaJSONP, parseGVizToRows } from '../lib/jsonpQueue';
@@ -130,7 +115,6 @@ export async function fetchDesignOrdersFromCSV(): Promise<string[][]> {
         const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(10000) });
         if (res.ok) {
             const text = await res.text();
-            // Parse text: extract JSON from google.visualization.Query.setResponse({...})
             const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\((.+)\);?\s*$/s);
             if (jsonMatch) {
                 try {
@@ -177,13 +161,13 @@ export async function fetchDesignOrdersFromCSV(): Promise<string[][]> {
 }
 
 // ==================== MAIN FETCH (Cache → Google Sheets — HYBRID MODE) ====================
-// 🔋 Hybrid: Google Sheets is PRIMARY to save Supabase bandwidth (free plan quota exceeded)
+// 🔋 Hybrid: Google Sheets is PRIMARY, Firestore is backup/cache
 export async function fetchDesignOrders(): Promise<string[][]> {
     // 1. Try cache FIRST for instant rendering
     const cached = getCachedOrders();
     if (cached) {
         console.log(`[DesignOrderService] 📦 Instant load from cache (source: ${cached.source})`);
-        // Background refresh from Google Sheets (not Supabase — saves bandwidth)
+        // Background refresh from Google Sheets
         fetchDesignOrdersFromCSV().then(fresh => {
             if (fresh.length > 1) {
                 console.log('[DesignOrderService] 🔄 Background refresh from Sheets:', fresh.length, 'rows');
@@ -242,7 +226,6 @@ function parseCSVText(text: string): string[][] {
 // ==================== PARSE ORDERS ====================
 
 // 📅 Cutoff: Chỉ hiển thị đơn hàng từ tháng 1/2025 trở đi
-// Dữ liệu trước đó được tạm ẩn trên giao diện (vẫn lưu trong Supabase)
 const ORDERS_CUTOFF_DATE = new Date(2025, 0, 1); // January 1, 2025
 
 export function parseDesignOrders(rows: string[][]): ParsedDesignOrder[] {
@@ -251,10 +234,6 @@ export function parseDesignOrders(rows: string[][]): ParsedDesignOrder[] {
     const orders: ParsedDesignOrder[] = [];
     for (let i = 1; i < rows.length; i++) {
         const cols = rows[i];
-        // Column mapping:
-        // A(0)=Timestamp, B(1)=Person, C(2)=Brand, D(3)=Request,
-        // E(4)=Description, F(5)=Qty, G(6)=DeliveryEst,
-        // H(7)=Handler, I(8)=Status
         const time = (cols[0] || '').trim();
         const person = (cols[1] || '').trim();
         const brand = (cols[2] || '').trim();
@@ -307,35 +286,52 @@ function parseDate(dateStr: string): Date | null {
     return isNaN(d.getTime()) ? null : d;
 }
 
-// ==================== SUPABASE REALTIME (DISABLED — Hybrid Mode) ====================
-// 🔋 Disabled to save Supabase bandwidth. Data comes from Google Sheets via JSONP.
+// ==================== REALTIME (DISABLED — Hybrid Mode) ====================
 export type OrderChangeCallback = (rows: string[][]) => void;
 
 export function subscribeToDesignOrderChanges(_callback: OrderChangeCallback) {
-    // No-op: Realtime disabled in hybrid mode to save Supabase bandwidth
     console.log('[DesignOrderService] ℹ️ Realtime disabled (hybrid mode — using Google Sheets)');
-    return () => {}; // No cleanup needed
+    return () => {};
 }
 
-// ==================== SYNC TO SUPABASE (from App-side, emergency) ====================
-export async function syncDesignOrdersToSupabase(data: string[][]): Promise<void> {
-    // 1. Delete all existing
-    const { error: deleteError } = await supabase
-        .from(SUPABASE_TABLE)
-        .delete()
-        .neq('row_index', -1);
-    if (deleteError) console.warn('[DesignOrderService] Delete error:', deleteError);
+// ==================== SYNC TO FIRESTORE ====================
+export async function syncDesignOrdersToFirestore(data: string[][]): Promise<void> {
+    // Firestore batch write (max 500 per batch)
+    const BATCH_SIZE = 450; // Leave margin under 500 limit
 
-    // 2. Insert in batches
-    const payload = data.map((row, index) => ({
-        row_index: index,
-        row_content: row,
-    }));
-
-    const BATCH_SIZE = 100;
-    for (let i = 0; i < payload.length; i += BATCH_SIZE) {
-        const batch = payload.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase.from(SUPABASE_TABLE).insert(batch);
-        if (error) throw error;
+    // First, delete existing documents
+    const existingSnap = await getDocs(collection(db, FIRESTORE_COLLECTION));
+    if (!existingSnap.empty) {
+        // Delete in batches
+        const deleteBatches: ReturnType<typeof writeBatch>[] = [];
+        let currentBatch = writeBatch(db);
+        let count = 0;
+        existingSnap.docs.forEach(d => {
+            currentBatch.delete(d.ref);
+            count++;
+            if (count >= BATCH_SIZE) {
+                deleteBatches.push(currentBatch);
+                currentBatch = writeBatch(db);
+                count = 0;
+            }
+        });
+        if (count > 0) deleteBatches.push(currentBatch);
+        await Promise.all(deleteBatches.map(b => b.commit()));
+        console.log(`[DesignOrderService] 🗑️ Deleted ${existingSnap.size} existing docs`);
     }
+
+    // Insert new data in batches
+    for (let i = 0; i < data.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db);
+        const slice = data.slice(i, i + BATCH_SIZE);
+        slice.forEach((row, idx) => {
+            const docRef = doc(db, FIRESTORE_COLLECTION, `row_${i + idx}`);
+            batch.set(docRef, {
+                row_index: i + idx,
+                row_content: row,
+            });
+        });
+        await batch.commit();
+    }
+    console.log(`[DesignOrderService] ✅ Synced ${data.length} rows to Firestore`);
 }

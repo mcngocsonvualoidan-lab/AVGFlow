@@ -11,7 +11,7 @@ import { clsx } from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import { getGeminiKey, initializeGemini } from '../../lib/gemini';
 import { useAuth } from '../../context/AuthContext';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, where } from '@/lib/firestore';
 import { db } from '../../lib/firebase';
 import NotebookLM from './NotebookLM';
 

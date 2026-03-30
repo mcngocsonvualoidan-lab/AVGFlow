@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { clsx } from 'clsx';
 import TetDecorations from '../../components/TetDecorations';
+import { CURRENT_EVENT } from '../../constants/eventConfig';
 import {
     isWebAuthnSupported,
     isPlatformAuthenticatorAvailable,
@@ -431,7 +432,7 @@ const Login: React.FC = () => {
 
             <div className="absolute bottom-4 text-slate-600 text-xs text-center px-4">
                 © 2026 AVGFlow System. Secured by Firebase. <br />
-                🧧 Chúc Mừng Năm Mới - Tết Bính Ngọ 2026 🧧
+                {CURRENT_EVENT.loginFooterText}
             </div>
 
             {/* TẾT 2026 DECORATIONS */}

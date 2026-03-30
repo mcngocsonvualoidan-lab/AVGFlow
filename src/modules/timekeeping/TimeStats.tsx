@@ -54,7 +54,10 @@ const TimeStats: React.FC<TimeStatsProps> = ({ month, year, users: propUsers }) 
         // 3. Check User Leaves
         if (user.leaves) {
             for (const leave of user.leaves) {
-                if (dateStr >= leave.start && dateStr <= leave.end) {
+                // Fix: Normalize date strings to strip time component if present (sync with TimeGrid)
+                const leaveStart = leave.start.split('T')[0];
+                const leaveEnd = leave.end.split('T')[0];
+                if (dateStr >= leaveStart && dateStr <= leaveEnd) {
                     if (leave.type === 'leave') {
                         if (leave.session && leave.session !== 'full') return 'P/2';
                         return 'P';
@@ -126,8 +129,9 @@ const TimeStats: React.FC<TimeStatsProps> = ({ month, year, users: propUsers }) 
         let totalPaidLeaveUsed = 0;
         if (u.leaves) {
             u.leaves.forEach(l => {
-                const start = new Date(l.start);
-                const end = new Date(l.end);
+                // Fix: Normalize date strings to strip time component
+                const start = new Date(l.start.split('T')[0]);
+                const end = new Date(l.end.split('T')[0]);
                 // Iterate daily
                 for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                     if (d.getFullYear() === 2026) {

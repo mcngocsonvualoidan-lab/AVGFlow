@@ -15,7 +15,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Language } from '../../i18n/translations';
 import { db } from '../../lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc } from '@/lib/firestore';
 import { uploadToDrive } from '../../services/driveUploadService';
 import {
     isWebAuthnSupported,

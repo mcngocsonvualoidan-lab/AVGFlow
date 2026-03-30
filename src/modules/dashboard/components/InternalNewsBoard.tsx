@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { useData } from '../../../context/DataContext';
 import { db } from '../../../lib/firebase';
-import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, arrayUnion, deleteDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, arrayUnion, deleteDoc } from '@/lib/firestore';
 import { Bell, Plus, X, Eye, Calendar, Trash2, Image as ImageIcon, Upload, ChevronUp, ChevronDown, Archive, RefreshCcw, History } from 'lucide-react';
 import { clsx } from 'clsx';
 import { uploadToDrive } from '../../../services/driveUploadService';

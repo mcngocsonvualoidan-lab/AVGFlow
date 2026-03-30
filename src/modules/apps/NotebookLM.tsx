@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { db } from '../../lib/firebase';
-import { collection, doc, onSnapshot, addDoc, deleteDoc, setDoc, updateDoc, serverTimestamp, query, orderBy, getDocs } from 'firebase/firestore';
+import { collection, doc, onSnapshot, addDoc, deleteDoc, setDoc, updateDoc, serverTimestamp, query, orderBy, getDocs } from '@/lib/firestore';
 import { initializeGemini } from '../../lib/gemini';
 
 // ═══════════════════════════════════════════════════

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Plus, Trash2, Send, CheckCircle2, AlertCircle, Loader2, RotateCcw, User, Printer, Package, X, Search, Calendar, ChevronLeft, ChevronRight, Maximize2, Minimize2, Info } from 'lucide-react';
 import { clsx } from 'clsx';
 import { db } from '../../lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from '@/lib/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { fetchCatalog as fetchCatalogService, subscribeToCatalogChanges, type CatalogItem } from '../../services/catalogService';
 
@@ -11,7 +11,7 @@ import { fetchCatalog as fetchCatalogService, subscribeToCatalogChanges, type Ca
 const PERSON_OPTIONS = ['Ngọc Bích', 'Ánh Mây', 'Thanh Tuyền', 'Đỗ Chiều', 'Trà My'];
 
 // Google Apps Script Web App URL — Unified API v2 (tạo đơn + quản lý đơn)
-const SHEET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx0a0oYMbGcwUBaKB6kV-WHgyw30JwP4WJqM8fZlNcATivnuXxW_ZyjZVdt56_z06UE/exec';
+const SHEET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzo3gQNzgBxb0JGHPx0XPbiGtM3RRgS3W4rnw_SoYXmcV7e6MLKhZmshFWgHoOQ0piJ/exec';
 
 // ===== TYPES =====
 interface PrintRow {

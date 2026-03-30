@@ -2,7 +2,7 @@ import {
     collection, query, where, orderBy, onSnapshot,
     addDoc, doc, updateDoc, serverTimestamp,
     limit, deleteDoc, arrayUnion
-} from 'firebase/firestore';
+} from '@/lib/firestore';
 import { db } from '../lib/firebase';
 import { uploadToDrive } from './driveUploadService';
 

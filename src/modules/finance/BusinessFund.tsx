@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../../utils/supabaseClient';
 import {
     ResponsiveContainer, Tooltip,
     ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid
@@ -110,27 +109,9 @@ const BusinessFund = () => {
                 },
             };
 
-            // Check if we have fallback data for this month
+            // Use fallback data directly — Supabase removed (was failing silently)
             const fallbackForMonth = FALLBACK_DATA[selectedMonth];
             if (fallbackForMonth && fallbackForMonth[activeTab]) {
-                // Try Supabase first, use fallback if Supabase returns empty
-                try {
-                    const { data: dbData, error } = await supabase
-                        .from('fund_transactions')
-                        .select('*')
-                        .eq('fund_type', activeTab)
-                        .eq('month', selectedMonth)
-                        .order('date', { ascending: true })
-                        .order('created_at', { ascending: true });
-
-                    if (!error && dbData && dbData.length > 0) {
-                        setTransactions(dbData);
-                        setLoading(false);
-                        return;
-                    }
-                } catch { /* Supabase unavailable, fall through to fallback */ }
-
-                // Use fallback data
                 setTransactions(fallbackForMonth[activeTab]);
                 setLoading(false);
                 return;
@@ -210,160 +191,33 @@ const BusinessFund = () => {
                 }
             }
 
-            try {
-                // 1. Fetch current month's transactions
-                const { data: currentData, error: currentError } = await supabase
-                    .from('fund_transactions')
-                    .select('*')
-                    .eq('fund_type', activeTab)
-                    .eq('month', selectedMonth)
-                    .order('date', { ascending: true })
-                    .order('created_at', { ascending: true });
-
-                if (currentError) throw currentError;
-
-                // 2. If data exists, just use it
-                if (currentData && currentData.length > 0) {
-                    setTransactions(currentData);
-                } else {
-                    // 3. Automation: If selected month has NO data, try to fetch Closing Balance of Previous Month
-                    // to generate an 'Opening Balance' entry automatically.
-                    const [year, month] = selectedMonth.split('-').map(Number);
-                    let prevMonthStr = '';
-                    if (month === 1) {
-                        prevMonthStr = `${year - 1}-12`;
-                    } else {
-                        prevMonthStr = `${year}-${String(month - 1).padStart(2, '0')}`;
-                    }
-
-                    const { data: prevData } = await supabase
-                        .from('fund_transactions')
-                        .select('balance')
-                        .eq('fund_type', activeTab)
-                        .eq('month', prevMonthStr)
-                        .order('date', { ascending: false })
-                        .order('created_at', { ascending: false })
-                        .limit(1);
-
-                    if (prevData && prevData.length > 0) {
-                        const closingBalance = prevData[0].balance;
-                        setTransactions([{
-                            id: `opening-${selectedMonth}`,
-                            fund_type: activeTab,
-                            month: selectedMonth,
-                            date: `${selectedMonth}-01`,
-                            content: 'Số dư đầu kỳ (Tự động chuyển từ tháng trước)',
-                            amount_in: 0,
-                            amount_out: 0,
-                            balance: closingBalance,
-                            note: 'Hệ thống tự động đồng bộ'
-                        }]);
-                    } else {
-                        setTransactions([]);
-                    }
-                }
-            } catch (err) {
-                console.error('Error fetching fund data:', err);
-                setTransactions([]);
-            } finally {
-                setLoading(false);
-            }
+            // No data for this month
+            setTransactions([]);
+            setLoading(false);
         };
 
         fetchData();
     }, [activeTab, selectedMonth]);
 
-    // Load History Data (Chart)
+    // Load History Data (Chart) — from precomputed static data
     useEffect(() => {
-        const fetchHistory = async () => {
-            // Precomputed fallback chart data per fund type (aggregated monthly)
-            const FALLBACK_CHART: Record<string, { month: string, in: number, out: number, balance: number }[]> = {
-                'INVESTMENT': [
-                    { month: '2025-11', in: 428952, out: 2855000, balance: 2947744 },
-                    { month: '2025-12', in: 990000, out: 3785000, balance: 202744 },
-                    { month: '2026-01', in: 10000000, out: 5000000, balance: 5202744 },
-                    { month: '2026-02', in: 141, out: 0, balance: 5202885 },
-                ],
-                'WELFARE': [
-                    { month: '2025-11', in: 2198891, out: 0, balance: 19140724 },
-                    { month: '2025-12', in: 1624240, out: 0, balance: 20764964 },
-                    { month: '2026-01', in: 924162, out: 0, balance: 21689126 },
-                    { month: '2026-02', in: 1070809, out: 0, balance: 22759935 },
-                ],
-            };
-
-            try {
-                // Fetch all data for the active fund to build history
-                const { data, error } = await supabase
-                    .from('fund_transactions')
-                    .select('*')
-                    .eq('fund_type', activeTab)
-                    .order('date', { ascending: true });
-
-                if (error) throw error;
-
-                if (data && data.length > 0) {
-                    let finalData = [...data];
-
-                    // INJECT HISTORY DATA FOR JAN & FEB 2026 IF MISSING FROM DB
-                    if (!data.some((t: any) => t.month === '2026-01')) {
-                        if (activeTab === 'WELFARE') {
-                            finalData = [...finalData,
-                            { id: 'wel_jan_26_00', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 20764964 },
-                            { id: 'wel_jan_26_12', fund_type: 'WELFARE', month: '2026-01', date: '2026-01-19', content: 'Lưu nộp quỹ PL (Lần 2)', amount_in: 924162, amount_out: 0, balance: 21689126 }
-                            ];
-                        } else if (activeTab === 'INVESTMENT') {
-                            finalData = [...finalData,
-                            { id: 'inv_jan_26_00', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 202744 },
-                            { id: 'inv_jan_26_11', fund_type: 'INVESTMENT', month: '2026-01', date: '2026-01-16', content: 'Tổng hợp T01/2026', amount_in: 10000000, amount_out: 5000000, balance: 5202744 }
-                            ];
-                        }
-                    }
-                    if (!data.some((t: any) => t.month === '2026-02')) {
-                        if (activeTab === 'WELFARE') {
-                            finalData = [...finalData,
-                            { id: 'wel_feb_26_00', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-01', content: 'Tồn đầu kỳ', amount_in: 0, amount_out: 0, balance: 21689126 },
-                            { id: 'wel_feb_26_09', fund_type: 'WELFARE', month: '2026-02', date: '2026-02-24', content: 'Tổng hợp T02/2026', amount_in: 1070809, amount_out: 0, balance: 22759935 }
-                            ];
-                        } else if (activeTab === 'INVESTMENT') {
-                            finalData = [...finalData,
-                            { id: 'inv_feb_26_00', fund_type: 'INVESTMENT', month: '2026-02', date: '2026-02-01', content: 'Số dư đầu kỳ', amount_in: 0, amount_out: 0, balance: 5202744 },
-                            { id: 'inv_feb_26_01', fund_type: 'INVESTMENT', month: '2026-02', date: '2026-02-01', content: 'Tổng hợp T02/2026', amount_in: 141, amount_out: 0, balance: 5202885 }
-                            ];
-                        }
-                    }
-
-                    // Aggregate by Month
-                    const monthlyMap = new Map<string, { month: string, in: number, out: number, balance: number }>();
-
-                    finalData.forEach(t => {
-                        const m = t.month;
-                        if (!monthlyMap.has(m)) {
-                            monthlyMap.set(m, { month: m, in: 0, out: 0, balance: 0 });
-                        }
-                        const entry = monthlyMap.get(m)!;
-                        entry.in += Number(t.amount_in) || 0;
-                        entry.out += Number(t.amount_out) || 0;
-                        entry.balance = Number(t.balance) || 0; // Last transaction's balance wins
-                    });
-
-                    // Convert to Array and Sort
-                    const chartData = Array.from(monthlyMap.values()).sort((a, b) => a.month.localeCompare(b.month));
-                    setHistoryData(chartData);
-                    return; // Success from DB
-                }
-            } catch (err) {
-                console.error('Error fetching history:', err);
-            }
-
-            // FALLBACK: Use precomputed static chart data
-            const fallback = FALLBACK_CHART[activeTab];
-            if (fallback) {
-                setHistoryData(fallback);
-            }
+        // Precomputed chart data per fund type
+        const FALLBACK_CHART: Record<string, { month: string, in: number, out: number, balance: number }[]> = {
+            'INVESTMENT': [
+                { month: '2025-11', in: 428952, out: 2855000, balance: 2947744 },
+                { month: '2025-12', in: 990000, out: 3785000, balance: 202744 },
+                { month: '2026-01', in: 10000000, out: 5000000, balance: 5202744 },
+                { month: '2026-02', in: 141, out: 0, balance: 5202885 },
+            ],
+            'WELFARE': [
+                { month: '2025-11', in: 2198891, out: 0, balance: 19140724 },
+                { month: '2025-12', in: 1624240, out: 0, balance: 20764964 },
+                { month: '2026-01', in: 924162, out: 0, balance: 21689126 },
+                { month: '2026-02', in: 1070809, out: 0, balance: 22759935 },
+            ],
         };
 
-        fetchHistory();
+        setHistoryData(FALLBACK_CHART[activeTab] || []);
     }, [activeTab]);
 
     // Calculate Summary

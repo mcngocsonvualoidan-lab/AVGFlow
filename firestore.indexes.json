@@ -1,1 +1,13 @@
-{} 
+{
+  "indexes": [
+    {
+      "collectionGroup": "design_tickets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "contactEmail", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -63,7 +63,28 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // --- TICKET CHAT MESSAGES (Legacy — Supabase migration) ---
+    match /ticket_messages/{ticketId} {
+      allow read, write: if true;
+    }
+    match /ticket_messages/{ticketId}/messages/{msgId} {
+      allow read, write: if true;
+    }
+
+    // --- TICKET CHATS (New — Firestore-based chat) ---
+    match /ticket_chats/{ticketId} {
+      allow read, write: if true;
+    }
+    match /ticket_chats/{ticketId}/messages/{msgId} {
+      allow read, write: if true;
+    }
+
     match /print_orders/{orderId} {
+      allow read, write: if true;
+    }
+
+    // --- DESIGN ORDERS (Google Sheets sync cache) ---
+    match /design_orders/{docId} {
       allow read, write: if true;
     }
 

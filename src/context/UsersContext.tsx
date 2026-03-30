@@ -8,8 +8,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { db } from '@/lib/firebase';
-import { supabase } from '@/lib/supabase';
-import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from '@/lib/firestore';
 import { useAuth } from './AuthContext';
 import type { User, LeaveRecord, UserPermissions } from '@/types';
 
@@ -64,16 +63,14 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
             const userData = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            })) as User[];
-
-            setUsers(userData);
+            })) as User[]; setUsers(userData);
             setIsLoaded(true);
         });
 
         return () => unsubscribe();
     }, [currentUser]);
 
-    // Presence heartbeat - update last_seen
+    // Presence heartbeat - update last_seen (Firestore only, 2 min)
     useEffect(() => {
         if (!currentUser || !isLoaded) return;
 
@@ -81,17 +78,16 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
             const appUser = usersRef.current.find(u => u.email === currentUser.email);
             if (!appUser) return;
 
-            await supabase
-                .from('users')
-                .update({ last_seen: new Date().toISOString() })
-                .eq('id', appUser.id)
-                .then(({ error }) => {
-                    if (error) console.warn('Heartbeat fail', error);
+            try { await updateDoc(doc(db, 'users', appUser.id), {
+                    lastSeen: new Date().toISOString()
                 });
+            } catch (err) {
+                // Silently ignore heartbeat failures
+            }
         };
 
         sendHeartbeat();
-        const interval = setInterval(sendHeartbeat, 60000); // Every 1 minute
+        const interval = setInterval(sendHeartbeat, 120000); // Every 2 minutes
 
         return () => clearInterval(interval);
     }, [currentUser, isLoaded]);
@@ -100,16 +96,13 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
     // CRUD Operations
     // ========================================
 
-    const addUser = useCallback(async (user: User) => {
-        await setDoc(doc(db, 'users', user.id), user);
+    const addUser = useCallback(async (user: User) => { await setDoc(doc(db, 'users', user.id), user);
     }, []);
 
-    const updateUser = useCallback(async (user: User) => {
-        await updateDoc(doc(db, 'users', user.id), { ...user });
+    const updateUser = useCallback(async (user: User) => { await updateDoc(doc(db, 'users', user.id), { ...user });
     }, []);
 
-    const deleteUser = useCallback(async (id: string) => {
-        await deleteDoc(doc(db, 'users', id));
+    const deleteUser = useCallback(async (id: string) => { await deleteDoc(doc(db, 'users', id));
     }, []);
 
     // ========================================
@@ -118,17 +111,13 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
 
     const addLeaveRecord = useCallback(async (userId: string, leave: LeaveRecord) => {
         const user = users.find(u => u.id === userId);
-        if (!user) return;
-
-        const updatedLeaves = [...(user.leaves || []), leave];
+        if (!user) return; const updatedLeaves = [...(user.leaves || []), leave];
         await updateDoc(doc(db, 'users', userId), { leaves: updatedLeaves });
     }, [users]);
 
     const removeLeaveRecord = useCallback(async (userId: string, leaveId: string) => {
         const user = users.find(u => u.id === userId);
-        if (!user) return;
-
-        const updatedLeaves = (user.leaves || []).filter(l => l.id !== leaveId);
+        if (!user) return; const updatedLeaves = (user.leaves || []).filter(l => l.id !== leaveId);
         await updateDoc(doc(db, 'users', userId), { leaves: updatedLeaves });
     }, [users]);
 

@@ -8,7 +8,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch } from '@/lib/firestore';
 import { useAuth } from './AuthContext';
 
 // Types
@@ -53,9 +53,7 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
             const notifs = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            })) as Notification[];
-
-            // Sort by time (newest first)
+            })) as Notification[]; // Sort by time (newest first)
             notifs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
             setNotifications(notifs);
         });
@@ -73,38 +71,37 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
             id,
             time: new Date().toISOString(),
             read: false
-        };
-
-        await setDoc(doc(db, 'notifications', id), newNotification);
+        }; await setDoc(doc(db, 'notifications', id), newNotification);
     }, []);
 
     // Mark single notification as read
-    const markAsRead = useCallback(async (id: string) => {
-        await updateDoc(doc(db, 'notifications', id), { read: true });
+    const markAsRead = useCallback(async (id: string) => { await updateDoc(doc(db, 'notifications', id), { read: true });
     }, []);
 
     // Mark all notifications as read
     const markAllAsRead = useCallback(async () => {
+        const unread = notifications.filter(n => !n.read);
+        if (unread.length === 0) return;
         const batch = writeBatch(db);
-        notifications
-            .filter(n => !n.read)
-            .forEach(n => {
-                batch.update(doc(db, 'notifications', n.id), { read: true });
-            });
+        unread.forEach(n => {
+            batch.update(doc(db, 'notifications', n.id), { read: true });
+        });
+
         await batch.commit();
     }, [notifications]);
 
     // Delete a single notification
-    const deleteNotification = useCallback(async (id: string) => {
-        await deleteDoc(doc(db, 'notifications', id));
+    const deleteNotification = useCallback(async (id: string) => { await deleteDoc(doc(db, 'notifications', id));
     }, []);
 
     // Clear all notifications
     const clearAllNotifications = useCallback(async () => {
+        if (notifications.length === 0) return;
         const batch = writeBatch(db);
         notifications.forEach(n => {
             batch.delete(doc(db, 'notifications', n.id));
         });
+
         await batch.commit();
     }, [notifications]);
 

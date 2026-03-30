@@ -20,8 +20,9 @@ const LeaveDetailsList: React.FC<LeaveDetailsListProps> = ({ month, year, users 
         users.forEach(user => {
             if (!user.leaves) return;
             user.leaves.forEach(leave => {
-                const start = new Date(leave.start);
-                const end = new Date(leave.end);
+                // Fix: Normalize date strings to strip time component (absence stores datetime format)
+                const start = new Date(leave.start.split('T')[0]);
+                const end = new Date(leave.end.split('T')[0]);
 
                 // Iterate from start to end
                 let current = new Date(start);

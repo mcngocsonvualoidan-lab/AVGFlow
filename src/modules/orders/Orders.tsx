@@ -9,9 +9,9 @@ import HeroBanner from '../../components/HeroBanner';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { db } from '../../lib/firebase';
-import { doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection } from '@/lib/firestore';
 import { GlassDatePicker } from '../../components/ui/GlassDatePicker';
-import { supabase } from '../../lib/supabase';
+
 import { fetchDesignOrders, parseDesignOrders, subscribeToDesignOrderChanges } from '../../services/designOrderService';
 import { fetchPrintOrders as fetchPrintOrdersService, subscribeToPrintOrderChanges } from '../../services/printOrderService';
 
@@ -164,27 +164,19 @@ const Orders: React.FC = () => {
         return () => unsubscribe();
     }, []);
 
-    // Fetch design tickets pending count from Supabase
+    // Fetch design tickets pending count from Firestore
     const [designPendingCount, setDesignPendingCount] = useState(0);
     useEffect(() => {
-        const fetchDesignCount = async () => {
-            try {
-                const { count, error } = await supabase
-                    .from('design_tickets')
-                    .select('*', { count: 'exact', head: true })
-                    .in('status', ['open', 'in-review', 'revision']);
-                if (!error && count !== null) setDesignPendingCount(count);
-            } catch { /* silent */ }
-        };
-        fetchDesignCount();
-        // Realtime subscription for count updates
-        const channel = supabase
-            .channel('design_tickets_count')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'design_tickets' }, () => {
-                fetchDesignCount();
-            })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
+        const ticketsRef = collection(db, 'design_tickets');
+        const unsubscribe = onSnapshot(ticketsRef, (snapshot) => {
+            let count = 0;
+            snapshot.docs.forEach(d => {
+                const status = d.data().status;
+                if (['open', 'in-review', 'revision'].includes(status)) count++;
+            });
+            setDesignPendingCount(count);
+        });
+        return () => unsubscribe();
     }, []);
 
     // Check if current user can edit orders

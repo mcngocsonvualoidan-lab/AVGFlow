@@ -6,7 +6,7 @@ import PrintOrderForm from './PrintOrderForm';
 import DesignOrderForm from './DesignOrderForm';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList } from 'recharts';
 import { db } from '../../lib/firebase';
-import { onSnapshot, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { onSnapshot, collection, addDoc, serverTimestamp, doc, setDoc } from '@/lib/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { fetchDesignOrders, parseDesignOrders, subscribeToDesignOrderChanges } from '../../services/designOrderService';
 import { findCustomerByEmail, fetchCompanyNames, type CustomerContact } from '../../services/customerService';
@@ -39,10 +39,20 @@ function getStatusInfo(status: string): { color: string; bg: string; border: str
     if (s.includes('hủy') || s === 'cancel' || s === 'cancelled') {
         return { color: 'text-red-700 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-500/10', border: 'border-red-200 dark:border-red-500/20', icon: XCircle, label: 'Đã hủy' };
     }
-    if (s.includes('đặt in') || s.includes('in ấn') || s === 'printing') {
-        return { color: 'text-blue-700 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-500/10', border: 'border-blue-200 dark:border-blue-500/20', icon: Truck, label: 'Đã đặt in' };
+    if (s.includes('chốt')) {
+        return { color: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10', border: 'border-emerald-200 dark:border-emerald-500/20', icon: CheckCircle2, label: 'Đã chốt' };
     }
-    return { color: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10', border: 'border-amber-200 dark:border-amber-500/20', icon: AlertCircle, label: 'Đang xử lý' };
+    if (s.includes('yêu cầu chỉnh sửa') || s.includes('cần chỉnh sửa')) {
+        return { color: 'text-orange-700 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-500/10', border: 'border-orange-200 dark:border-orange-500/20', icon: PenLine, label: 'Cần chỉnh sửa' };
+    }
+    if (s.includes('chờ duyệt') || s.includes('đang duyệt')) {
+        return { color: 'text-indigo-700 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-500/10', border: 'border-indigo-200 dark:border-indigo-500/20', icon: Clock, label: 'Chờ duyệt' };
+    }
+    if (s.includes('sxtc') || s.includes('sản xuất') || s.includes('thi công') || s.includes('đặt in') || s.includes('in ấn') || s === 'printing') {
+        return { color: 'text-blue-700 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-500/10', border: 'border-blue-200 dark:border-blue-500/20', icon: Truck, label: 'Đang SXTC' };
+    }
+    const defaultLabel = !!status && status.trim() !== '' ? status : 'Đang xử lý';
+    return { color: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10', border: 'border-amber-200 dark:border-amber-500/20', icon: AlertCircle, label: defaultLabel };
 }
 
 const normalizeBrandName = (name: string): string => {
@@ -133,6 +143,23 @@ const PublicOrders: React.FC = () => {
     const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
     const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
     const [sortNewestFirst, setSortNewestFirst] = useState(true);
+    const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+
+    const handleUpdateStatus = async (orderId: string, newStatus: string) => {
+        try {
+            const docRef = doc(db, 'order_metas', orderId);
+            await setDoc(docRef, {
+                statusOverride: newStatus,
+                updatedBy: userEmail,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            // Optionally auto-collapse the panel after setting a final state like Cancelled, or leave it open
+        } catch (err) {
+            console.error("Lỗi cập nhật trạng thái:", err);
+            alert("Đã xảy ra lỗi khi cập nhật trạng thái.");
+        }
+    };
+
     // --- URL hash persistence for tab/category ---
     const VALID_TABS = ['orders', 'form', 'products', 'customers'] as const;
     const VALID_CATS = ['in-an', 'thiet-ke', 'phap-ly', 'tai-chinh', 'truyen-thong'] as const;
@@ -1063,6 +1090,68 @@ const PublicOrders: React.FC = () => {
                                                             </div>
                                                         )}
                                                     </div>
+
+                                                    {/* Detail Panel Toggle */}
+                                                    <div className="mt-4 pt-4 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setExpandedOrderId(prev => prev === order.id ? null : order.id);
+                                                            }}
+                                                            className="text-[11px] sm:text-xs font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 hover:bg-violet-100 dark:hover:bg-violet-500/20 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl transition-colors flex items-center gap-1.5 items-center ml-auto"
+                                                        >
+                                                            {expandedOrderId === order.id ? (
+                                                                <>Đóng chi tiết và thao tác <ChevronDown size={14} className="rotate-180 transition-transform" /></>
+                                                            ) : (
+                                                                <>Panel chi tiết và thao tác <ChevronDown size={14} className="transition-transform" /></>
+                                                            )}
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Detail Panel */}
+                                                    {expandedOrderId === order.id && (
+                                                        <div className="mt-4 p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+                                                            <div className="flex items-center gap-2 mb-3">
+                                                                <ListChecks size={16} className="text-violet-500" />
+                                                                <h4 className="text-sm font-bold text-slate-800 dark:text-white">Cập nhật trạng thái đơn hàng</h4>
+                                                            </div>
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                                                                Thay đổi trạng thái dưới đây sẽ thông báo ngay lập tức cho đội ngũ Thiết kế.
+                                                            </p>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                <button
+                                                                    onClick={() => handleUpdateStatus(order.id, 'Chốt')}
+                                                                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20 dark:hover:bg-green-500/20 transition-all flex items-center gap-1.5 shadow-sm"
+                                                                >
+                                                                    <CheckCircle2 size={14} /> Chốt
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleUpdateStatus(order.id, 'Chờ duyệt')}
+                                                                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20 dark:hover:bg-indigo-500/20 transition-all flex items-center gap-1.5 shadow-sm"
+                                                                >
+                                                                    <Clock size={14} /> Chờ duyệt
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleUpdateStatus(order.id, 'Yêu cầu chỉnh sửa thêm')}
+                                                                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20 dark:hover:bg-amber-500/20 transition-all flex items-center gap-1.5 shadow-sm"
+                                                                >
+                                                                    <PenLine size={14} /> Yêu cầu chỉnh sửa thêm
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleUpdateStatus(order.id, 'Yêu cầu SXTC')}
+                                                                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20 dark:hover:bg-blue-500/20 transition-all flex items-center gap-1.5 shadow-sm"
+                                                                >
+                                                                    <Truck size={14} /> Yêu cầu SXTC
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleUpdateStatus(order.id, 'Hủy')}
+                                                                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20 dark:hover:bg-rose-500/20 transition-all flex items-center gap-1.5 shadow-sm"
+                                                                >
+                                                                    <XCircle size={14} /> Hủy
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>

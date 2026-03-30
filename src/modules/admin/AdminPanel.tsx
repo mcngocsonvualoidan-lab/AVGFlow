@@ -1,18 +1,18 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { db } from '../../lib/firebase';
-import { supabase } from '../../lib/supabase';
-import { collection, onSnapshot, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, deleteDoc, doc, setDoc } from '@/lib/firestore';
 import { uploadToDrive } from '../../services/driveUploadService';
 import {
     Users, CheckSquare, FileText, Bell,
     Gift, Calendar, DollarSign, Database, Trash2, Edit2,
     Save, X, LogOut, ChevronRight, Search, ArrowUpDown, Loader2, Upload,
-    Image as ImageIcon, Megaphone, Mail, MessageSquare, Newspaper, Bot
+    Image as ImageIcon, Megaphone, Mail, MessageSquare, Newspaper, Bot, Activity
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
+import ResourceMonitor from './ResourceMonitor';
 
 // --- HELPER: Detect Field Type for Form ---
 const getInputType = (key: string, value: any): string => {
@@ -641,17 +641,12 @@ const AdminPanel: React.FC = () => {
     const contextData = useData();
     const { currentUser, loading } = useAuth();
 
-    // Additional Collections fetch
-    const [conclusionDocs, setConclusionDocs] = useState<any[]>([]);
-    const [conclusionVotes, setConclusionVotes] = useState<any[]>([]);
-    const [mailQueue, setMailQueue] = useState<any[]>([]);
-    const [aiAppHistory, setAiAppHistory] = useState<any[]>([]);
-    const [aiConversations, setAiConversations] = useState<any[]>([]);
-    const [internalNews, setInternalNews] = useState<any[]>([]);
-    const [chatRooms, setChatRooms] = useState<any[]>([]);
+    // 🔋 OPTIMIZED: Only load extra collection data for the ACTIVE tab
+    // This reduces Firestore reads from 7 simultaneous listeners to just 1
+    const [extraData, setExtraData] = useState<any[]>([]);
 
     useEffect(() => {
-        if (loading) return; // Wait for auth check
+        if (loading) return;
 
         const token = localStorage.getItem('avg_admin_token');
         const allowedEmails = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com'];
@@ -662,22 +657,26 @@ const AdminPanel: React.FC = () => {
         }
     }, [navigate, currentUser, loading]);
 
-    // Fetch extra collections
-    useEffect(() => {
-        const unsubs: (() => void)[] = [];
-        unsubs.push(onSnapshot(collection(db, 'conclusion_docs'), s => setConclusionDocs(s.docs.map(d => ({ id: d.id, ...d.data() })))));
-        unsubs.push(onSnapshot(collection(db, 'conclusion_votes'), s => setConclusionVotes(s.docs.map(d => ({ id: d.id, ...d.data() })))));
-        unsubs.push(onSnapshot(collection(db, 'mail'), s => setMailQueue(s.docs.map(d => ({ id: d.id, ...d.data() })))));
-        unsubs.push(onSnapshot(collection(db, 'ai_app_history'), s => setAiAppHistory(s.docs.map(d => ({ id: d.id, ...d.data() })))));
-        unsubs.push(onSnapshot(collection(db, 'ai_conversations'), s => setAiConversations(s.docs.map(d => ({ id: d.id, ...d.data() })))));
-        unsubs.push(onSnapshot(collection(db, 'internal_news'), s => setInternalNews(s.docs.map(d => ({ id: d.id, ...d.data() })))));
-        unsubs.push(onSnapshot(collection(db, 'chat_rooms'), s => setChatRooms(s.docs.map(d => ({ id: d.id, ...d.data() })))));
-        return () => unsubs.forEach(u => u());
-    }, []);
-
-    // URL Params for Routing
-    const { section } = useParams();
+    // 🔋 Only subscribe to the collection that is currently being viewed
+    const extraCollections = ['conclusion_docs', 'conclusion_votes', 'mail', 'ai_app_history', 'ai_conversations', 'internal_news', 'chat_rooms'];
+    const location = useLocation();
+    const section = location.pathname.split('/admin-panel/')[1]?.split('/')[0];
     const activeTab = section || 'users';
+
+    useEffect(() => {
+        // Only subscribe if the active tab is one of the extra collections
+        if (!extraCollections.includes(activeTab)) {
+            setExtraData([]);
+            return;
+        }
+
+        console.log(`[AdminPanel] 🔋 Subscribing to: ${activeTab}`);
+        const unsub = onSnapshot(collection(db, activeTab), s => { setExtraData(s.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+        return () => unsub();
+    }, [activeTab]);
+
+    // URL Params for Routing (activeTab already defined above)
 
     // Redirect to default if no section
     useEffect(() => {
@@ -686,6 +685,7 @@ const AdminPanel: React.FC = () => {
         }
     }, [section, navigate]);
 
+    // 🔋 OPTIMIZED: Extra collections use a single shared state loaded on-demand
     const collections = [
         { id: 'users', label: 'Nhân sự', icon: Users, data: contextData.users },
         { id: 'tasks', label: 'Nhiệm vụ', icon: CheckSquare, data: contextData.tasks },
@@ -695,67 +695,28 @@ const AdminPanel: React.FC = () => {
         { id: 'events', label: 'Sự kiện', icon: Calendar, data: contextData.activeEvents },
         { id: 'payroll', label: 'Lương', icon: DollarSign, data: contextData.payrollRecords },
         { id: 'meetings', label: 'Lịch họp', icon: Calendar, data: contextData.meetings },
-        { id: 'conclusion_docs', label: 'Văn bản KL', icon: Database, data: conclusionDocs },
-        { id: 'conclusion_votes', label: 'Bình chọn VB', icon: Database, data: conclusionVotes },
-        { id: 'mail', label: 'Hàng đợi Email', icon: Mail, data: mailQueue },
-        { id: 'ai_app_history', label: 'Lịch sử AI Apps', icon: Bot, data: aiAppHistory },
-        { id: 'ai_conversations', label: 'Hội thoại AI', icon: Bot, data: aiConversations },
-        { id: 'internal_news', label: 'Bản tin nội bộ', icon: Newspaper, data: internalNews },
-        { id: 'chat_rooms', label: 'Phòng Chat', icon: MessageSquare, data: chatRooms },
+        { id: 'conclusion_docs', label: 'Văn bản KL', icon: Database, data: activeTab === 'conclusion_docs' ? extraData : [] },
+        { id: 'conclusion_votes', label: 'Bình chọn VB', icon: Database, data: activeTab === 'conclusion_votes' ? extraData : [] },
+        { id: 'mail', label: 'Hàng đợi Email', icon: Mail, data: activeTab === 'mail' ? extraData : [] },
+        { id: 'ai_app_history', label: 'Lịch sử AI Apps', icon: Bot, data: activeTab === 'ai_app_history' ? extraData : [] },
+        { id: 'ai_conversations', label: 'Hội thoại AI', icon: Bot, data: activeTab === 'ai_conversations' ? extraData : [] },
+        { id: 'internal_news', label: 'Bản tin nội bộ', icon: Newspaper, data: activeTab === 'internal_news' ? extraData : [] },
+        { id: 'chat_rooms', label: 'Phòng Chat', icon: MessageSquare, data: activeTab === 'chat_rooms' ? extraData : [] },
+        { id: 'resource_monitor', label: '🔋 Tài nguyên', icon: Activity, data: [] },
     ];
 
     const activeCollection = collections.find(c => c.id === activeTab) || collections[0];
 
-    // Generic Handlers
+    // Generic Handlers — 100% Firestore (no Supabase)
     const handleDelete = async (collectionName: string, id: string) => {
-        if (collectionName === 'users_v2') {
-            try {
-                const { error } = await supabase.from('users').delete().eq('id', id);
-                if (error) throw error;
-                // UI update via realtime listener
-            } catch (e: any) {
-                alert('Supabase Delete Failed: ' + e.message);
-            }
-            return;
-        }
-
-        // Map collection name to firestore collection name
-        let firestoreName = collectionName;
         try {
-            await deleteDoc(doc(db, firestoreName, id));
+            await deleteDoc(doc(db, collectionName, id));
         } catch (e: any) {
             alert('Delete failed: ' + e.message);
         }
     };
 
     const handleUpdate = async (collectionName: string, id: string, data: any) => {
-        if (collectionName === 'users_v2') {
-            // Map camelCase back to snake_case
-            const snakeData = {
-                name: data.name,
-                alias: data.alias,
-                role: data.role,
-                dept: data.dept,
-                email: data.email,
-                phone: data.phone,
-                avatar: data.avatar,
-                bank_acc: data.bankAcc,
-                bank_name: data.bankName,
-                is_admin: data.isAdmin,
-                verified: data.verified,
-                dob: data.dob,
-                start_date: data.startDate,
-                employee_code: data.employeeCode,
-                contract_no: data.contractNo,
-                leaves: data.leaves,
-                custom_qr_url: data.customQrUrl,
-                // last_seen: data.lastSeen // Usually not editable manually, but nice to preserve
-            };
-
-            const { error } = await supabase.from('users').update(snakeData).eq('id', id);
-            if (error) throw error;
-            return;
-        }
 
         // Force cleanup of undefined fields which break Firestore
         const cleanData = JSON.parse(JSON.stringify(data));
@@ -896,13 +857,17 @@ const AdminPanel: React.FC = () => {
 
                 {/* Content Area */}
                 <div className="flex-1 p-6 overflow-hidden relative">
-                    <CollectionView
-                        key={activeTab}
-                        name={activeTab}
-                        data={activeCollection.data}
-                        onDelete={(id) => handleDelete(activeTab, id)}
-                        onUpdate={(id, data) => handleUpdate(activeTab, id, data)}
-                    />
+                    {activeTab === 'resource_monitor' ? (
+                        <ResourceMonitor />
+                    ) : (
+                        <CollectionView
+                            key={activeTab}
+                            name={activeTab}
+                            data={activeCollection.data}
+                            onDelete={(id) => handleDelete(activeTab, id)}
+                            onUpdate={(id, data) => handleUpdate(activeTab, id, data)}
+                        />
+                    )}
                 </div>
             </div>
         </div>

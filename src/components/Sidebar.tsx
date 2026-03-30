@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { CURRENT_EVENT } from '../constants/eventConfig';
 import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, CheckSquare, GitGraph, Users, FileBarChart, Menu, Settings, Gift, Sparkles, CircleDollarSign, Calendar, FileCheck, Grid, Megaphone, Wallet, CalendarCheck, Package, Gamepad2 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -222,25 +223,27 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed, mobileOpen =
 
             {/* Collapse Toggle & Footer settings */}
             <div className="p-4 pb-24 md:pb-4 border-t border-border space-y-2 shrink-0">
-                {/* 8/3 Women's Day Decoration Toggle */}
+                {/* Event Decoration Toggle — driven by eventConfig */}
                 <button
                     onClick={toggleTetDecor}
                     className={clsx(
                         "w-full flex items-center p-2 rounded-lg transition-all duration-200 group",
                         collapsed ? "justify-center" : "justify-between px-3",
-                        showTetDecor ? "text-pink-500 bg-pink-500/5 border border-pink-500/20" : "text-text-muted hover:text-text-main hover:bg-bg-elevated border border-transparent"
+                        showTetDecor
+                            ? CURRENT_EVENT.sidebarClasses.onButton
+                            : "text-text-muted hover:text-text-main hover:bg-bg-elevated border border-transparent"
                     )}
-                    title={collapsed ? "Bật/Tắt Chào mừng 8/3" : undefined}
+                    title={collapsed ? CURRENT_EVENT.toggleTooltip : undefined}
                 >
-                    <div className={clsx("flex items-center gap-3 transition-colors", showTetDecor && "text-pink-500")}>
+                    <div className={clsx("flex items-center gap-3 transition-colors", showTetDecor && CURRENT_EVENT.sidebarClasses.onText)}>
                         <Sparkles size={20} className={clsx("shrink-0", showTetDecor && "animate-pulse")} />
-                        <span className={clsx("whitespace-nowrap transition-all duration-300 font-medium text-sm", collapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100 w-auto", showTetDecor && "bg-gradient-to-r from-pink-500 to-rose-500 bg-clip-text text-transparent font-bold")}>
-                            Chào mừng 8/3
+                        <span className={clsx("whitespace-nowrap transition-all duration-300 font-medium text-sm", collapsed ? "opacity-0 w-0 overflow-hidden" : "opacity-100 w-auto", showTetDecor && `bg-gradient-to-r ${CURRENT_EVENT.theme.sidebarGradient} bg-clip-text text-transparent font-bold`)}>
+                            {CURRENT_EVENT.shortLabel}
                         </span>
                     </div>
 
                     {!collapsed && (
-                        <div className={clsx("w-8 h-4 rounded-full relative transition-colors border border-border shrink-0", showTetDecor ? "bg-pink-500 shadow-sm border-pink-500" : "bg-slate-300 dark:bg-slate-700")}>
+                        <div className={clsx("w-8 h-4 rounded-full relative transition-colors border border-border shrink-0", showTetDecor ? CURRENT_EVENT.sidebarClasses.onSwitch : "bg-slate-300 dark:bg-slate-700")}>
                             <div className={clsx("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all shadow-sm", showTetDecor ? "left-[18px]" : "left-[3px]")} />
                         </div>
                     )}

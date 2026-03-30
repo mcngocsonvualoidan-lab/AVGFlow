@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
-import { Sun, Skull, Crown, RotateCcw, Send, ThumbsUp, Loader2, MessageCircle, Users, Shield, Clock, Trophy, BarChart3, Volume2, VolumeX } from 'lucide-react';
+import { Sun, Skull, Crown, RotateCcw, Send, ThumbsUp, Loader2, MessageCircle, Users, Shield, Clock, Trophy, BarChart3, Volume2, VolumeX, BookOpen } from 'lucide-react';
 import { MinigameService, GameRoom, WerewolfState, WerewolfChatMessage, GameHistory, decodeEmail } from '../../services/minigameService';
 import { useData } from '../../context/DataContext';
 import { werewolfAudio, PhaseType } from './werewolf-audio';
@@ -61,6 +61,9 @@ const WOLF_ROLES = [
     { role: 'Tiên tri', icon: '🔮', team: 'village', desc: 'Nhà tiên tri bí ẩn. Mỗi đêm soi 1 người để biết họ có phải Ma Sói không.', cardImage: '/cards/seer.png' },
     { role: 'Bảo vệ', icon: '⚔️', team: 'village', desc: 'Hiệp sĩ canh giữ. Mỗi đêm bảo vệ 1 người.', cardImage: '/cards/guard.png' },
     { role: 'Phù thủy', icon: '🧙', team: 'village', desc: 'Bà phù thủy bí ẩn. Có 1 bình cứu và 1 bình độc.', cardImage: '/cards/witch.png' },
+    { role: 'Thợ săn', icon: '🏹', team: 'village', desc: 'Mỗi đêm ghim 1 người (không ghim trùng người đêm trước). Nếu Thợ săn chết, người bị ghim cũng sẽ chết theo.', cardImage: '/cards/hunter_v2.png' },
+    { role: 'Kẻ chán đời', icon: '😵', team: 'alone', desc: 'Kẻ chán đời muốn chết. Thắng nếu bị dân làng bỏ phiếu treo cổ (không thắng nếu bị sói cắn).', cardImage: '/cards/tanner.png' },
+    { role: 'Kẻ tẩm dầu', icon: '🔥', team: 'alone', desc: 'Kẻ phóng hỏa bí ẩn. Mỗi đêm tẩm dầu 1 người hoặc châm lửa đốt tất cả đã tẩm dầu. Thắng khi đốt hết mọi người.', cardImage: '/cards/arsonist.png' },
 ];
 const CARD_BACK_IMAGE = '/cards/card_back.png';
 
@@ -71,6 +74,9 @@ const ROLE_GRADIENTS: Record<string, string> = {
     'Tiên tri': 'from-[#10102a] via-[#1a1848] to-[#080818]',
     'Bảo vệ': 'from-[#0a1520] via-[#142838] to-[#081018]',
     'Phù thủy': 'from-[#201020] via-[#381838] to-[#100810]',
+    'Thợ săn': 'from-[#1a1008] via-[#2a2010] to-[#0f0a04]',
+    'Kẻ chán đời': 'from-[#1a1518] via-[#2a2028] to-[#0f0a10]',
+    'Kẻ tẩm dầu': 'from-[#2a1a08] via-[#3a2510] to-[#1a0f04]',
 };
 
 // Fallback card face when image fails to load
@@ -918,8 +924,49 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
     const [showMyRole, setShowMyRole] = useState<false | 'scratch' | true>(false);
     const resolvingRef = useRef(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [showGuide, setShowGuide] = useState(false);
     const [audioMuted, setAudioMuted] = useState(true);
     const prevPhaseForAudioRef = useRef(phase);
+    // Custom role selection by host (null = auto mode)
+    const [customRoleCounts, setCustomRoleCounts] = useState<Record<string, number> | null>(null);
+    // Bot (AI) players
+    const BOT_NAMES = ['Tuyển Công Bằng', 'Lê Thị Nga', '🤖 Trần Văn Hùng', '🤖 Phạm Thị Lan', '🤖 Hoàng Minh Tuấn', '🤖 Võ Thị Mai', '🤖 Đỗ Quang Hải', '🤖 Bùi Thị Hoa', '🤖 Ngô Đức Thắng', '🤖 Lý Thị Xuân', '🤖 Đặng Văn Phúc', '🤖 Vũ Thị Hằng'];
+    const STEALTH_BOT_COUNT = 2; // First N bots look like real players
+    const [botCount, setBotCount] = useState(0);
+    const [autoResetTimeLeft, setAutoResetTimeLeft] = useState<number | null>(null);
+    const botPlayers = useMemo(() => {
+        const makeBotAvatar = (name: string, i: number) => {
+            // For stealth bots, use initials from last words of name
+            if (i < STEALTH_BOT_COUNT) {
+                const words = name.replace('🤖 ', '').split(' ');
+                const initials = words.length >= 2 ? words[words.length - 2][0] + words[words.length - 1][0] : words[0].slice(0, 2);
+                return `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&size=44&background=2a1f3d&color=c9873a&bold=true`;
+            }
+            return `https://ui-avatars.com/api/?name=B${i + 1}&size=44&background=4a3728&color=c9873a&bold=true`;
+        };
+        if (phase !== 'waiting' && gs.botUids) {
+            return (gs.botUids as string[]).map((uid, i) => ({
+                uid,
+                name: BOT_NAMES[i] || `🤖 Bot ${i + 1}`,
+                avatar: makeBotAvatar(BOT_NAMES[i] || `Bot ${i + 1}`, i),
+                isBot: true,
+            }));
+        }
+        return Array.from({ length: botCount }, (_, i) => ({
+            uid: `__bot_${i}__`,
+            name: BOT_NAMES[i] || `🤖 Bot ${i + 1}`,
+            avatar: makeBotAvatar(BOT_NAMES[i] || `Bot ${i + 1}`, i),
+            isBot: true,
+        }));
+    }, [botCount, phase, gs.botUids]);
+    // Merge real + bot players
+    const allPlayers = useMemo(() => [...playerList, ...botPlayers], [playerList, botPlayers]);
+    const isBot = useCallback((uid: string) => uid.startsWith('__bot_'), []);
+    const isStealthBot = useCallback((uid: string) => {
+        if (!uid.startsWith('__bot_')) return false;
+        const idx = parseInt(uid.replace('__bot_', '').replace('__', ''), 10);
+        return idx < STEALTH_BOT_COUNT;
+    }, []);
 
     // Audio: init on first click anywhere in the game
     const initAudio = useCallback(() => {
@@ -986,7 +1033,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
     useEffect(() => {
         if (phase === 'waiting') {
             setShowMyRole(false);
-            setDefenseTimeLeft(60);
+            setDefenseTimeLeft(30);
             setRevoteTimeLeft(10);
             setShowResetConfirm(false);
             resolvingRef.current = false;
@@ -996,12 +1043,47 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
     }, [phase]);
 
     // Timers — MUST be declared at top level (Rules of Hooks) to prevent flicker
-    const DEFENSE_DURATION = 60;
+    const DEFENSE_DURATION = 30;
     const REVOTE_DURATION = 10;
     const [defenseTimeLeft, setDefenseTimeLeft] = useState(DEFENSE_DURATION);
     const [revoteTimeLeft, setRevoteTimeLeft] = useState(REVOTE_DURATION);
+    const [startNightCountdown, setStartNightCountdown] = useState<number | null>(null);
     const defenseTriggeredRef = useRef(false);
     const revoteTriggeredRef = useRef(false);
+
+    // Auto-start Night 1 Timer
+    useEffect(() => {
+        let interval: ReturnType<typeof setInterval>;
+        const _botUids = gs.botUids || [];
+        const _humanUids = gs.roles ? Object.keys(gs.roles).filter(uid => !_botUids.includes(uid)) : [];
+        const _scratched = _humanUids.filter(uid => gs.scratchedCards?.[uid]).length;
+        const _allScratched = _humanUids.length > 0 && _scratched === _humanUids.length;
+
+        if (phase === 'roles-assigned' && _allScratched) {
+            setStartNightCountdown(prev => prev === null ? 10 : prev);
+            interval = setInterval(() => {
+                setStartNightCountdown(prev => {
+                    if (prev === null || prev <= 1) {
+                        clearInterval(interval);
+                        return 0; // Trigger effect below
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        } else {
+            setStartNightCountdown(null);
+        }
+        return () => clearInterval(interval);
+    }, [phase, gs.scratchedCards, gs.roles, gs.botUids]);
+
+    // Handle Night 1 countdown reaching 0
+    useEffect(() => {
+        if (startNightCountdown === 0 && isHost && phase === 'roles-assigned') {
+            startNight();
+            setStartNightCountdown(null);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [startNightCountdown, isHost, phase]);
 
     // Defense timer effect (runs only during day-defense phase)
     useEffect(() => {
@@ -1136,7 +1218,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
         if (!isHost || !isHostDead || phase === 'waiting' || phase === 'gameover' || !gs.roles) return;
         // Find a random alive player to be new host
         const alivePlayerUids = Object.entries(gs.roles)
-            .filter(([uid, r]) => (r as any).alive && uid !== room.hostId)
+            .filter(([uid, r]) => (r as any).alive && uid !== room.hostId && !isBot(uid))
             .map(([uid]) => uid);
         if (alivePlayerUids.length === 0) return;
         const newHostUid = alivePlayerUids[Math.floor(Math.random() * alivePlayerUids.length)];
@@ -1165,7 +1247,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
         }).catch(e => console.error('restore host error:', e));
     }, [phase, isHost]);
 
-    const alivePlayers = playerList.filter(p => gs.roles?.[p.uid]?.alive);
+    const alivePlayers = allPlayers.filter(p => gs.roles?.[p.uid]?.alive);
     const aliveOthers = alivePlayers.filter(p => p.uid !== myUid);
 
     // Auto-resolve vote after 5 seconds when all alive players have voted
@@ -1173,10 +1255,12 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
     const totalVotedCount = Object.keys(gs.votes || {}).length + (gs.skipVotes || []).length;
     const allVoted = phase === 'day-vote' && totalAliveCount > 0 && totalVotedCount >= totalAliveCount;
     const [voteCountdown, setVoteCountdown] = useState<number | null>(null);
+    const [discussionCountdown, setDiscussionCountdown] = useState<number | null>(null);
+    const [resultCountdown, setResultCountdown] = useState<number | null>(null);
 
     useEffect(() => {
         if (!allVoted) { setVoteCountdown(null); return; }
-        setVoteCountdown(5);
+        setVoteCountdown(10);
         const interval = setInterval(() => {
             setVoteCountdown(prev => {
                 if (prev === null || prev <= 1) { clearInterval(interval); return 0; }
@@ -1184,12 +1268,59 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
             });
         }, 1000);
         const timer = setTimeout(() => {
-            if (isHost) resolveVote();
-        }, 5000);
+            if (isHost && !resolvingRef.current) {
+                resolvingRef.current = true;
+                resolveVote().finally(() => { resolvingRef.current = false; });
+            }
+        }, 10000);
         return () => { clearInterval(interval); clearTimeout(timer); };
     }, [allVoted, isHost]);
+
+    // Auto-transition: day-discussion to day-vote after 20 seconds
+    useEffect(() => {
+        if (phase !== 'day-discussion') {
+            setDiscussionCountdown(null);
+            return;
+        }
+        setDiscussionCountdown(20);
+        const interval = setInterval(() => {
+            setDiscussionCountdown(prev => {
+                if (prev === null || prev <= 1) { clearInterval(interval); return 0; }
+                return prev - 1;
+            });
+        }, 1000);
+        const timer = setTimeout(() => {
+            if (isHost && !resolvingRef.current && (room.gameState as any)?.phase === 'day-discussion') {
+                resolvingRef.current = true;
+                startDayVote().finally(() => { resolvingRef.current = false; });
+            }
+        }, 20000);
+        return () => { clearInterval(interval); clearTimeout(timer); };
+    }, [phase, isHost]);
+
+    // Auto-transition: day-result to next night after 10 seconds
+    useEffect(() => {
+        if (phase !== 'day-result') {
+            setResultCountdown(null);
+            return;
+        }
+        setResultCountdown(10);
+        const interval = setInterval(() => {
+            setResultCountdown(prev => {
+                if (prev === null || prev <= 1) { clearInterval(interval); return 0; }
+                return prev - 1;
+            });
+        }, 1000);
+        const timer = setTimeout(() => {
+            if (isHost && !resolvingRef.current && (room.gameState as any)?.phase === 'day-result') {
+                resolvingRef.current = true;
+                startNight().finally(() => { resolvingRef.current = false; });
+            }
+        }, 10000);
+        return () => { clearInterval(interval); clearTimeout(timer); };
+    }, [phase, isHost, gs.night]);
     const playerNames: Record<string, { name: string; avatar: string }> = {};
-    playerList.forEach(p => { playerNames[p.uid] = { name: p.name, avatar: p.avatar }; });
+    allPlayers.forEach(p => { playerNames[p.uid] = { name: p.name, avatar: p.avatar }; });
 
     // Determine chat channel
     const getChatChannel = (): 'day' | 'wolf' | 'dead' => {
@@ -1209,14 +1340,37 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
     // ---- ROLE ASSIGNMENT (fully random each time, no repeat from previous game) ----
     const assignRoles = async () => {
         try {
-            const uids = playerList.map(p => p.uid);
+            const uids = allPlayers.map(p => p.uid);
+            const botUids = botPlayers.map(p => p.uid);
             const n = uids.length; if (n < 5) return;
             const roles: string[] = [];
-            const wolfCount = n <= 6 ? 2 : n <= 9 ? 2 : 3;
-            for (let i = 0; i < wolfCount; i++) roles.push('Ma Sói');
-            roles.push('Tiên tri', 'Bảo vệ');
-            if (n >= 6) roles.push('Phù thủy');
-            while (roles.length < n) roles.push('Dân làng');
+
+            if (customRoleCounts) {
+                // Use host's manual role selection
+                for (const [roleName, count] of Object.entries(customRoleCounts)) {
+                    for (let i = 0; i < count; i++) roles.push(roleName);
+                }
+                // Safety check: total must match player count
+                if (roles.length !== n) {
+                    alert(`Tổng số vai (${roles.length}) phải bằng số người chơi (${n})!`);
+                    return;
+                }
+                // Must have at least 1 wolf
+                if (!roles.includes('Ma Sói')) {
+                    alert('Cần ít nhất 1 Ma Sói!');
+                    return;
+                }
+            } else {
+                // Auto mode (default)
+                const wolfCount = n <= 6 ? 2 : n <= 9 ? 2 : 3;
+                for (let i = 0; i < wolfCount; i++) roles.push('Ma Sói');
+                roles.push('Tiên tri', 'Bảo vệ');
+                if (n >= 6) roles.push('Phù thủy');
+                if (n >= 7) roles.push('Thợ săn');
+                if (n >= 8) roles.push('Kẻ chán đời');
+                if (n >= 9) roles.push('Kẻ tẩm dầu');
+                while (roles.length < n) roles.push('Dân làng');
+            }
 
             // Fisher-Yates shuffle with crypto-grade randomness for better unpredictability
             const getSecureRandom = () => {
@@ -1258,7 +1412,10 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 // Wolves CAN repeat, but special roles must change
                 let conflicts = 0;
                 tryUids.forEach((uid, i) => {
-                    if (prevRoles[uid]?.role === tryRoles[i] && tryRoles[i] !== 'Ma Sói') conflicts++;
+                    const role = tryRoles[i];
+                    if (prevRoles[uid]?.role === role && role !== 'Ma Sói') conflicts++;
+                    // Bot cannot be a Wolf or 3rd Party!
+                    if (uid.startsWith('__bot_') && ['Ma Sói', 'Kẻ chán đời', 'Kẻ tẩm dầu'].includes(role)) conflicts += 1000;
                 });
 
                 if (conflicts < bestConflicts) {
@@ -1300,6 +1457,30 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 }
             }
 
+            // *** CRITICAL: Ensure bots NEVER get the Wolf or 3rd Party roles ***
+            // Swap any bot-restricted-role with a human safe-role
+            if (botUids.length > 0) {
+                const restrictedRoles = ['Ma Sói', 'Kẻ chán đời', 'Kẻ tẩm dầu'];
+                const restrictedCount = Object.values(roleMap).filter((r: any) => restrictedRoles.includes(r.role)).length;
+                const humanUids = uids.filter(uid => !botUids.includes(uid));
+                // Validate: enough humans for all restricted roles
+                if (humanUids.length < restrictedCount) {
+                    alert(`Cần ít nhất ${restrictedCount} người thật để làm phe Sói và Phe Thứ 3! (hiện có ${humanUids.length} người)`);
+                    return;
+                }
+                // Find bots that got restricted roles and swap them
+                const botRestricted = botUids.filter(uid => restrictedRoles.includes(roleMap[uid]?.role));
+                for (const botUid of botRestricted) {
+                    const humanSafe = humanUids.find(uid => !restrictedRoles.includes(roleMap[uid]?.role));
+                    if (humanSafe) {
+                        // Swap roles
+                        const temp = { ...roleMap[botUid] };
+                        roleMap[botUid] = { ...roleMap[humanSafe] };
+                        roleMap[humanSafe] = temp;
+                    }
+                }
+            }
+
             await MinigameService.clearChat(room.id);
             // Full clean state — ensures no leftover data from previous game
             await MinigameService.updateGameState(room.id, {
@@ -1312,8 +1493,13 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 nightActionsComplete: {}, nightKilled: null, nightLog: '',
                 votes: {}, skipVotes: [], voteResult: null, gameLog: [],
                 defenseTarget: null, defenseStartedAt: null,
-                revoteStartedAt: null, gameResult: null,
+                revoteStartedAt: null, gameResult: null, gameoverAt: null,
                 seerTarget: null, seerResult: null,
+                hunterPinned: null, hunterLastPinned: null, hunterTarget: null, hunterPending: false, hunterDiedFrom: null,
+                arsonistOiled: [], arsonistActionThisNight: null, arsonistOilTarget: null,
+                tannerWin: false,
+                botUids: botUids.length > 0 ? botUids : null,
+                scratchedCards: {},
             });
         } catch (e) { console.error('assignRoles error:', e); }
     };
@@ -1327,7 +1513,9 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 wolfVotes: {}, wolfTarget: null,
                 guardTarget: null, witchSaveThisNight: false, witchKillTarget: null,
                 nightKilled: null, nightLog: '', seerTarget: null, seerResult: null,
-                nightActionsComplete: { wolves: false, seer: false, guard: false, witch: false },
+                arsonistActionThisNight: null, arsonistOilTarget: null,
+                hunterPinned: null, hunterTarget: null,
+                nightActionsComplete: { wolves: false, seer: false, guard: false, witch: false, hunter: false },
             });
             await MinigameService.sendChat(room.id, {
                 sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: `🌙 Đêm ${nightNum} bắt đầu. Mọi người nhắm mắt...`,
@@ -1412,13 +1600,339 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
 
     const witchDone = async () => {
         try {
-            const updates: Record<string, any> = { 'nightActionsComplete/witch': true, phase: 'night-resolve' };
+            const updates: Record<string, any> = { 'nightActionsComplete/witch': true, phase: 'night-hunter' };
             if (gs.witchSaveThisNight) updates.witchSaveUsed = true;
             if (gs.witchKillTarget) updates.witchKillUsed = true;
             await MinigameService.mergeGameState(room.id, updates);
         } catch (e) { console.error('witchDone error:', e); }
     };
 
+    // ---- HUNTER ACTIONS ----
+    const hasHunterAlive = Object.entries(gs.roles || {}).some(([, r]) => (r as any).role === 'Thợ săn' && (r as any).alive);
+
+    const hunterPin = async (targetUid: string) => {
+        try { await MinigameService.mergeGameState(room.id, { hunterPinned: targetUid }); } catch (e) { console.error('hunterPin error:', e); }
+    };
+
+    const hunterDone = async () => {
+        try {
+            await MinigameService.mergeGameState(room.id, { 'nightActionsComplete/hunter': true, phase: 'night-arsonist' });
+        } catch (e) { console.error('hunterDone error:', e); }
+    };
+
+    const skipHunter = async () => {
+        try { await MinigameService.mergeGameState(room.id, { phase: 'night-arsonist' }); } catch (e) { console.error('skipHunter error:', e); }
+    };
+
+    useEffect(() => {
+        if (phase === 'night-hunter' && isHost && !hasHunterAlive) { skipHunter(); }
+    }, [phase, isHost, hasHunterAlive]);
+
+    // ---- ARSONIST ACTIONS ----
+    const hasArsonistAlive = Object.entries(gs.roles || {}).some(([, r]) => (r as any).role === 'Kẻ tẩm dầu' && (r as any).alive);
+
+    const arsonistOil = async (targetUid: string) => {
+        try {
+            await MinigameService.mergeGameState(room.id, {
+                arsonistActionThisNight: 'oil',
+                arsonistOilTarget: targetUid,
+            });
+        } catch (e) { console.error('arsonistOil error:', e); }
+    };
+
+    const arsonistIgnite = async () => {
+        try {
+            await MinigameService.mergeGameState(room.id, {
+                arsonistActionThisNight: 'ignite',
+                arsonistOilTarget: null,
+            });
+        } catch (e) { console.error('arsonistIgnite error:', e); }
+    };
+
+    const arsonistDone = async () => {
+        try {
+            const updates: Record<string, any> = { phase: 'night-resolve' };
+            if (gs.arsonistActionThisNight === 'oil' && gs.arsonistOilTarget) {
+                const currentOiled = gs.arsonistOiled || [];
+                if (!currentOiled.includes(gs.arsonistOilTarget)) {
+                    updates.arsonistOiled = [...currentOiled, gs.arsonistOilTarget];
+                }
+            }
+            await MinigameService.mergeGameState(room.id, updates);
+        } catch (e) { console.error('arsonistDone error:', e); }
+    };
+
+    const skipArsonist = async () => {
+        try {
+            await MinigameService.mergeGameState(room.id, { phase: 'night-resolve' });
+        } catch (e) { console.error('skipArsonist error:', e); }
+    };
+
+    useEffect(() => {
+        if (phase === 'night-arsonist' && isHost && !hasArsonistAlive) { skipArsonist(); }
+    }, [phase, isHost, hasArsonistAlive]);
+
+    // ============ BOT AI AUTO-ACTIONS ============
+    // Host executes all bot actions with random delays to simulate think time
+    const botActionRef = useRef(false);
+    useEffect(() => {
+        if (!isHost || !gs.botUids || gs.botUids.length === 0) return;
+        if (botActionRef.current) return;
+
+        const botUidsList = gs.botUids;
+        const roles = gs.roles || {};
+        const getAliveBots = (roleName?: string) =>
+            botUidsList.filter(uid => roles[uid]?.alive && (!roleName || roles[uid]?.role === roleName));
+        const getRandomAliveTarget = (excludeUids: string[] = []) => {
+            const targets = Object.entries(roles).filter(([uid, r]) => (r as any).alive && !excludeUids.includes(uid)).map(([uid]) => uid);
+            return targets.length > 0 ? targets[Math.floor(Math.random() * targets.length)] : null;
+        };
+
+        const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+        const shortDelay = () => delay(2000 + Math.random() * 2000); // 2-4s (voting)
+        const thinkDelay = () => delay(15000 + Math.random() * 5000); // 15-20s (special roles pretend to think)
+
+        // --- NIGHT: Wolf bots auto-vote (smart: follow human wolf's lead) ---
+        if (phase === 'night-wolf') {
+            const aliveBotWolves = getAliveBots('Ma Sói');
+            const currentVotes = gs.wolfVotes || {};
+            const unresolvedBots = aliveBotWolves.filter(uid => !currentVotes[uid]);
+            if (unresolvedBots.length > 0) {
+                const aliveWolves = Object.entries(roles).filter(([, r]) => (r as any).role === 'Ma Sói' && (r as any).alive).map(([uid]) => uid);
+                const humanWolves = aliveWolves.filter(uid => !botUidsList.includes(uid));
+                // Check if any human wolf has voted already
+                const humanWolfVotes = humanWolves.filter(uid => currentVotes[uid]);
+                const allWolvesAreBots = humanWolves.length === 0;
+
+                if (allWolvesAreBots || humanWolfVotes.length > 0) {
+                    // All wolves are bots → vote randomly
+                    // OR a human wolf has voted → bot follows the human's target
+                    botActionRef.current = true;
+                    (async () => {
+                        await shortDelay();
+                        const newVotes = { ...currentVotes };
+                        // Determine target: follow human wolf or pick random
+                        const humanTarget = humanWolfVotes.length > 0 ? currentVotes[humanWolfVotes[0]] : null;
+                        for (const botUid of unresolvedBots) {
+                            if (humanTarget) {
+                                // Follow human wolf's choice
+                                newVotes[botUid] = humanTarget;
+                            } else {
+                                // All bots: pick random non-wolf target
+                                const target = getRandomAliveTarget(Object.keys(roles).filter(uid => roles[uid]?.role === 'Ma Sói'));
+                                if (target) newVotes[botUid] = target;
+                            }
+                        }
+                        const allWolvesVoted = aliveWolves.every(w => newVotes[w]);
+                        if (allWolvesVoted) {
+                            const voteCounts: Record<string, number> = {};
+                            Object.values(newVotes).forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
+                            const maxVotes = Math.max(...Object.values(voteCounts));
+                            const target = Object.entries(voteCounts).find(([, c]) => c === maxVotes)?.[0] || null;
+                            await MinigameService.mergeGameState(room.id, { wolfVotes: newVotes, wolfTarget: target, 'nightActionsComplete/wolves': true, phase: 'night-seer' });
+                        } else {
+                            await MinigameService.mergeGameState(room.id, { wolfVotes: newVotes });
+                        }
+                        botActionRef.current = false;
+                    })();
+                }
+                // else: human wolves exist but haven't voted yet → bots wait patiently
+                // Timeout fallback: if human hasn't voted in 10s, bots vote on their own
+                else if (!allWolvesAreBots && humanWolfVotes.length === 0) {
+                    const timerId = setTimeout(() => {
+                        if (botActionRef.current) return;
+                        botActionRef.current = true;
+                        (async () => {
+                            const freshVotes = gs.wolfVotes || {};
+                            const stillUnvoted = aliveBotWolves.filter(uid => !freshVotes[uid]);
+                            if (stillUnvoted.length === 0) { botActionRef.current = false; return; }
+                            // Humans still haven't voted after timeout → bots vote randomly
+                            const newVotes = { ...freshVotes };
+                            for (const botUid of stillUnvoted) {
+                                const target = getRandomAliveTarget(Object.keys(roles).filter(uid => roles[uid]?.role === 'Ma Sói'));
+                                if (target) newVotes[botUid] = target;
+                            }
+                            await MinigameService.mergeGameState(room.id, { wolfVotes: newVotes });
+                            botActionRef.current = false;
+                        })();
+                    }, 10000);
+                    return () => clearTimeout(timerId);
+                }
+            }
+        }
+
+        // --- NIGHT: Seer bot auto-peek ---
+        if (phase === 'night-seer' && !gs.seerTarget) {
+            const botSeer = getAliveBots('Tiên tri');
+            if (botSeer.length > 0) {
+                botActionRef.current = true;
+                (async () => {
+                    await thinkDelay();
+                    const target = getRandomAliveTarget(botSeer);
+                    if (target) {
+                        const isWolfResult = roles[target]?.role === 'Ma Sói';
+                        await MinigameService.mergeGameState(room.id, { seerTarget: target, seerResult: isWolfResult ? 'wolf' : 'village', 'nightActionsComplete/seer': true });
+                        await delay(1500);
+                        await MinigameService.mergeGameState(room.id, { phase: 'night-guard' });
+                    }
+                    botActionRef.current = false;
+                })();
+            }
+        }
+
+        // --- NIGHT: Guard bot auto-protect ---
+        if (phase === 'night-guard' && !gs.guardTarget) {
+            const botGuard = getAliveBots('Bảo vệ');
+            if (botGuard.length > 0) {
+                botActionRef.current = true;
+                (async () => {
+                    await thinkDelay();
+                    const target = getRandomAliveTarget([]);
+                    if (target) {
+                        await MinigameService.mergeGameState(room.id, { guardTarget: target, 'nightActionsComplete/guard': true, phase: 'night-witch' });
+                    }
+                    botActionRef.current = false;
+                })();
+            }
+        }
+
+        // --- NIGHT: Witch bot auto-act ---
+        if (phase === 'night-witch') {
+            const botWitch = getAliveBots('Phù thủy');
+            if (botWitch.length > 0 && !(gs.nightActionsComplete as any)?.witch) {
+                botActionRef.current = true;
+                (async () => {
+                    await thinkDelay();
+                    const updates: Record<string, any> = { 'nightActionsComplete/witch': true, phase: 'night-hunter' };
+                    // 50% chance to save if wolf target is set and save not used
+                    if (gs.wolfTarget && !gs.witchSaveUsed && Math.random() > 0.5) {
+                        updates.witchSaveThisNight = true;
+                        updates.witchSaveUsed = true;
+                    }
+                    // 30% chance to kill if kill not used
+                    else if (!gs.witchKillUsed && Math.random() > 0.7) {
+                        const killTarget = getRandomAliveTarget(botWitch);
+                        if (killTarget) {
+                            updates.witchKillTarget = killTarget;
+                            updates.witchKillUsed = true;
+                        }
+                    }
+                    await MinigameService.mergeGameState(room.id, updates);
+                    botActionRef.current = false;
+                })();
+            }
+        }
+
+        // --- NIGHT: Hunter bot auto-act ---
+        if (phase === 'night-hunter') {
+            const botHunter = getAliveBots('Thợ săn');
+            if (botHunter.length > 0 && !(gs.nightActionsComplete as any)?.hunter) {
+                botActionRef.current = true;
+                (async () => {
+                    await thinkDelay();
+                    const updates: Record<string, any> = { 'nightActionsComplete/hunter': true, phase: 'night-arsonist' };
+                    // Cho Bot thợ săn 70% tỉ lệ ghim mục tiêu ngẫu nhiên
+                    if (Math.random() > 0.3) {
+                        const pinTarget = getRandomAliveTarget(botHunter);
+                        if (pinTarget) {
+                            updates.hunterPinned = pinTarget;
+                        }
+                    }
+                    await MinigameService.mergeGameState(room.id, updates);
+                    botActionRef.current = false;
+                })();
+            }
+        }
+
+        // --- NIGHT: Arsonist bot auto-act ---
+        if (phase === 'night-arsonist') {
+            const botArsonist = getAliveBots('Kẻ tẩm dầu');
+            if (botArsonist.length > 0) {
+                botActionRef.current = true;
+                (async () => {
+                    await thinkDelay();
+                    const oiled = gs.arsonistOiled || [];
+                    const aliveOiled = oiled.filter(uid => roles[uid]?.alive);
+                    // If 3+ oiled alive, 40% chance to ignite
+                    if (aliveOiled.length >= 3 && Math.random() > 0.6) {
+                        await MinigameService.mergeGameState(room.id, { arsonistActionThisNight: 'ignite', arsonistOilTarget: null });
+                    } else {
+                        // Oil a random target (not already oiled, not self)
+                        const targets = Object.entries(roles).filter(([uid, r]) => (r as any).alive && !oiled.includes(uid) && !botArsonist.includes(uid)).map(([uid]) => uid);
+                        if (targets.length > 0) {
+                            const target = targets[Math.floor(Math.random() * targets.length)];
+                            await MinigameService.mergeGameState(room.id, { arsonistActionThisNight: 'oil', arsonistOilTarget: target });
+                        }
+                    }
+                    await delay(500);
+                    // Call arsonistDone logic
+                    const updates2: Record<string, any> = { phase: 'night-resolve' };
+                    if (gs.arsonistActionThisNight === 'oil' && gs.arsonistOilTarget) {
+                        const currentOiled = gs.arsonistOiled || [];
+                        if (!currentOiled.includes(gs.arsonistOilTarget)) {
+                            updates2.arsonistOiled = [...currentOiled, gs.arsonistOilTarget];
+                        }
+                    }
+                    await MinigameService.mergeGameState(room.id, updates2);
+                    botActionRef.current = false;
+                })();
+            }
+        }
+
+        // --- DAY VOTE: Bot auto-votes ---
+        if (phase === 'day-vote') {
+            const aliveBotsUids = getAliveBots();
+            const currentVotes = gs.votes || {};
+            const currentSkips = gs.skipVotes || [];
+            const unvotedBots = aliveBotsUids.filter(uid => !currentVotes[uid] && !currentSkips.includes(uid));
+            if (unvotedBots.length > 0) {
+                botActionRef.current = true;
+                (async () => {
+                    await thinkDelay();
+                    const newVotes = { ...currentVotes };
+                    const newSkips = [...currentSkips];
+                    for (const botUid of unvotedBots) {
+                        // 15% chance to skip, 85% vote
+                        if (Math.random() < 0.15) {
+                            newSkips.push(botUid);
+                        } else {
+                            const target = getRandomAliveTarget([botUid]);
+                            if (target) newVotes[botUid] = target;
+                        }
+                    }
+                    await MinigameService.mergeGameState(room.id, { votes: newVotes, skipVotes: newSkips });
+                    botActionRef.current = false;
+                })();
+            }
+        }
+
+        // --- DAY REVOTE: Bot auto-votes (same logic) ---
+        if (phase === 'day-revote') {
+            const aliveBotsUids = getAliveBots();
+            const currentVotes = gs.votes || {};
+            const currentSkips = gs.skipVotes || [];
+            const unvotedBots = aliveBotsUids.filter(uid => !currentVotes[uid] && !currentSkips.includes(uid));
+            if (unvotedBots.length > 0) {
+                botActionRef.current = true;
+                (async () => {
+                    await shortDelay();
+                    const newVotes = { ...currentVotes };
+                    const newSkips = [...currentSkips];
+                    for (const botUid of unvotedBots) {
+                        if (Math.random() < 0.15) {
+                            newSkips.push(botUid);
+                        } else {
+                            const target = getRandomAliveTarget([botUid]);
+                            if (target) newVotes[botUid] = target;
+                        }
+                    }
+                    await MinigameService.mergeGameState(room.id, { votes: newVotes, skipVotes: newSkips });
+                    botActionRef.current = false;
+                })();
+            }
+        }
+
+    }, [phase, isHost, gs.botUids, gs.wolfVotes, gs.seerTarget, gs.guardTarget, gs.nightActionsComplete, gs.hunterPending, gs.votes, gs.skipVotes]);
     // ---- RESOLVE NIGHT ----
     const resolveNight = async () => {
         try {
@@ -1441,6 +1955,10 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 guardTarget: guardTarget || null,
                 witchSave: !!witchSaved,
                 witchKill: witchKillTarget || null,
+                arsonistAction: freshState.arsonistActionThisNight || null,
+                arsonistTarget: freshState.arsonistOilTarget || null,
+                hunterPinned: freshState.hunterPinned || null,
+                arsonistBurned: [] as string[],
                 killed: [] as string[],
                 saved: false,
             };
@@ -1461,13 +1979,39 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 if (!killed) {
                     killed = witchKillTarget;
                 }
-                // If killed is already set (wolf kill), witchKillTarget is added separately below
             }
 
             // Collect all dead this night
             const allKilled: string[] = [];
             if (killed) allKilled.push(killed);
             if (witchKillTarget && witchKillTarget !== killed) allKilled.push(witchKillTarget);
+
+            // Hunter logic: if killed this night, pinned target dies. If killed by vote yesterday, target pinned yesterday dies.
+            const hunterEntry = Object.entries(currentRoles).find(([, r]) => (r as any).role === 'Thợ săn' && (r as any).alive);
+            const hunterKilled = hunterEntry && allKilled.includes(hunterEntry[0]);
+
+            if (hunterKilled && freshState.hunterPinned && currentRoles[freshState.hunterPinned]?.alive && !allKilled.includes(freshState.hunterPinned)) {
+                allKilled.push(freshState.hunterPinned);
+                nightEvent.hunterTarget = freshState.hunterPinned;
+            }
+
+            if (freshState.hunterPending && freshState.hunterTarget && currentRoles[freshState.hunterTarget]?.alive && !allKilled.includes(freshState.hunterTarget)) {
+                allKilled.push(freshState.hunterTarget);
+                nightEvent.hunterTarget = freshState.hunterTarget;
+            }
+
+            // Arsonist ignition — burns all oiled players
+            const arsonistBurned: string[] = [];
+            if (freshState.arsonistActionThisNight === 'ignite') {
+                const oiled = freshState.arsonistOiled || [];
+                oiled.forEach(uid => {
+                    if (currentRoles[uid]?.alive && !allKilled.includes(uid)) {
+                        arsonistBurned.push(uid);
+                        allKilled.push(uid);
+                    }
+                });
+                nightEvent.arsonistBurned = arsonistBurned;
+            }
 
             // Build night log message
             if (allKilled.length > 1) {
@@ -1477,6 +2021,12 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
             } else {
                 nightLog += '☀️ Đêm qua bình yên, không ai bị hại.';
             }
+            if (arsonistBurned.length > 0) {
+                nightLog += ` 🔥 Ngọn lửa bùng lên! ${arsonistBurned.length} người bị thiêu rụi.`;
+            }
+            if (nightEvent.hunterTarget) {
+                nightLog += ` 🏹 Một mũi tên ghim thẳng vào ngực ${playerNames[nightEvent.hunterTarget]?.name}...`;
+            }
             nightEvent.killed = allKilled;
 
             const prevLog = freshState.gameLog || [];
@@ -1485,6 +2035,10 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 wolfVotes: null, wolfTarget: null,
                 guardTarget: null, witchSaveThisNight: false, witchKillTarget: null,
                 seerTarget: null, seerResult: null, nightActionsComplete: null,
+                arsonistActionThisNight: null, arsonistOilTarget: null,
+                hunterLastPinned: freshState.hunterPinned || freshState.hunterLastPinned || null,
+                hunterPinned: null, hunterTarget: null, hunterPending: false, hunterDiedFrom: null,
+                ...(freshState.arsonistActionThisNight === 'ignite' ? { arsonistOiled: null } : {}),
             };
 
             if (allKilled.length > 0) {
@@ -1492,20 +2046,22 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 allKilled.forEach(uid => {
                     updatedRoles[uid] = { ...updatedRoles[uid], alive: false };
                 });
+
                 const result = checkGameEnd(updatedRoles);
                 await MinigameService.mergeGameState(room.id, {
                     ...nightResetFields,
-                    roles: updatedRoles, nightLog, nightKilled: killed,
-                    guardLastTarget: guardTarget,
+                    roles: updatedRoles, nightLog, 
+                    nightKilled: allKilled.length > 0 ? allKilled[0] : null,
+                    guardLastTarget: guardTarget || null,
                     gameLog: [...prevLog, nightEvent],
                     phase: result ? 'gameover' : 'day-discussion',
-                    ...(result ? { gameResult: result } : {}),
+                    ...(result ? { gameResult: result, gameoverAt: Date.now() } : {}),
                 });
                 if (result) await saveGameHistory(result, updatedRoles);
             } else {
                 await MinigameService.mergeGameState(room.id, {
                     ...nightResetFields,
-                    nightLog, nightKilled: null, guardLastTarget: guardTarget,
+                    nightLog, nightKilled: null, guardLastTarget: guardTarget || null,
                     gameLog: [...prevLog, nightEvent],
                     phase: 'day-discussion',
                 });
@@ -1548,7 +2104,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
             } else {
                 const defenseTarget = topTargets[0][0];
                 const dName = playerNames[defenseTarget]?.name || '???';
-                const msg = `⚠️ ${dName} nhận nhiều phiếu nhất (${maxVotes} phiếu). Hãy biện hộ trong 60 giây!`;
+                const msg = `⚠️ ${dName} nhận nhiều phiếu nhất (${maxVotes} phiếu). Hãy biện hộ trong 30 giây!`;
                 await MinigameService.mergeGameState(room.id, {
                     phase: 'day-defense',
                     defenseTarget,
@@ -1607,13 +2163,49 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 const updatedRoles = { ...gs.roles };
                 updatedRoles[eliminated] = { ...updatedRoles[eliminated], alive: false };
                 const eName = playerNames[eliminated]?.name || '???';
+                const eliminatedRole = gs.roles?.[eliminated]?.role;
                 msg = `⚔️ ${eName} bị treo cổ!`;
+
+                // TANNER WIN: If the Tanner is voted out, they win!
+                if (eliminatedRole === 'Kẻ chán đời') {
+                    const tannerResult = '😵 Kẻ chán đời thắng! Kẻ chán đời đã đạt được ước nguyện!';
+                    await MinigameService.mergeGameState(room.id, {
+                        roles: updatedRoles, voteResult: eliminated,
+                        gameLog: [...prevLog, dayEvent],
+                        phase: 'gameover',
+                        gameResult: tannerResult, tannerWin: true,
+                        gameoverAt: Date.now(),
+                        defenseTarget: null, defenseVoteCount: null, defenseStartedAt: null, revoteStartedAt: null, preDefenseVotes: null, preDefenseSkipVotes: null,
+                    });
+                    await saveGameHistory(tannerResult, updatedRoles);
+                    await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: msg, timestamp: Date.now(), channel: 'system' });
+                    return;
+                }
+
+                // HUNTER REVENGE: If Hunter is voted out, note it for next night
+                if (eliminatedRole === 'Thợ săn') {
+                    // Automatically resolve vote
+                    const result = checkGameEnd(updatedRoles);
+                    await MinigameService.mergeGameState(room.id, {
+                        roles: updatedRoles, voteResult: eliminated,
+                        gameLog: [...prevLog, dayEvent],
+                        phase: result ? 'gameover' : 'day-result',
+                        ...(result ? { gameResult: result, gameoverAt: Date.now() } : {}),
+                        hunterPending: true, hunterDiedFrom: 'vote',
+                        hunterTarget: gs.hunterLastPinned, // Pin carries over to next night
+                        defenseTarget: null, defenseVoteCount: null, defenseStartedAt: null, revoteStartedAt: null, preDefenseVotes: null, preDefenseSkipVotes: null,
+                    });
+                    if (result) await saveGameHistory(result, updatedRoles);
+                    await MinigameService.sendChat(room.id, { sender: 'system', senderName: 'Hệ thống', senderAvatar: '', text: `${msg} 🏹 Thợ săn đã bị loại! Mục tiêu của Thợ săn sẽ gã gục trong đêm tới.`, timestamp: Date.now(), channel: 'system' });
+                    return;
+                }
+
                 const result = checkGameEnd(updatedRoles);
                 await MinigameService.mergeGameState(room.id, {
                     roles: updatedRoles, voteResult: eliminated,
                     gameLog: [...prevLog, dayEvent],
                     phase: result ? 'gameover' : 'day-result',
-                    ...(result ? { gameResult: result } : {}),
+                    ...(result ? { gameResult: result, gameoverAt: Date.now() } : {}),
                     defenseTarget: null, defenseVoteCount: null, defenseStartedAt: null, revoteStartedAt: null, preDefenseVotes: null, preDefenseSkipVotes: null,
                 });
                 if (result) await saveGameHistory(result, updatedRoles);
@@ -1624,15 +2216,30 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
 
     const checkGameEnd = (roles: any): string | null => {
         const aliveWolves = Object.values(roles).filter((r: any) => r.role === 'Ma Sói' && r.alive).length;
-        const aliveVillagers = Object.values(roles).filter((r: any) => r.role !== 'Ma Sói' && r.alive).length;
+        const aliveNonWolf = Object.values(roles).filter((r: any) => r.role !== 'Ma Sói' && r.alive).length;
+        // Arsonist wins if all non-arsonist alive players are dead (only arsonist remains)
+        const aliveArsonist = Object.values(roles).filter((r: any) => r.role === 'Kẻ tẩm dầu' && r.alive).length;
+        const totalAlive = Object.values(roles).filter((r: any) => r.alive).length;
+        if (aliveArsonist > 0 && totalAlive === aliveArsonist) return '🔥 Kẻ tẩm dầu thắng! Ngôi làng chìm trong biển lửa!';
         if (aliveWolves === 0) return '🎉 Phe dân thắng!';
-        if (aliveWolves >= aliveVillagers) return '🐺 Ma Sói thắng!';
+        if (aliveWolves >= aliveNonWolf) {
+            const aliveWitch = Object.values(roles).find((r: any) => r.role === 'Phù thủy' && r.alive);
+            if (aliveWitch && !gs.witchKillUsed) {
+                return '🤝 Hòa! Phù thủy dùng bình độc tử sát cùng Sói!';
+            }
+            return '🐺 Ma Sói thắng!';
+        }
         return null;
     };
     // ---- SAVE GAME HISTORY ----
     const saveGameHistory = async (result: string, finalRoles: any) => {
         try {
-            const winnerTeam = result.includes('dân') ? 'village' : 'wolf';
+            let winnerTeam = 'draw';
+            if (result.includes('dân')) winnerTeam = 'village';
+            else if (result.includes('Sói') && !result.includes('Hòa')) winnerTeam = 'wolf';
+            else if (result.includes('tẩm dầu')) winnerTeam = 'arsonist';
+            else if (result.includes('chán đời')) winnerTeam = 'tanner';
+
             const now = Date.now();
             const startedAt = room.createdAt || now;
             const duration = Math.round((now - startedAt) / 1000);
@@ -1640,7 +2247,9 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
             playerList.forEach(p => {
                 const r = finalRoles[p.uid];
                 if (r) {
-                    const team = r.role === 'Ma Sói' ? 'wolf' : 'village';
+                    let team = r.role === 'Ma Sói' ? 'wolf' : 'village';
+                    if (r.role === 'Kẻ tẩm dầu') team = 'arsonist';
+                    if (r.role === 'Kẻ chán đời') team = 'tanner';
                     const won = team === winnerTeam;
                     players[p.uid] = { name: p.name, avatar: p.avatar, role: r.role, alive: r.alive, won, score: won ? 1 : 0 };
                 }
@@ -1683,10 +2292,36 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 votes: null, skipVotes: null, voteResult: null, gameLog: null,
                 seerTarget: null, seerResult: null,
                 defenseTarget: null, defenseStartedAt: null,
-                revoteStartedAt: null, gameResult: null,
+                revoteStartedAt: null, gameResult: null, gameoverAt: null,
             });
         } catch (e) { console.error('resetGame error:', e); }
     };
+
+    // Auto-reset timer for gameover phase (120 seconds)
+    useEffect(() => {
+        if (phase === 'gameover' && gs.gameoverAt) {
+            const interval = setInterval(() => {
+                const now = Date.now();
+                const elapsed = Math.floor((now - gs.gameoverAt!) / 1000);
+                const remaining = 120 - elapsed;
+                
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                    setAutoResetTimeLeft(0);
+                    // Only Host actually triggers the reset
+                    if (isHost && !resolvingRef.current) {
+                        resolvingRef.current = true;
+                        resetGame().finally(() => { resolvingRef.current = false; });
+                    }
+                } else {
+                    setAutoResetTimeLeft(remaining);
+                }
+            }, 1000);
+            return () => clearInterval(interval);
+        } else {
+            setAutoResetTimeLeft(null);
+        }
+    }, [phase, gs.gameoverAt, isHost, resetGame]);
 
     // ---- HELPER: Player Card ----
     const PlayerCard: React.FC<{ p: typeof playerList[0]; onClick?: () => void; selected?: boolean; disabled?: boolean; extra?: React.ReactNode }> = ({ p, onClick, selected, disabled, extra }) => {
@@ -1755,19 +2390,21 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
 
 
 
-                {/* Player status — visible on both mobile and desktop */}
-                <div className="ww-glass rounded-xl p-3 w-full">
+                {/* Player status — desktop only (mobile: shown below game content) */}
+                <div className="ww-glass rounded-xl p-3 w-full hidden md:block">
                     <p className="text-sm font-bold mb-2 ww-glow-gold" style={{ fontFamily: "'Playfair Display', serif", color: '#c9873a' }}>
-                        <Users size={14} className="inline mr-1" /> Ngôi Làng ({alivePlayers.length}/{playerList.length})
+                        <Users size={14} className="inline mr-1" /> Ngôi Làng ({alivePlayers.length}/{allPlayers.length})
                     </p>
                     <div className="space-y-1">
-                        {playerList.map(p => {
+                        {allPlayers.map(p => {
                             const r = gs.roles?.[p.uid];
                             const isDead = r && !r.alive;
+                            const isBotPlayer = isBot(p.uid);
+                            const showBotLabel = isBotPlayer && !isStealthBot(p.uid);
                             return (
                                 <div key={p.uid} className={clsx("flex items-center gap-2 py-1 px-2 rounded-lg text-sm", isDead && "opacity-60")}>
                                     <div className={clsx("relative w-5 h-5 rounded-full shrink-0", isDead ? "ww-avatar-dead" : "ww-avatar-spooky")} style={{overflow:'visible'}}><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=24&background=2a1f3d&color=c9873a`} className="w-full h-full object-cover rounded-full" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px] rounded-full" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
-                                    <span className={clsx("flex-1", isDead ? "line-through text-[#6b5f50]" : "text-[#e8dcc8]")}>{p.name}</span>
+                                    <span className={clsx("flex-1", isDead ? "line-through text-[#6b5f50]" : showBotLabel ? "text-[#8b9dc3]" : "text-[#e8dcc8]")}>{p.name}{showBotLabel && <span className="text-[9px] ml-1 text-[#6b8ab5]">(AI)</span>}</span>
                                     {isDead ? <Skull size={12} style={{ color: '#c62828' }} /> : <span className="w-2 h-2 rounded-full bg-emerald-500 ww-pulse-glow" />}
                                 </div>
                             );
@@ -1794,46 +2431,297 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 <WerewolfAtmosphere phase={phase} />
                 <PhaseTransitionFlash phase={phase} />
 
-                {/* Audio Toggle */}
-                <button
-                    onClick={toggleAudio}
-                    className="absolute top-2 left-2 z-20 flex items-center gap-1 px-2.5 py-1.5 bg-[#1a0a0a]/70 hover:bg-[#2a0a0a] border border-[#8b5c3a]/30 hover:border-[#c9873a]/50 rounded-xl text-xs font-medium transition-all backdrop-blur-sm"
-                    title={audioMuted ? 'Bật âm thanh' : 'Tắt âm thanh'}
-                >
-                    {audioMuted ? <VolumeX size={14} className="text-[#8b5c3a]/70" /> : <Volume2 size={14} className="text-[#c9873a]" />}
-                    <span className={audioMuted ? 'text-[#8b5c3a]/50' : 'text-[#c9873a]/80'}>{audioMuted ? '🔇' : '🔊'}</span>
-                </button>
+                {/* Top Action Bar (Audio, Guide, Reset) */}
+                <div className="relative z-20 flex flex-wrap items-center justify-between gap-2 mb-4">
+                    {/* Audio Toggle */}
+                    <button
+                        onClick={toggleAudio}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-[#1a0a0a]/80 hover:bg-[#2a0a0a] border border-[#8b5c3a]/40 hover:border-[#c9873a]/60 rounded-xl text-xs font-bold transition-all backdrop-blur-sm shadow-md"
+                        title={audioMuted ? 'Bật âm thanh' : 'Tắt âm thanh'}
+                    >
+                        {audioMuted ? <VolumeX size={14} className="text-[#8b5c3a]/70" /> : <Volume2 size={14} className="text-[#c9873a]" />}
+                        <span className={audioMuted ? 'text-[#8b5c3a]/50' : 'text-[#c9873a]/80'}>{audioMuted ? '🔇 Muted' : '🔊 Âm thanh'}</span>
+                    </button>
 
-                {/* Admin Reset Button */}
-                {showAdminReset && (
-                    <div className="absolute top-2 right-2 z-20">
-                        {showResetConfirm ? (
-                            <div className="flex items-center gap-1.5 bg-[#1a0a0a]/95 border border-[#c62828]/50 rounded-xl px-3 py-2 shadow-lg backdrop-blur-sm">
-                                <span className="text-xs text-[#e8a0a0] font-medium">Reset game?</span>
-                                <button
-                                    onClick={() => { resetGame(); setShowResetConfirm(false); }}
-                                    className="px-2.5 py-1 bg-[#c62828] hover:bg-[#d32f2f] text-white rounded-lg text-xs font-bold transition-colors"
-                                >
-                                    Xác nhận
-                                </button>
-                                <button
-                                    onClick={() => setShowResetConfirm(false)}
-                                    className="px-2.5 py-1 bg-[#333] hover:bg-[#444] text-[#aaa] rounded-lg text-xs font-medium transition-colors"
-                                >
-                                    Hủy
-                                </button>
-                            </div>
-                        ) : (
-                            <button
-                                onClick={() => setShowResetConfirm(true)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 bg-[#1a0a0a]/70 hover:bg-[#2a0a0a] border border-[#8b1a1a]/30 hover:border-[#c62828]/50 rounded-xl text-xs text-[#c62828]/70 hover:text-[#c62828] font-medium transition-all backdrop-blur-sm"
-                                title="Reset game (Admin)"
-                            >
-                                <RotateCcw size={12} /> Reset
-                            </button>
+                    {/* Guide + Admin Reset */}
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowGuide(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1a0a0a]/80 hover:bg-[#2a1a0a] border border-[#c9873a]/40 hover:border-[#c9873a]/70 rounded-xl text-xs font-bold transition-all backdrop-blur-sm shadow-md hover:shadow-[#c9873a]/20"
+                            title="Hướng dẫn chơi"
+                        >
+                            <BookOpen size={14} className="text-[#c9873a]" />
+                            <span className="text-[#c9873a]">Luật chơi</span>
+                        </button>
+                        {showAdminReset && (
+                            <>
+                                {showResetConfirm ? (
+                                    <div className="flex items-center gap-1.5 bg-[#1a0a0a]/95 border border-[#c62828]/50 rounded-xl px-3 py-1.5 shadow-lg backdrop-blur-sm">
+                                        <span className="text-xs text-[#e8a0a0] font-medium">Reset?</span>
+                                        <button
+                                            onClick={() => { resetGame(); setShowResetConfirm(false); }}
+                                            className="px-3 py-1 bg-[#c62828] hover:bg-[#d32f2f] text-white rounded-lg text-xs font-bold transition-colors"
+                                        >
+                                            OK
+                                        </button>
+                                        <button
+                                            onClick={() => setShowResetConfirm(false)}
+                                            className="px-3 py-1 bg-[#333] hover:bg-[#444] text-[#aaa] rounded-lg text-xs font-medium transition-colors"
+                                        >
+                                            Hủy
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={() => setShowResetConfirm(true)}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-[#1a0a0a]/80 hover:bg-[#2a0a0a] border border-[#8b1a1a]/40 hover:border-[#c62828]/60 rounded-xl text-xs text-[#c62828]/80 hover:text-[#c62828] font-bold transition-all backdrop-blur-sm shadow-md"
+                                        title="Reset game (Admin)"
+                                    >
+                                        <RotateCcw size={12} /> Reset
+                                    </button>
+                                )}
+                            </>
                         )}
                     </div>
+                </div>
+
+                {/* Role Guide Modal */}
+                {showGuide && (
+                    <div className="fixed inset-0 z-[300] flex items-center justify-center p-3" style={{ background: 'rgba(5,3,10,0.95)' }} onClick={() => setShowGuide(false)}>
+                        <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-[#8b5c3a]/40 overflow-hidden"
+                            style={{ background: 'linear-gradient(135deg, #1a1825 0%, #0f0e1a 100%)' }} onClick={e => e.stopPropagation()}>
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-[#8b5c3a]/30 shrink-0"
+                                style={{ background: 'linear-gradient(135deg, #1e1a2e 0%, #16141f 100%)' }}>
+                                <h3 className="text-lg font-bold flex items-center gap-2" style={{ fontFamily: "'Playfair Display', serif", color: '#c9873a' }}>
+                                    <BookOpen size={18} /> Hướng Dẫn Ma Sói
+                                </h3>
+                                <button onClick={() => setShowGuide(false)}
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-[#6b5f50] hover:text-[#c9873a] hover:bg-[#8b5c3a]/20 transition-all text-lg font-bold">✕</button>
+                            </div>
+
+                            {/* Content */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
+                                {/* Game Overview */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#8b5c3a]/20">
+                                    <h4 className="text-base font-bold text-[#c9873a] mb-2" style={{ fontFamily: "'Playfair Display', serif" }}>🎮 Luật Chơi Cơ Bản</h4>
+                                    <div className="space-y-2 text-[#b0a898]">
+                                        <p>Ma Sói là trò chơi <strong className="text-[#e8dcc8]">suy luận xã hội</strong>. Người chơi được chia vai ngẫu nhiên và phải tìm ra ai là Sói để loại bỏ.</p>
+                                        <div className="grid grid-cols-2 gap-2 mt-2">
+                                            <div className="bg-[#0a0a1a]/60 rounded-lg p-2.5 border border-[#1a1040]/40">
+                                                <p className="font-bold text-[#8b7acc] text-xs mb-1">🌙 Ban Đêm</p>
+                                                <p className="text-[11px]">Sói chọn mục tiêu cắn. Tiên tri, Bảo vệ, Phù thủy, Kẻ tẩm dầu lần lượt hành động.</p>
+                                            </div>
+                                            <div className="bg-[#1a1510]/60 rounded-lg p-2.5 border border-[#2a2518]/40">
+                                                <p className="font-bold text-[#c9873a] text-xs mb-1">☀️ Ban Ngày</p>
+                                                <p className="text-[11px]">Tất cả thảo luận, sau đó bỏ phiếu treo cổ người nghi ngờ nhất.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Roles */}
+                                <h4 className="text-base font-bold text-[#c9873a] px-1" style={{ fontFamily: "'Playfair Display', serif" }}>🃏 Nhân Vật</h4>
+
+                                {/* Wolf */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#c62828]/20">
+                                    <div className="flex items-start gap-3">
+                                        <span className="text-3xl">🐺</span>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h5 className="font-bold text-[#e8dcc8] text-base">Ma Sói</h5>
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#c62828]/20 text-[#e88080] font-bold">PHE SÓI</span>
+                                            </div>
+                                            <div className="space-y-1.5 text-[#b0a898]">
+                                                <p><strong className="text-[#e8a0a0]">🎯 Mục tiêu:</strong> Loại bỏ tất cả dân làng.</p>
+                                                <p><strong className="text-[#e8a0a0]">🌙 Ban đêm:</strong> Mở mắt cùng đồng đội Sói, thống nhất chọn <strong className="text-[#e8dcc8]">1 người để cắn</strong>. Nạn nhân sẽ chết nếu không được bảo vệ/cứu.</p>
+                                                <p><strong className="text-[#e8a0a0]">☀️ Ban ngày:</strong> Giả làm dân, cố gắng đổ tội cho người khác.</p>
+                                                <p><strong className="text-[#e8a0a0]">💡 Chiến thuật:</strong> Phối hợp với đồng đội Sói. Đừng tố nhau. Hãy vote cùng phe dân để tạo niềm tin, sau đó dẫn dắt treo cổ nhầm người.</p>
+                                                <p><strong className="text-[#e8a0a0]">🏆 Thắng khi:</strong> Số Sói ≥ Số Dân còn sống.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Villager */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#8b5c3a]/20">
+                                    <div className="flex items-start gap-3">
+                                        <span className="text-3xl">👨‍🌾</span>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h5 className="font-bold text-[#e8dcc8] text-base">Dân Làng</h5>
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-800/30 text-emerald-300 font-bold">PHE DÂN</span>
+                                            </div>
+                                            <div className="space-y-1.5 text-[#b0a898]">
+                                                <p><strong className="text-emerald-300/80">🎯 Mục tiêu:</strong> Tìm và treo cổ tất cả Ma Sói.</p>
+                                                <p><strong className="text-emerald-300/80">🌙 Ban đêm:</strong> Không có khả năng đặc biệt. Ngủ yên.</p>
+                                                <p><strong className="text-emerald-300/80">☀️ Ban ngày:</strong> Thảo luận, phân tích hành vi, bỏ phiếu.</p>
+                                                <p><strong className="text-emerald-300/80">💡 Chiến thuật:</strong> Quan sát ai đổi chiến thuật, ai vote lạ. Tin tưởng Tiên tri và Bảo vệ. Đừng tiết lộ vai nếu không cần thiết.</p>
+                                                <p><strong className="text-emerald-300/80">🏆 Thắng khi:</strong> Tất cả Sói bị loại.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Seer */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#8b5c3a]/20">
+                                    <div className="flex items-start gap-3">
+                                        <span className="text-3xl">🔮</span>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h5 className="font-bold text-[#e8dcc8] text-base">Tiên Tri</h5>
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-800/30 text-emerald-300 font-bold">PHE DÂN</span>
+                                            </div>
+                                            <div className="space-y-1.5 text-[#b0a898]">
+                                                <p><strong className="text-[#a78bfa]">🎯 Mục tiêu:</strong> Tìm ra Sói bằng khả năng soi.</p>
+                                                <p><strong className="text-[#a78bfa]">🌙 Ban đêm:</strong> Chọn <strong className="text-[#e8dcc8]">1 người để soi</strong>. Kết quả hiện "🐺 Sói" hoặc "🏡 Dân". Kẻ tẩm dầu và Kẻ chán đời hiện là Dân.</p>
+                                                <p><strong className="text-[#a78bfa]">☀️ Ban ngày:</strong> Dùng kết quả để thuyết phục dân làng.</p>
+                                                <p><strong className="text-[#a78bfa]">💡 Chiến thuật:</strong> Đừng tiết lộ mình là Tiên tri quá sớm — Sói sẽ ưu tiên giết bạn. Soi người đáng ngờ nhất. Khi chắc chắn, hãy công khai kết quả.</p>
+                                                <p><strong className="text-[#a78bfa]">⚠️ Lưu ý:</strong> Chỉ soi được <strong>1 lần/đêm</strong>. Không soi lại người đã soi.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Guard */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#8b5c3a]/20">
+                                    <div className="flex items-start gap-3">
+                                        <span className="text-3xl">🛡️</span>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h5 className="font-bold text-[#e8dcc8] text-base">Bảo Vệ</h5>
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-800/30 text-emerald-300 font-bold">PHE DÂN</span>
+                                            </div>
+                                            <div className="space-y-1.5 text-[#b0a898]">
+                                                <p><strong className="text-[#60a5fa]">🎯 Mục tiêu:</strong> Bảo vệ dân làng khỏi bị Sói giết.</p>
+                                                <p><strong className="text-[#60a5fa]">🌙 Ban đêm:</strong> Chọn <strong className="text-[#e8dcc8]">1 người để bảo vệ</strong>. Nếu người đó bị Sói cắn, họ sẽ <strong className="text-emerald-300">sống sót</strong>.</p>
+                                                <p><strong className="text-[#60a5fa]">⚠️ Hạn chế:</strong> <strong className="text-[#e8dcc8]">Không được bảo vệ cùng 1 người 2 đêm liên tiếp</strong>. Có thể bảo vệ chính mình.</p>
+                                                <p><strong className="text-[#60a5fa]">💡 Chiến thuật:</strong> Nếu biết ai là Tiên tri → ưu tiên bảo vệ họ. Đa dạng mục tiêu để Sói khó đoán. Không tiết lộ mình là Bảo vệ.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Witch */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#8b5c3a]/20">
+                                    <div className="flex items-start gap-3">
+                                        <span className="text-3xl">🧙</span>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h5 className="font-bold text-[#e8dcc8] text-base">Phù Thủy</h5>
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-800/30 text-emerald-300 font-bold">PHE DÂN</span>
+                                            </div>
+                                            <div className="space-y-1.5 text-[#b0a898]">
+                                                <p><strong className="text-[#c084fc]">🎯 Mục tiêu:</strong> Sử dụng 2 bình thuốc một cách chiến lược.</p>
+                                                <p><strong className="text-[#c084fc]">🧪 Bình cứu (1 lần):</strong> Biết ai bị Sói cắn đêm nay. Có thể dùng <strong className="text-emerald-300">bình cứu</strong> để cứu sống nạn nhân.</p>
+                                                <p><strong className="text-[#c084fc]">☠️ Bình độc (1 lần):</strong> Chọn <strong className="text-[#e8dcc8]">1 người để đầu độc</strong> — họ chết ngay trong đêm.</p>
+                                                <p><strong className="text-[#c084fc]">⚠️ Hạn chế:</strong> Mỗi bình <strong className="text-[#e8dcc8]">chỉ dùng được 1 lần</strong> cả trận. Không thể vừa cứu vừa độc cùng đêm.</p>
+                                                <p><strong className="text-[#c084fc]">💡 Chiến thuật:</strong> Giữ bình cứu cho tình huống quan trọng (cứu Tiên tri). Dùng bình độc khi chắc chắn ai là Sói.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Hunter */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#8b5c3a]/20">
+                                    <div className="flex items-start gap-3">
+                                        <span className="text-3xl">🏹</span>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h5 className="font-bold text-[#e8dcc8] text-base">Thợ Săn</h5>
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-800/30 text-emerald-300 font-bold">PHE DÂN</span>
+                                            </div>
+                                            <div className="space-y-1.5 text-[#b0a898]">
+                                                <p><strong className="text-[#fb923c]">🎯 Mục tiêu:</strong> Tiêu diệt Sói khi bị giết.</p>
+                                                <p><strong className="text-[#fb923c]">💀 Khi chết:</strong> Ngay lập tức được chọn <strong className="text-[#e8dcc8]">1 người để bắn hạ</strong> — kéo theo cùng chết.</p>
+                                                <p><strong className="text-[#fb923c]">⚠️ Kích hoạt:</strong> Chỉ kích hoạt khi bị <strong>Sói cắn chết</strong> hoặc bị <strong>treo cổ ban ngày</strong>. Không kích hoạt nếu bị Phù thủy đầu độc.</p>
+                                                <p><strong className="text-[#fb923c]">💡 Chiến thuật:</strong> Cố gắng biết ai là Sói trước khi chết. Khi chết, bắn người bạn nghi nhất. Nếu không chắc, bắn người biểu quyết bạn nhiều nhất.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Tanner */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#fbbf24]/20">
+                                    <div className="flex items-start gap-3">
+                                        <span className="text-3xl">😵</span>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h5 className="font-bold text-[#e8dcc8] text-base">Kẻ Chán Đời</h5>
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#fbbf24]/20 text-[#fbbf24] font-bold">TRUNG LẬP</span>
+                                            </div>
+                                            <div className="space-y-1.5 text-[#b0a898]">
+                                                <p><strong className="text-[#fbbf24]">🎯 Mục tiêu:</strong> Bị treo cổ ban ngày = <strong className="text-[#fbbf24]">THẮNG!</strong></p>
+                                                <p><strong className="text-[#fbbf24]">🌙 Ban đêm:</strong> Không có khả năng đặc biệt.</p>
+                                                <p><strong className="text-[#fbbf24]">☀️ Ban ngày:</strong> Cố tình hành động đáng ngờ để bị vote treo cổ.</p>
+                                                <p><strong className="text-[#fbbf24]">💡 Chiến thuật:</strong> Giả vờ là Sói! Nói mâu thuẫn, tự bộc lộ "sơ hở". Đừng quá lộ liễu — nếu bị Sói cắn thì thua. Chỉ cần bị <strong>dân treo cổ</strong> là thắng.</p>
+                                                <p><strong className="text-[#fbbf24]">⚠️ Lưu ý:</strong> Tiên tri soi thấy là "Dân" (không phải Sói). Bị Sói cắn = thua.</p>
+                                                <p><strong className="text-[#fbbf24]">🏆 Thắng khi:</strong> Bị treo cổ ban ngày → Kẻ chán đời thắng một mình, cả Sói và Dân đều thua!</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Arsonist */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#ef4444]/20">
+                                    <div className="flex items-start gap-3">
+                                        <span className="text-3xl">🔥</span>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h5 className="font-bold text-[#e8dcc8] text-base">Kẻ Tẩm Dầu</h5>
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#ef4444]/20 text-[#f87171] font-bold">TRUNG LẬP</span>
+                                            </div>
+                                            <div className="space-y-1.5 text-[#b0a898]">
+                                                <p><strong className="text-[#f87171]">🎯 Mục tiêu:</strong> Tẩm dầu rồi đốt cháy tất cả!</p>
+                                                <p><strong className="text-[#f87171]">🛢️ Tẩm dầu:</strong> Mỗi đêm chọn <strong className="text-[#e8dcc8]">1 người để tẩm dầu</strong>. Nạn nhân <strong>không biết</strong> mình bị tẩm. Tích lũy qua nhiều đêm.</p>
+                                                <p><strong className="text-[#f87171]">🔥 Đốt cháy:</strong> Thay vì tẩm, chọn <strong className="text-[#e8dcc8]">ĐỐT</strong> — <strong className="text-[#ef4444]">tất cả người đã bị tẩm dầu chết cùng lúc!</strong></p>
+                                                <p><strong className="text-[#f87171]">💡 Chiến thuật:</strong> Kiên nhẫn tẩm nhiều người (3+ người) trước khi đốt. Giữ bí mật danh tính. Không tẩm Sói (nếu biết) để tránh gây chú ý.</p>
+                                                <p><strong className="text-[#f87171]">⚠️ Lưu ý:</strong> Tiên tri soi thấy là "Dân". Bị Sói cắn/treo cổ = chết bình thường. Bảo vệ KHÔNG chặn được tẩm dầu.</p>
+                                                <p><strong className="text-[#f87171]">🏆 Thắng khi:</strong> Là người cuối cùng sống sót.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Win Conditions Summary */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#8b5c3a]/20">
+                                    <h4 className="text-base font-bold text-[#c9873a] mb-2" style={{ fontFamily: "'Playfair Display', serif" }}>🏆 Điều Kiện Thắng</h4>
+                                    <div className="space-y-2 text-[#b0a898] text-[13px]">
+                                        <p>🐺 <strong className="text-[#e8a0a0]">Phe Sói:</strong> Số Sói sống ≥ số Dân sống</p>
+                                        <p>🏡 <strong className="text-emerald-300/80">Phe Dân:</strong> Tất cả Sói bị loại (treo cổ hoặc Phù thủy/Thợ săn giết)</p>
+                                        <p>😵 <strong className="text-[#fbbf24]">Kẻ chán đời:</strong> Bị dân làng bỏ phiếu treo cổ</p>
+                                        <p>🔥 <strong className="text-[#f87171]">Kẻ tẩm dầu:</strong> Là người sống sót cuối cùng</p>
+                                    </div>
+                                </div>
+
+                                {/* Phase Order */}
+                                <div className="ww-panel rounded-xl p-4 border border-[#8b5c3a]/20">
+                                    <h4 className="text-base font-bold text-[#c9873a] mb-2" style={{ fontFamily: "'Playfair Display', serif" }}>🔄 Thứ Tự Các Pha</h4>
+                                    <div className="space-y-1 text-[#b0a898] text-[13px]">
+                                        <p className="font-medium text-[#8b7acc]">🌙 Ban Đêm:</p>
+                                        <ol className="list-decimal list-inside pl-2 space-y-0.5">
+                                            <li>🐺 Ma Sói thức dậy → chọn mục tiêu cắn</li>
+                                            <li>🔮 Tiên tri thức dậy → soi 1 người</li>
+                                            <li>🛡️ Bảo vệ thức dậy → chọn người bảo vệ</li>
+                                            <li>🧙 Phù thủy thức dậy → cứu/đầu độc</li>
+                                            <li>🔥 Kẻ tẩm dầu thức dậy → tẩm dầu/đốt</li>
+                                            <li>→ Công bố kết quả đêm</li>
+                                        </ol>
+                                        <p className="font-medium text-[#c9873a] mt-2">☀️ Ban Ngày:</p>
+                                        <ol className="list-decimal list-inside pl-2 space-y-0.5">
+                                            <li>📢 Công bố ai chết đêm qua</li>
+                                            <li>💬 Thảo luận tự do</li>
+                                            <li>🗳️ Bỏ phiếu treo cổ</li>
+                                            <li>🔁 Nếu hòa → bỏ phiếu lại 1 lần</li>
+                                        </ol>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
                 )}
+
                 {hasLeftColumn ? (
                     <div className="ww-game-layout">
                         {renderLeftColumn()}
@@ -1841,6 +2729,30 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                     </div>
                 ) : (
                     <>{children}</>
+                )}
+
+                {/* Mobile-only: Player list below game content */}
+                {hasLeftColumn && (
+                    <div className="md:hidden mt-4 ww-glass rounded-xl p-3 w-full">
+                        <p className="text-sm font-bold mb-2 ww-glow-gold" style={{ fontFamily: "'Playfair Display', serif", color: '#c9873a' }}>
+                            <Users size={14} className="inline mr-1" /> Ngôi Làng ({alivePlayers.length}/{allPlayers.length})
+                        </p>
+                        <div className="space-y-1">
+                            {allPlayers.map(p => {
+                                const r = gs.roles?.[p.uid];
+                                const isDead = r && !r.alive;
+                                const isBotPlayer = isBot(p.uid);
+                                const showBotLabel = isBotPlayer && !isStealthBot(p.uid);
+                                return (
+                                    <div key={p.uid} className={clsx("flex items-center gap-2 py-1 px-2 rounded-lg text-sm", isDead && "opacity-60")}>
+                                        <div className={clsx("relative w-5 h-5 rounded-full shrink-0", isDead ? "ww-avatar-dead" : "ww-avatar-spooky")} style={{overflow:'visible'}}><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=24&background=2a1f3d&color=c9873a`} className="w-full h-full object-cover rounded-full" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[7px] rounded-full" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
+                                        <span className={clsx("flex-1", isDead ? "line-through text-[#6b5f50]" : showBotLabel ? "text-[#8b9dc3]" : "text-[#e8dcc8]")}>{p.name}{showBotLabel && <span className="text-[9px] ml-1 text-[#6b8ab5]">(AI)</span>}</span>
+                                        {isDead ? <Skull size={12} style={{ color: '#c62828' }} /> : <span className="w-2 h-2 rounded-full bg-emerald-500 ww-pulse-glow" />}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                 )}
             </div>
         );
@@ -2078,8 +2990,8 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
 
             {/* Player Circle */}
             {(() => {
-                const host = playerList.find(p => p.uid === room.hostId);
-                const others = playerList.filter(p => p.uid !== room.hostId);
+                const host = allPlayers.find(p => p.uid === room.hostId);
+                const others = allPlayers.filter(p => p.uid !== room.hostId);
                 const count = others.length;
                 // All coordinates in a fixed viewBox coordinate system (0-500)
                 const VB = 500;
@@ -2150,50 +3062,182 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 );
             })()}
 
-            {/* Player count */}
-            <p className="text-base text-[#a89b85] mb-6 font-medium">
-                <span className="text-[#c9873a] font-bold">{playerList.length}</span> linh hồn đã tập trung {playerList.length < 5 ? <span className="text-[#8b5c3a]">(cần tối thiểu 5)</span> : <span className="text-emerald-400">✓</span>}
-            </p>
+            {/* Player count + Bot selector */}
+            <div className="mb-6 space-y-3">
+                <p className="text-base text-[#a89b85] font-medium">
+                    <span className="text-[#c9873a] font-bold">{allPlayers.length}</span> linh hồn đã tập trung {allPlayers.length < 5 ? <span className="text-[#8b5c3a]">(cần tối thiểu 5)</span> : <span className="text-emerald-400">✓</span>}
+                    {botCount > 0 && <span className="text-[#6b5f50] text-sm ml-1">({playerList.length} người + {botCount} máy)</span>}
+                </p>
+                {isHost && (
+                    <div className="flex items-center justify-center gap-3">
+                        <span className="text-xs text-[#8b7b6b] font-medium">🤖 Máy tính:</span>
+                        <button
+                            onClick={() => setBotCount(prev => Math.max(0, prev - 1))}
+                            disabled={botCount <= 0}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#1a0f04] border border-[#8b5c3a]/30 text-[#c9873a] text-sm font-bold hover:bg-[#8b5c3a]/20 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                        >−</button>
+                        <span className="text-lg font-bold text-[#c9873a] min-w-[28px] text-center">{botCount}</span>
+                        <button
+                            onClick={() => setBotCount(prev => Math.min(12, prev + 1))}
+                            disabled={botCount >= 12}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#1a0f04] border border-[#8b5c3a]/30 text-[#c9873a] text-sm font-bold hover:bg-[#8b5c3a]/20 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                        >+</button>
+                    </div>
+                )}
+            </div>
 
-            {/* Role Showcase */}
+            {/* Role Picker / Showcase */}
             {(() => {
-                const n = playerList.length;
-                const wolfCount = n <= 6 ? 2 : n <= 9 ? 2 : 3;
-                const hasWitch = n >= 6;
-                const villagerCount = Math.max(0, n - wolfCount - 2 - (hasWitch ? 1 : 0));
-                const roleDistribution = [
-                    { ...WOLF_ROLES[0], count: wolfCount },   // Ma Sói
-                    { ...WOLF_ROLES[2], count: 1 },            // Tiên tri
-                    { ...WOLF_ROLES[3], count: 1 },            // Bảo vệ
-                    ...(hasWitch ? [{ ...WOLF_ROLES[4], count: 1 }] : []), // Phù thủy
-                    { ...WOLF_ROLES[1], count: villagerCount }, // Dân làng
-                ].filter(r => r.count > 0);
+                const n = allPlayers.length;
+                // Auto-calculated defaults
+                const autoWolfCount = n <= 6 ? 2 : n <= 9 ? 2 : 3;
+                const autoHasWitch = n >= 6;
+                const autoHasHunter = n >= 7;
+                const autoHasTanner = n >= 8;
+                const autoHasArsonist = n >= 9;
+                const autoSpecial = 2 + (autoHasWitch ? 1 : 0) + (autoHasHunter ? 1 : 0) + (autoHasTanner ? 1 : 0) + (autoHasArsonist ? 1 : 0);
+                const autoVillager = Math.max(0, n - autoWolfCount - autoSpecial);
+
+                const autoCounts: Record<string, number> = {
+                    'Ma Sói': autoWolfCount, 'Tiên tri': 1, 'Bảo vệ': 1,
+                    ...(autoHasWitch ? { 'Phù thủy': 1 } : {}),
+                    ...(autoHasHunter ? { 'Thợ săn': 1 } : {}),
+                    ...(autoHasTanner ? { 'Kẻ chán đời': 1 } : {}),
+                    ...(autoHasArsonist ? { 'Kẻ tẩm dầu': 1 } : {}),
+                    'Dân làng': autoVillager,
+                };
+
+                const isManual = customRoleCounts !== null;
+                const counts = isManual ? customRoleCounts : autoCounts;
+                const totalRoles = Object.values(counts).reduce((s, c) => s + c, 0);
+                const isBalanced = totalRoles === n;
+                const hasWolf = (counts['Ma Sói'] || 0) >= 1;
+
+                const allSelectableRoles = WOLF_ROLES; // All defined roles
+
+                const toggleManualMode = () => {
+                    if (isManual) {
+                        setCustomRoleCounts(null);
+                    } else {
+                        setCustomRoleCounts({ ...autoCounts });
+                    }
+                };
+
+                const adjustCount = (roleName: string, delta: number) => {
+                    if (!isManual) return;
+                    setCustomRoleCounts(prev => {
+                        if (!prev) return prev;
+                        const cur = prev[roleName] || 0;
+                        const next = Math.max(0, cur + delta);
+                        const newCounts = { ...prev };
+                        if (next === 0) {
+                            delete newCounts[roleName];
+                        } else {
+                            newCounts[roleName] = next;
+                        }
+                        return newCounts;
+                    });
+                };
 
                 return (
                     <div className="ww-panel rounded-2xl p-4 md:p-6 mb-6 border border-[#8b5c3a]/20">
-                        <p className="text-sm font-bold text-[#c9873a] mb-3 flex items-center justify-center gap-1.5" style={{ fontFamily: "'Playfair Display', serif" }}>
-                            <Users size={14} /> Nhân vật trong ván ({n} người chơi)
-                        </p>
-                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 md:gap-3">
-                            {roleDistribution.map(r => (
-                                <div key={r.role} className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl bg-gradient-to-b from-[#1a1825]/80 to-[#0f0e1a]/60 border border-[#8b5c3a]/15 hover:border-[#c9873a]/30 transition-all hover:scale-[1.05] group">
-                                    <div className="relative w-14 h-20 md:w-16 md:h-24 rounded-lg overflow-hidden shadow-lg group-hover:shadow-[#c9873a]/20 transition-shadow">
-                                        <img src={r.cardImage} alt={r.role} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
-                                        <div className="av-fb absolute inset-0 bg-gradient-to-br from-[#2a1f3d] to-[#1a0f2d] items-center justify-center text-3xl" style={{display:'none'}}>{r.icon}</div>
-                                    </div>
-                                    <span className="text-xs md:text-sm font-bold text-[#e8dcc8] text-center leading-tight">{r.icon} {r.role}</span>
-                                    <span className="text-[10px] font-bold text-[#c9873a] bg-[#c9873a]/10 px-1.5 py-0.5 rounded-full">×{r.count}</span>
-                                    <p className="text-[9px] md:text-[10px] text-[#8b7b6b] text-center leading-tight line-clamp-2 hidden sm:block">{r.desc}</p>
-                                </div>
-                            ))}
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-sm font-bold text-[#c9873a] flex items-center gap-1.5" style={{ fontFamily: "'Playfair Display', serif" }}>
+                                <Users size={14} /> Nhân vật trong ván ({n} người chơi)
+                            </p>
+                            {isHost && n >= 5 && (
+                                <button
+                                    onClick={toggleManualMode}
+                                    className={`text-[10px] md:text-xs px-2.5 py-1 rounded-lg font-bold transition-all ${isManual
+                                        ? 'bg-[#c9873a]/20 text-[#c9873a] border border-[#c9873a]/40'
+                                        : 'bg-[#1a1825]/60 text-[#6b5f50] border border-[#8b5c3a]/20 hover:border-[#c9873a]/30'
+                                    }`}
+                                >
+                                    {isManual ? '🔧 Thủ công' : '⚡ Tự động'}
+                                </button>
+                            )}
                         </div>
+
+                        {/* Validation bar (manual mode) */}
+                        {isManual && (
+                            <div className={`flex items-center justify-center gap-2 text-xs font-bold mb-3 px-3 py-1.5 rounded-lg transition-all ${
+                                isBalanced && hasWolf
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                    : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                            }`}>
+                                {isBalanced && hasWolf ? (
+                                    <span>✅ Đã chọn {totalRoles}/{n} vai — Sẵn sàng!</span>
+                                ) : !hasWolf ? (
+                                    <span>⚠️ Cần ít nhất 1 Ma Sói! ({totalRoles}/{n} vai)</span>
+                                ) : totalRoles < n ? (
+                                    <span>⚠️ Thiếu {n - totalRoles} vai — cần thêm ({totalRoles}/{n})</span>
+                                ) : (
+                                    <span>⚠️ Thừa {totalRoles - n} vai — cần bớt ({totalRoles}/{n})</span>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Role Cards Grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
+                            {allSelectableRoles.map(r => {
+                                const count = counts[r.role] || 0;
+                                const isActive = count > 0;
+                                return (
+                                    <div key={r.role} className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl transition-all group ${
+                                        isActive
+                                            ? 'bg-gradient-to-b from-[#1a1825]/80 to-[#0f0e1a]/60 border border-[#8b5c3a]/30 hover:border-[#c9873a]/50'
+                                            : 'bg-gradient-to-b from-[#0f0e1a]/40 to-[#0a0915]/30 border border-[#333]/20 opacity-40'
+                                    } ${isManual && isHost ? 'hover:scale-[1.03]' : 'hover:scale-[1.05]'}`}>
+                                        {/* Card image */}
+                                        <div className={`relative w-12 h-18 md:w-14 md:h-20 rounded-lg overflow-hidden shadow-lg transition-shadow ${isActive ? 'group-hover:shadow-[#c9873a]/20' : ''}`}>
+                                            <img src={r.cardImage} alt={r.role} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} />
+                                            <div className="av-fb absolute inset-0 bg-gradient-to-br from-[#2a1f3d] to-[#1a0f2d] items-center justify-center text-2xl" style={{display:'none'}}>{r.icon}</div>
+                                        </div>
+                                        {/* Role name */}
+                                        <span className="text-[10px] md:text-xs font-bold text-[#e8dcc8] text-center leading-tight">{r.icon} {r.role}</span>
+                                        {/* Count display/control */}
+                                        {isManual && isHost ? (
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => adjustCount(r.role, -1)}
+                                                    disabled={count <= 0}
+                                                    className="w-6 h-6 flex items-center justify-center rounded-md bg-[#1a0f04] border border-[#8b5c3a]/30 text-[#c9873a] text-sm font-bold hover:bg-[#8b5c3a]/20 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                                                >−</button>
+                                                <span className={`text-sm font-bold min-w-[20px] text-center ${isActive ? 'text-[#c9873a]' : 'text-[#6b5f50]'}`}>{count}</span>
+                                                <button
+                                                    onClick={() => adjustCount(r.role, 1)}
+                                                    className="w-6 h-6 flex items-center justify-center rounded-md bg-[#1a0f04] border border-[#8b5c3a]/30 text-[#c9873a] text-sm font-bold hover:bg-[#8b5c3a]/20 transition-all"
+                                                >+</button>
+                                            </div>
+                                        ) : isActive ? (
+                                            <span className="text-[10px] font-bold text-[#c9873a] bg-[#c9873a]/10 px-1.5 py-0.5 rounded-full">×{count}</span>
+                                        ) : null}
+                                        {/* Description */}
+                                        <p className="text-[8px] md:text-[9px] text-[#8b7b6b] text-center leading-tight line-clamp-2 hidden sm:block">{r.desc}</p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Reset to auto button */}
+                        {isManual && isHost && (
+                            <button onClick={() => setCustomRoleCounts({ ...autoCounts })}
+                                className="mt-3 w-full py-1.5 text-xs text-[#6b5f50] hover:text-[#c9873a] transition-colors font-medium">
+                                ↩ Đặt lại theo gợi ý tự động
+                            </button>
+                        )}
                     </div>
                 );
             })()}
 
             {/* Action buttons */}
-            {isHost && playerList.length >= 5 && (
-                <button onClick={assignRoles} className="w-full max-w-sm mx-auto block px-8 py-4 ww-btn-primary text-xl shadow-xl hover:scale-105 transition-transform">
+            {isHost && allPlayers.length >= 5 && (
+                <button
+                    onClick={assignRoles}
+                    disabled={customRoleCounts !== null && Object.values(customRoleCounts).reduce((s, c) => s + c, 0) !== allPlayers.length}
+                    className="w-full max-w-sm mx-auto block px-8 py-4 ww-btn-primary text-xl shadow-xl hover:scale-105 transition-transform disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+                >
                     🐺 Chia Vai & Bắt Đầu
                 </button>
             )}
@@ -2225,6 +3269,13 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
     if (phase === 'roles-assigned') {
         const wolfTeammates = getWolfTeammates();
         const roleInfo = myRole ? WOLF_ROLES.find(r => r.role === myRole.role) : null;
+        
+        // Scratch card logic
+        const botUidsList = gs.botUids || [];
+        const humanUids = Object.keys(gs.roles || {}).filter(uid => !botUidsList.includes(uid));
+        const scratchedCount = humanUids.filter(uid => gs.scratchedCards?.[uid]).length;
+        const allScratched = scratchedCount === humanUids.length;
+
         return (
             renderPhaseLayout(<>
                 <div className="flex flex-col items-center justify-center w-full" style={{ minHeight: 'min(70vh, 600px)' }}>
@@ -2234,7 +3285,15 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                                 cardImage={roleInfo?.cardImage}
                                 roleName={myRole.role}
                                 roleIcon={myRole.icon}
-                                onRevealed={() => setShowMyRole(true)}
+                                onRevealed={() => {
+                                    setShowMyRole(true);
+                                    if (!gs.scratchedCards?.[myUid] && !botUidsList.includes(myUid)) {
+                                        MinigameService.updateGameState(room.id, {
+                                            ...gs,
+                                            scratchedCards: { ...(gs.scratchedCards || {}), [myUid]: true }
+                                        });
+                                    }
+                                }}
                             />
                             <motion.p
                                 className="mt-2 text-base text-[#8b5c3a] font-medium"
@@ -2278,7 +3337,41 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                     )}
                 </div>
 
-                {isHost && <button onClick={startNight} className="px-6 py-3 ww-btn-night mt-4">🌙 Bắt đầu Đêm 1</button>}
+                <div className="flex flex-col items-center mt-4 p-4 ww-panel rounded-xl border border-[#8b5c3a]/20 w-full max-w-sm mx-auto">
+                    <p className="text-sm font-bold text-[#c9873a] mb-2 flex items-center justify-center gap-1">
+                        💳 Trạng thái cào thẻ {scratchedCount}/{humanUids.length}
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-2 mb-3">
+                        {humanUids.map(uid => {
+                            const hasScratched = gs.scratchedCards?.[uid];
+                            return (
+                                <span key={uid} className={clsx(
+                                    "px-2 py-0.5 rounded-md text-xs font-medium border",
+                                    hasScratched ? "bg-[#1a2e1a] text-[#7ab87a] border-[#7ab87a]/30" : "bg-[#2a0a0a] text-[#c62828] border-[#c62828]/30"
+                                )}>
+                                    {playerNames[uid]?.name?.split(' ').pop()} {hasScratched ? '✓' : '...'}
+                                </span>
+                            );
+                        })}
+                    </div>
+                    {isHost ? (
+                        <button 
+                            onClick={startNight} 
+                            disabled={!allScratched}
+                            className={clsx(
+                                "px-6 py-3 w-full font-bold transition-all",
+                                allScratched ? "ww-btn-night" : "bg-[#1a1a2e]/50 text-[#8b7acc]/50 border border-[#8b7acc]/20 rounded-xl cursor-not-allowed"
+                            )}
+                        >
+                            🌙 {allScratched && startNightCountdown !== null ? `Tự động vào Đêm trong ${startNightCountdown}s... (Bấm để gọi luôn)` : 'Bắt đầu Đêm 1 (Đợi mọi người cào)'}
+                        </button>
+                    ) : (
+                        <p className={clsx("text-sm font-bold text-center", allScratched && startNightCountdown !== null ? "text-[#c9873a] animate-pulse" : "text-[#8b5c3a] italic")}>
+                            {allScratched && startNightCountdown !== null ? `Tự động vào Đêm 1 trong ${startNightCountdown}s...` : 'Đợi mọi người cào thẻ để bắt đầu...'}
+                        </p>
+                    )}
+                </div>
+
                 <GameEventLog roomId={room.id} />
                 <SeparatedChats roomId={room.id} myUid={myUid} myName={myName} myAvatar={myAvatar} channel={getChatChannel()} visibleChannels={getVisibleChannels()} title="💬 Chat trước khi vào đêm" canSwitchToWolf={isWolf && showMyRole === true} />
             </>, false, "text-center")
@@ -2316,10 +3409,13 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                         )}
                         <p className="text-base font-bold text-[#8b1a1a] mb-2">🐺 Chọn nạn nhân:</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mb-3">
-                            {aliveOthers.filter(p => gs.roles?.[p.uid]?.role !== 'Ma Sói').map(p => (
-                                <PlayerCard key={p.uid} p={p} onClick={() => wolfVote(p.uid)} selected={myVote === p.uid}
-                                    extra={myVote === p.uid ? <span className="text-sm text-[#8b1a1a] font-bold">🎯</span> : undefined} />
-                            ))}
+                            {alivePlayers.map(p => {
+                                const isSelf = p.uid === myUid;
+                                return (
+                                    <PlayerCard key={p.uid} p={p} onClick={() => wolfVote(p.uid)} selected={myVote === p.uid}
+                                        extra={<span className="text-sm text-[#8b1a1a] font-bold">{isSelf ? '(bạn)' : ''}{myVote === p.uid ? ' 🎯' : ''}</span>} />
+                                );
+                            })}
                         </div>
                         {myVote && <p className="text-sm text-[#7ab87a] font-bold text-center">✓ Đã chọn, đợi đồng đội...</p>}
                         {/* Wolf chat during night */}
@@ -2507,7 +3603,133 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
         );
     }
 
+    // NIGHT - HUNTER
+    if (phase === 'night-hunter') {
+        const isHunter = myRole?.role === 'Thợ săn' && myRole.alive;
+        if (!hasHunterAlive) {
+            return renderPhaseLayout(<>
+                <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
+                    <p className="text-red-300 text-base mt-1">🏹 Thợ săn thức dậy...</p>
+                </div>
+                <Loader2 size={20} className="animate-spin mx-auto text-red-400" />
+                <p className="text-base text-[#6b5f50] text-center mt-2">Đang xử lý...</p>
+            </>, false, "text-center");
+        }
+        return (
+            renderPhaseLayout(<>
+                <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
+                    <p className="text-red-300 text-base mt-1">🏹 Thợ săn thức dậy...</p>
+                </div>
+                {isHunter ? (
+                    <div>
+                        <p className="text-base font-bold text-[#c62828] mb-2">🏹 Chọn một người để ghim:</p>
+                        <p className="text-sm text-[#8b5c3a] mb-3 italic">Bạn không thể ghim người mà bạn đã ghim ở đêm trước.</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mb-3">
+                            {aliveOthers.map(p => (
+                                <PlayerCard key={p.uid} p={p} onClick={() => hunterPin(p.uid)} 
+                                    selected={p.uid === gs.hunterPinned}
+                                    disabled={p.uid === gs.hunterLastPinned}
+                                    extra={
+                                        p.uid === gs.hunterPinned ? <span className="text-sm text-[#c62828] font-bold">🎯 Đang ghim</span> : 
+                                        p.uid === gs.hunterLastPinned ? <span className="text-xs text-[#6b5f50]">(đã ghim đêm trước)</span> : undefined
+                                    } />
+                            ))}
+                        </div>
+                        <button onClick={hunterDone} disabled={!gs.hunterPinned} className={clsx("w-full py-2.5 rounded-xl font-bold text-base mt-2 transition-all", gs.hunterPinned ? "bg-red-600 text-white" : "bg-red-900/40 text-red-500/50 cursor-not-allowed")}>✓ Xong, kết thúc lượt</button>
+                    </div>
+                ) : (
+                    <p className="text-base text-[#6b5f50] text-center p-4">{myRole?.alive ? `${getRoleIconByName(myRole?.role || '')} Chờ Thợ săn hành động...` : '💀 Quan sát...'}</p>
+                )}
+            </>)
+        );
+    }
+
     // (night-resolve useEffect moved to top-level hooks area)
+
+    // NIGHT - ARSONIST
+    if (phase === 'night-arsonist') {
+        const isArsonist = myRole?.role === 'Kẻ tẩm dầu' && myRole.alive;
+        if (!hasArsonistAlive) {
+            return renderPhaseLayout(<>
+                <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
+                    <p className="text-orange-300 text-base mt-1">🔥 Kẻ tẩm dầu thức dậy...</p>
+                </div>
+                <Loader2 size={20} className="animate-spin mx-auto text-orange-400" />
+                <p className="text-base text-[#6b5f50] text-center mt-2">Đang xử lý...</p>
+            </>, false, "text-center");
+        }
+        const oiledPlayers = gs.arsonistOiled || [];
+        const canIgnite = oiledPlayers.filter(uid => gs.roles?.[uid]?.alive).length > 0;
+        return (
+            renderPhaseLayout(<>
+                <div className="ww-panel rounded-2xl p-6 mb-3 text-center">
+                    <WolfIcon size={36} className="mx-auto mb-2 text-[#e8d5a3] ww-moon-glow" />
+                    <h3 className="ww-heading text-2xl">Đêm {gs.night}</h3>
+                    <p className="text-orange-300 text-base mt-1">🔥 Kẻ tẩm dầu thức dậy...</p>
+                </div>
+                {isArsonist ? (
+                    <div className="space-y-3">
+                        {/* Oiled players list */}
+                        {oiledPlayers.length > 0 && (
+                            <div className="p-3 bg-[#2a1a08]/60 rounded-xl border border-orange-500/30">
+                                <p className="text-xs font-bold text-orange-400 mb-1.5">🛢️ Đã tẩm dầu ({oiledPlayers.filter(uid => gs.roles?.[uid]?.alive).length}):</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {oiledPlayers.filter(uid => gs.roles?.[uid]?.alive).map(uid => (
+                                        <span key={uid} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#1a0f04] rounded-md text-sm font-medium text-orange-300">
+                                            🛢️ {playerNames[uid]?.name || '???'}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Action choice */}
+                        {gs.arsonistActionThisNight === 'ignite' ? (
+                            <div className="p-4 bg-[#2a0a00]/80 rounded-xl border-2 border-orange-500/50 text-center">
+                                <p className="text-lg font-bold text-orange-400 mb-2">🔥 Đã chọn CHÂM LỬA!</p>
+                                <p className="text-sm text-[#a89b85]">Tất cả {oiledPlayers.filter(uid => gs.roles?.[uid]?.alive).length} người đã tẩm dầu sẽ bị thiêu rụi.</p>
+                                <button onClick={() => MinigameService.mergeGameState(room.id, { arsonistActionThisNight: null, arsonistOilTarget: null })}
+                                    className="mt-2 px-3 py-1 bg-[#333] hover:bg-[#444] text-[#aaa] rounded-lg text-xs">↩ Đổi ý</button>
+                            </div>
+                        ) : gs.arsonistOilTarget ? (
+                            <div className="p-4 bg-[#1a1008]/80 rounded-xl border border-[#8b5c3a]/30 text-center">
+                                <p className="text-base font-bold text-orange-300 mb-1">🛢️ Đã chọn tẩm dầu:</p>
+                                <p className="text-lg text-[#e8dcc8] font-bold">{playerNames[gs.arsonistOilTarget]?.name || '???'}</p>
+                                <button onClick={() => MinigameService.mergeGameState(room.id, { arsonistActionThisNight: null, arsonistOilTarget: null })}
+                                    className="mt-2 px-3 py-1 bg-[#333] hover:bg-[#444] text-[#aaa] rounded-lg text-xs">↩ Đổi ý</button>
+                            </div>
+                        ) : (
+                            <>
+                                <p className="text-base font-bold text-orange-300 mb-2">🛢️ Chọn 1 người để tẩm dầu:</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mb-3">
+                                    {aliveOthers.filter(p => !oiledPlayers.includes(p.uid)).map(p => (
+                                        <PlayerCard key={p.uid} p={p} onClick={() => arsonistOil(p.uid)}
+                                            extra={oiledPlayers.includes(p.uid) ? <span className="text-xs text-orange-400">🛢️</span> : undefined} />
+                                    ))}
+                                </div>
+                                {canIgnite && (
+                                    <button onClick={arsonistIgnite}
+                                        className="w-full py-3 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white rounded-xl font-bold text-base transition-all shadow-lg shadow-orange-500/30">
+                                        🔥 CHÂM LỬA — Đốt tất cả {oiledPlayers.filter(uid => gs.roles?.[uid]?.alive).length} người!
+                                    </button>
+                                )}
+                            </>
+                        )}
+                        <button onClick={arsonistDone} className="w-full py-2.5 bg-orange-700 text-white rounded-xl font-bold text-base mt-2">✓ Xong</button>
+                        <button onClick={skipArsonist} className="w-full py-2 text-base text-[#6b5f50] hover:text-slate-600">Bỏ qua (không làm gì)</button>
+                    </div>
+                ) : (
+                    <p className="text-base text-[#6b5f50] text-center p-4">{myRole?.alive ? `${getRoleIconByName(myRole?.role || '')} Chờ hành động ban đêm...` : '💀 Quan sát...'}</p>
+                )}
+            </>)
+        );
+    }
 
     if (phase === 'night-resolve') {
         return renderPhaseLayout(<>
@@ -2532,7 +3754,6 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
             </div>
         </>, false, "text-center");
     }
-
     // DAY - DISCUSSION
     if (phase === 'day-discussion') return (
         renderPhaseLayout(<>
@@ -2544,19 +3765,29 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                 {gs.nightKilled && <p className="text-sm text-[#c62828] mt-1 italic">Người chết chỉ thấy trên lá bài của chính mình.</p>}
             </div>
             <div className="mb-3">
-                <p className="text-sm font-bold text-[#6b5f50] mb-2">NGƯỜI CHƠI ({playerList.length})</p>
-                {playerList.map(p => {
+                <p className="text-sm font-bold text-[#6b5f50] mb-2">NGƯỜI CHƠI ({allPlayers.length})</p>
+                {allPlayers.map(p => {
+                    const isBotPlayer = isBot(p.uid);
+                    const showBotLabel = isBotPlayer && !isStealthBot(p.uid);
                     return (
                         <div key={p.uid} className="flex items-center gap-2 py-1.5 text-base">
                             <div className={clsx("relative w-6 h-6 rounded-full shrink-0", !gs.roles?.[p.uid]?.alive ? "ww-avatar-dead" : "ww-avatar-spooky")} style={{overflow:'visible'}}><img src={p.avatar || `https://ui-avatars.com/api/?name=${p.name}&size=32&background=2a1f3d&color=c9873a`} className="w-full h-full object-cover rounded-full" alt="" onError={e => { e.currentTarget.style.display='none'; const fb = e.currentTarget.nextElementSibling as HTMLElement; if(fb) fb.style.display='flex'; }} /><div className="av-fb absolute inset-0 bg-gradient-to-br from-amber-700 to-amber-900 items-center justify-center text-amber-100 font-bold text-[8px] rounded-full" style={{display:'none'}}>{(p.name||'?').split(' ').map((w: string)=>w[0]).join('').slice(0,2)}</div></div>
-                            👤 {p.name}
+                            👤 {p.name}{showBotLabel && <span className="text-[9px] ml-1 text-[#6b8ab5]">(AI)</span>}
                             {p.uid === myUid && !gs.roles?.[p.uid]?.alive && <span className="text-xs text-[#c62828] ml-1">(💀 bạn)</span>}
                         </div>
                     );
                 })}
             </div>
             <p className="text-sm text-[#c9873a] font-medium text-center mb-3 animate-pulse">💬 Hãy thảo luận và đưa ra ý kiến trước khi bỏ phiếu!</p>
-            {isHost && <button onClick={startDayVote} className="w-full py-2.5 ww-btn-primary text-base mb-2">🗳️ Bắt đầu Bỏ phiếu</button>}
+            {isHost ? (
+                <button onClick={() => { if (!resolvingRef.current) { resolvingRef.current = true; startDayVote().finally(() => resolvingRef.current = false); } }} className="w-full py-2.5 ww-btn-primary text-base mb-2">
+                    🗳️ Bắt đầu Bỏ phiếu {discussionCountdown !== null ? `(${discussionCountdown}s)` : ''}
+                </button>
+            ) : (
+                <div className="text-center font-bold text-[#e8dcc8] mb-2 px-3 py-2 bg-[#1a0f04]/60 rounded-xl border border-[#c9873a]/40 shadow-lg shadow-[#c9873a]/10">
+                    🗳️ Tự động Bỏ phiếu sau <span className="text-[#c9873a] text-lg animate-pulse">{discussionCountdown !== null ? discussionCountdown : 20}</span> giây...
+                </div>
+            )}
             <GameEventLog roomId={room.id} />
             <SeparatedChats roomId={room.id} myUid={myUid} myName={myName} myAvatar={myAvatar} channel={getChatChannel()} visibleChannels={getVisibleChannels()} title="💬 Thảo luận ban ngày" maxHeight={300} canSwitchToWolf={isWolf} />
         </>)
@@ -2655,7 +3886,7 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
         );
     }
 
-    // DAY - DEFENSE (60s for the accused to defend themselves)
+    // DAY - DEFENSE (30s for the accused to defend themselves)
     if (phase === 'day-defense') {
         const defensePlayer = playerList.find(p => p.uid === gs.defenseTarget);
 
@@ -2816,7 +4047,15 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                     <p className="text-sm text-[#6b5f50] mt-1 italic">Vai trò bị ẩn cho đến khi kết thúc trò chơi</p>
                 </div>
             ) : <p className="text-base text-[#6b5f50] mb-3">Không ai bị treo cổ.</p>}
-            {isHost && <button onClick={startNight} className="px-6 py-2.5 ww-btn-night text-base">🌙 Đêm tiếp theo</button>}
+            {isHost ? (
+                <button onClick={() => { if (!resolvingRef.current) { resolvingRef.current = true; startNight().finally(() => resolvingRef.current = false); } }} className="px-6 py-2.5 ww-btn-night text-base mx-auto flex items-center gap-2">
+                    🌙 Đêm tiếp theo {resultCountdown !== null && <span className="text-[#e8dcc8]/70">({resultCountdown}s)</span>}
+                </button>
+            ) : (
+                <div className="text-center font-bold text-[#8b9dc3] mt-3 animate-pulse">
+                    🌙 Đêm tiếp theo bắt đầu sau {resultCountdown !== null ? resultCountdown : 10} giây...
+                </div>
+            )}
         </>, true, "text-center")
     );
 
@@ -2828,11 +4067,11 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
         const getRoleIcon = (uid: string) => gs.roles?.[uid]?.icon || '❓';
 
         return renderPhaseLayout(<>
-            <div className="text-7xl mb-4 ww-flicker">{gs.gameResult?.includes('dân') ? '🏡' : '🐺'}</div>
+            <div className="text-7xl mb-4 ww-flicker">{gs.gameResult?.includes('chán đời') ? '😵' : gs.gameResult?.includes('tẩm dầu') ? '🔥' : gs.gameResult?.includes('dân') ? '🏡' : '🐺'}</div>
             <h3 className="ww-title text-2xl mb-3">{gs.gameResult}</h3>
             <div className="p-3 ww-panel rounded-xl text-left mb-4">
                 <h4 className="text-sm font-bold text-[#c9873a] uppercase tracking-wider mb-2" style={{ fontFamily: "'Playfair Display', serif" }}>📋 Danh sách nhân vật</h4>
-                {playerList.map(p => { const r = gs.roles?.[p.uid]; return <div key={p.uid} className="flex items-center gap-2 py-1 text-base"><span>{r?.icon}</span><span className={clsx(!r?.alive && "line-through text-[#6b5f50]")}>{p.name}</span><span className="text-sm text-[#6b5f50]">({r?.role})</span>{!r?.alive && <Skull size={12} className="text-[#c62828]" />}</div>; })}
+                {allPlayers.map(p => { const r = gs.roles?.[p.uid]; const showBotLabel = isBot(p.uid) && !isStealthBot(p.uid); return <div key={p.uid} className="flex items-center gap-2 py-1 text-base"><span>{r?.icon}</span><span className={clsx(!r?.alive && "line-through text-[#6b5f50]")}>{p.name}{showBotLabel && <span className="text-[9px] ml-1 text-[#6b8ab5]">(AI)</span>}</span><span className="text-sm text-[#6b5f50]">({r?.role})</span>{!r?.alive && <Skull size={12} className="text-[#c62828]" />}</div>; })}
             </div>
             {gameLog.length > 0 && (<div className="ww-panel rounded-xl text-left mb-4 overflow-hidden">
                 <h4 className="text-sm font-bold text-[#c9873a] uppercase tracking-wider p-3 pb-2" style={{ fontFamily: "'Playfair Display', serif" }}>📜 Diễn biến trận đấu</h4>
@@ -2847,6 +4086,10 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                             {ev.guardTarget && (<div className="flex items-start gap-1.5"><span className="shrink-0">🛡️</span><span>Bảo vệ che chở <strong className="text-[#e8dcc8]">{getName(ev.guardTarget)}</strong></span></div>)}
                             {ev.witchSave && (<div className="flex items-start gap-1.5"><span className="shrink-0">🧪</span><span className="text-emerald-400">Phù thủy dùng bình cứu</span></div>)}
                             {ev.witchKill && (<div className="flex items-start gap-1.5"><span className="shrink-0">☠️</span><span>Phù thủy đầu độc <strong className="text-[#c62828]">{getName(ev.witchKill)}</strong></span></div>)}
+                            {ev.arsonistAction === 'oil' && ev.arsonistTarget && (<div className="flex items-start gap-1.5"><span className="shrink-0">🛢️</span><span>Kẻ tẩm dầu tẩm dầu <strong className="text-[#e8dcc8]">{getName(ev.arsonistTarget)}</strong></span></div>)}
+                            {ev.arsonistAction === 'ignite' && ev.arsonistBurned?.length > 0 && (<div className="flex items-start gap-1.5"><span className="shrink-0">🔥</span><span className="text-orange-400">Kẻ tẩm dầu châm lửa! Thiêu rụi: {ev.arsonistBurned.map((uid: string) => getName(uid)).join(', ')}</span></div>)}
+                            {ev.hunterPinned && (<div className="flex items-start gap-1.5"><span className="shrink-0">🎯</span><span>Thợ săn ghim mục tiêu <strong className="text-[#e8dcc8]">{getName(ev.hunterPinned)}</strong></span></div>)}
+                            {ev.hunterTarget && (<div className="flex items-start gap-1.5"><span className="shrink-0">🏹</span><span>Thợ săn tử nạn, kéo theo <strong className="text-[#c62828]">{getName(ev.hunterTarget)}</strong></span></div>)}
                             {ev.killed?.length > 0 ? (<div className="flex items-start gap-1.5 pt-0.5 border-t border-white/5"><span className="shrink-0">💀</span><span className="text-[#c62828]">{ev.killed.map((uid: string) => `${getName(uid)} (${getRoleIcon(uid)} ${getRole(uid)})`).join(', ')} đã chết</span></div>) : (<div className="flex items-start gap-1.5 pt-0.5 border-t border-white/5"><span className="shrink-0">✨</span><span className="text-emerald-400">Không ai chết</span></div>)}
                         </div>) : (<div className="space-y-1 text-[12px] text-[#b0a898]">
                             {ev.votes && Object.keys(ev.votes).length > 0 && (<div className="flex items-start gap-1.5"><span className="shrink-0">🗳️</span><span>{Object.entries(ev.votes as Record<string, string>).map(([voter, target]) => (<span key={voter} className="inline-block mr-2"><span className="text-[#e8dcc8]">{getName(voter)}</span><span className="text-[#6b5f50]"> → </span><span className="text-[#e8dcc8]">{getName(target)}</span></span>))}</span></div>)}
@@ -2856,7 +4099,12 @@ const OnlineWerewolf: React.FC<{ room: GameRoom; myUid: string; myName: string; 
                     </div>))}
                 </div>
             </div>)}
-            {isHost && <button onClick={resetGame} className="px-6 py-3 ww-btn-primary flex items-center gap-2 mx-auto"><RotateCcw size={16} /> Chơi lại</button>}
+            {autoResetTimeLeft !== null && (
+                <div className="mb-4">
+                    <p className="text-sm font-medium text-[#c9873a] animate-pulse">Tự động bắt đầu ván mới sau {autoResetTimeLeft}s...</p>
+                </div>
+            )}
+            {isHost && <button onClick={resetGame} className="px-6 py-3 ww-btn-primary flex items-center gap-2 mx-auto"><RotateCcw size={16} /> Chơi lại ngay ({autoResetTimeLeft}s)</button>}
             {!isHost && <p className="text-sm text-[#6b5f50] mt-2">Đợi chủ phòng bắt đầu ván mới...</p>}
             <GameChat roomId={room.id} myUid={myUid} myName={myName} myAvatar={myAvatar} channel={getChatChannel()} visibleChannels={getVisibleChannels()} canSwitchToWolf={isWolf} />
             {renderStats()}

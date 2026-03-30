@@ -28,7 +28,7 @@ const MeetingSchedule: React.FC = () => {
     );
 
     useEffect(() => {
-        const interval = setInterval(fetchSheetData, 60000); // Auto refresh every minute
+        const interval = setInterval(fetchSheetData, 300000); // Auto refresh every 5 minutes (was 60s)
         return () => clearInterval(interval);
     }, [fetchSheetData]);
 

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Tag, Box, Share2, PenLine, Sparkles, Search, Filter, XCircle, Clock, UserCheck, CheckCircle2, AlertCircle, Loader2, ArrowUpDown, Package, MessageCircle } from 'lucide-react';
 import { clsx } from 'clsx';
-import { supabase } from '../../lib/supabase';
-import type { SupabaseDesignTicket } from '../../lib/supabase';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, collection, query, orderBy, onSnapshot } from '@/lib/firestore';
+import { db } from '../../lib/firebase';
+
 import DesignTicketStats from './DesignTicketStats';
 import DesignTicketPopup from './DesignTicketPopup';
 import { useAuth } from '../../context/AuthContext';
@@ -122,139 +122,75 @@ const DesignOrdersManager: React.FC = () => {
     const [categoryFilter, setCategoryFilter] = useState('all');
     const [sortNewestFirst, setSortNewestFirst] = useState(true);
 
-    // Load tickets from Supabase
+    // Load tickets — Firestore PRIMARY with realtime
     useEffect(() => {
         setLoading(true);
         setError('');
 
-        const loadTickets = async () => {
-            try {
-                const { data, error: supaErr } = await supabase
-                    .from('design_tickets')
-                    .select('*')
-                    .order('created_at', { ascending: false });
+        const ticketsRef = collection(db, 'design_tickets');
+        const q = query(ticketsRef, orderBy('createdAt', 'desc'));
+        const unsubTickets = onSnapshot(q, (snapshot) => {
+            const mapped = snapshot.docs.map(doc => {
+                const t = doc.data();
+                return {
+                    id: doc.id,
+                    ticketCode: t.ticketCode || '',
+                    category: (t.category || 'label-bag') as DesignTicket['category'],
+                    action: (t.action || 'new') as DesignTicket['action'],
+                    brandName: t.brandName || '',
+                    contactName: t.contactName || '',
+                    contactPhone: t.contactPhone || '',
+                    contactEmail: t.contactEmail || '',
+                    contactAddress: t.contactAddress || '',
+                    description: t.description || '',
+                    status: (t.status || 'open') as DesignTicket['status'],
+                    revisionRound: t.revisionRound || 0,
+                    createdAt: t.createdAt || null,
+                    updatedAt: t.updatedAt || null,
+                    completedAt: t.completedAt || null,
+                    assignedTo: t.assignedTo || '',
+                    formData: (t.formData || {}) as Record<string, string>,
+                    imageUrls: (t.imageUrls || []) as string[],
+                };
+            });
+            setTickets(mapped);
+            setLoading(false);
+            setError('');
+        }, (err) => {
+            console.error('[Firestore] Ticket load error:', err);
+            setError('Lỗi tải dữ liệu ticket');
+            setLoading(false);
+        });
 
-                if (supaErr) throw supaErr;
-                if (data) {
-                    setTickets(data.map((t: SupabaseDesignTicket) => ({
-                        id: t.id,
-                        ticketCode: t.ticket_code,
-                        category: t.category as DesignTicket['category'],
-                        action: t.action as DesignTicket['action'],
-                        brandName: t.brand_name || '',
-                        contactName: t.contact_name || '',
-                        contactPhone: t.contact_phone || '',
-                        contactEmail: t.contact_email || '',
-                        contactAddress: t.contact_address || '',
-                        description: t.description || '',
-                        status: t.status as DesignTicket['status'],
-                        revisionRound: t.revision_round || 0,
-                        createdAt: t.created_at || null,
-                        updatedAt: t.updated_at || null,
-                        completedAt: t.completed_at || null,
-                        assignedTo: t.assigned_to || '',
-                        formData: t.form_data as Record<string, string> || {},
-                        imageUrls: t.image_urls as string[] || [],
-                    })));
-                }
-            } catch (e: any) {
-                setError(e.message || 'Lỗi tải dữ liệu');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        loadTickets();
-
-        // Realtime subscription
-        const channel = supabase
-            .channel('design_tickets_admin')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'design_tickets' }, (payload) => {
-                if (payload.eventType === 'INSERT') {
-                    const t = payload.new as SupabaseDesignTicket;
-                    setTickets(prev => [{
-                        id: t.id,
-                        ticketCode: t.ticket_code,
-                        category: t.category as DesignTicket['category'],
-                        action: t.action as DesignTicket['action'],
-                        brandName: t.brand_name || '',
-                        contactName: t.contact_name || '',
-                        contactPhone: t.contact_phone || '',
-                        contactEmail: t.contact_email || '',
-                        contactAddress: t.contact_address || '',
-                        description: t.description || '',
-                        status: t.status as DesignTicket['status'],
-                        revisionRound: t.revision_round || 0,
-                        createdAt: t.created_at || null,
-                        updatedAt: t.updated_at || null,
-                        completedAt: t.completed_at || null,
-                        assignedTo: t.assigned_to || '',
-                        formData: t.form_data as Record<string, string> || {},
-                        imageUrls: t.image_urls as string[] || [],
-                    }, ...prev]);
-                } else if (payload.eventType === 'UPDATE') {
-                    const t = payload.new as SupabaseDesignTicket;
-                    setTickets(prev => prev.map(tk => tk.id === t.id ? {
-                        ...tk,
-                        status: t.status as DesignTicket['status'],
-                        revisionRound: t.revision_round || 0,
-                        updatedAt: t.updated_at || null,
-                        completedAt: t.completed_at || null,
-                        assignedTo: t.assigned_to || '',
-                        brandName: t.brand_name || tk.brandName,
-                        description: t.description || tk.description,
-                    } : tk));
-                } else if (payload.eventType === 'DELETE') {
-                    setTickets(prev => prev.filter(tk => tk.id !== payload.old.id));
-                }
-            })
-            .subscribe();
-
-        return () => { supabase.removeChannel(channel); };
+        return () => unsubTickets();
     }, []);
 
-    // ── Fetch message counts per ticket + realtime ──
+    // ── Fetch message counts per ticket (Firestore) ──
     useEffect(() => {
-        const loadCounts = async () => {
-            // Get all messages grouped by ticket_id with created_at
-            const { data } = await supabase
-                .from('ticket_messages')
-                .select('ticket_id, created_at')
-                .order('created_at', { ascending: false });
-
-            if (data) {
-                const counts: Record<string, { total: number; lastMessageAt: string }> = {};
-                for (const m of data) {
-                    if (!counts[m.ticket_id]) {
-                        counts[m.ticket_id] = { total: 0, lastMessageAt: m.created_at };
+        // Only subscribe if we have tickets
+        if (tickets.length === 0) return;
+        
+        const unsubscribers = tickets.map(t => {
+            const messagesRef = collection(db, 'ticket_chats', t.id, 'messages');
+            return onSnapshot(messagesRef, (snapshot) => {
+                const total = snapshot.size;
+                let lastMessageAt = '';
+                snapshot.docs.forEach(d => {
+                    const ts = d.data().createdAt;
+                    if (ts) {
+                        const dateStr = typeof ts === 'string' ? ts : ts.toDate?.()?.toISOString() || '';
+                        if (dateStr > lastMessageAt) lastMessageAt = dateStr;
                     }
-                    counts[m.ticket_id].total++;
-                }
-                setMessageCounts(counts);
-            }
-        };
-        loadCounts();
-
-        // Listen for new messages across all tickets
-        const ch = supabase
-            .channel('design_unread_counts')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ticket_messages' }, (p) => {
-                const m = p.new as { ticket_id: string; created_at: string };
-                setMessageCounts(prev => {
-                    const existing = prev[m.ticket_id] || { total: 0, lastMessageAt: '' };
-                    return {
-                        ...prev,
-                        [m.ticket_id]: {
-                            total: existing.total + 1,
-                            lastMessageAt: m.created_at,
-                        },
-                    };
                 });
-            })
-            .subscribe();
+                setMessageCounts(prev => ({
+                    ...prev,
+                    [t.id]: { total, lastMessageAt },
+                }));
+            });
+        });
 
-        return () => { supabase.removeChannel(ch); };
-    }, []);
+        return () => unsubscribers.forEach(unsub => unsub());
+    }, [tickets]);
 
     // Filtered & sorted tickets
     const filteredTickets = useMemo(() => {

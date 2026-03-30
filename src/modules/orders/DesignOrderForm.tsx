@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Tag, Box, Share2, PenLine, Sparkles, ArrowLeft, Loader2, AlertCircle, Shield, Send, Paperclip, MessageCircle, Clock, Hash, ChevronRight, ChevronLeft, ChevronDown, Upload, Search, Filter, XCircle, X, UserCheck, Calendar, Check, Download, FileText, ExternalLink, Eye, Archive, PlayCircle, RotateCcw, CheckCircle2, ThumbsUp } from 'lucide-react';
+import { Tag, Box, Share2, PenLine, Sparkles, ArrowLeft, Loader2, AlertCircle, Shield, Paperclip, Clock, Hash, ChevronRight, ChevronLeft, ChevronDown, Upload, Search, Filter, XCircle, X, UserCheck, Calendar, Check, Download, FileText, ExternalLink, Eye, Archive, PlayCircle, RotateCcw, CheckCircle2, ThumbsUp } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Timestamp } from 'firebase/firestore';
-import { supabase } from '../../lib/supabase';
-import type { SupabaseDesignTicket, SupabaseTicketMessage } from '../../lib/supabase';
+import { Timestamp, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, where, setDoc } from '@/lib/firestore';
+import { db } from '../../lib/firebase';
 import { uploadFileToR2 } from '../../services/r2UploadService';
+import { createTicket as createTicketOnSheet, updateTicket as updateTicketOnSheet, isConfigured as isSheetConfigured } from '../../services/designTicketSheetService';
 import { useAuth } from '../../context/AuthContext';
 import { initializeGemini } from '../../lib/gemini';
+
 // Design ticket handlers (only specific staff)
 const DESIGN_HANDLERS = ['Nguyễn Ngọc Sơn', 'Hà Ngọc Doanh'];
 import DesignTicketStats from './DesignTicketStats';
+import FloatingTicketChat from '../../components/FloatingTicketChat';
 
 // Admin emails who can manage tickets
 const ADMIN_EMAILS = ['cambridgeorg.209@gmail.com', 'trolitct@gmail.com'];
@@ -45,15 +47,7 @@ interface DesignTicket {
     imageUrls?: string[];
 }
 
-interface ChatMessage {
-    id: string;
-    text: string;
-    sender: string;
-    senderRole: 'customer' | 'admin';
-    senderEmail?: string;
-    imageUrl?: string;
-    createdAt: Timestamp | string | null;
-}
+
 
 // ============================================================
 // HELPERS
@@ -240,327 +234,6 @@ const FORM_FIELDS: Record<string, FormField[]> = {
         { label: 'Link thiết kế cũ', placeholder: 'https://...', type: 'text' },
         { label: 'Nội dung cần chỉnh sửa', placeholder: 'Chi tiết phần cần thay đổi...', type: 'textarea', required: true },
     ],
-};
-
-// ============================================================
-// CHAT COMPONENT
-// ============================================================
-const TicketChat: React.FC<{ ticketId: string; ticketCode: string; customerName: string; isAdmin?: boolean; adminEmail?: string; adminName?: string }> = ({ ticketId, ticketCode, customerName, isAdmin, adminEmail }) => {
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
-    const [newMessage, setNewMessage] = useState('');
-    const [sending, setSending] = useState(false);
-    const [chatError, setChatError] = useState('');
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-    const chatContainerRef = useRef<HTMLDivElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [previewImg, setPreviewImg] = useState<string | null>(null);
-
-    const senderRole = isAdmin ? 'admin' : 'customer';
-    const displayName = isAdmin ? 'Admin' : customerName;
-
-    // ── Supabase Realtime subscription for messages ──
-    useEffect(() => {
-        // Load existing messages
-        const loadMessages = async () => {
-            try {
-                const { data, error } = await supabase
-                    .from('ticket_messages')
-                    .select('*')
-                    .eq('ticket_id', ticketId)
-                    .order('created_at', { ascending: true });
-                if (error) throw error;
-                if (data) {
-                    setMessages(data.map((m: SupabaseTicketMessage) => ({
-                        id: m.id,
-                        text: m.text,
-                        sender: m.sender,
-                        senderRole: m.sender_role,
-                        senderEmail: m.sender_email || undefined,
-                        imageUrl: m.image_url || undefined,
-                        createdAt: m.created_at,
-                    })));
-                    setChatError('');
-                }
-            } catch (err: any) {
-                console.error('[Chat] Load failed:', err);
-                setChatError('⚠️ Không thể tải tin nhắn. Vui lòng tải lại trang.');
-            }
-        };
-        loadMessages();
-
-        // Realtime subscription for new messages
-        const channel = supabase
-            .channel(`messages-${ticketId}`)
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'ticket_messages',
-                filter: `ticket_id=eq.${ticketId}`,
-            }, (payload) => {
-                const m = payload.new as SupabaseTicketMessage;
-                const newMsg: ChatMessage = {
-                    id: m.id,
-                    text: m.text,
-                    sender: m.sender,
-                    senderRole: m.sender_role,
-                    senderEmail: m.sender_email || undefined,
-                    imageUrl: m.image_url || undefined,
-                    createdAt: m.created_at,
-                };
-                setMessages(prev => {
-                    // Skip if already in list (duplicate event)
-                    if (prev.some(p => p.id === m.id)) return prev;
-                    // Find and replace the matching optimistic message (same text + same role)
-                    const localIdx = prev.findIndex(p => p.id.startsWith('local_') && p.text === m.text && p.senderRole === m.sender_role);
-                    if (localIdx !== -1) {
-                        const updated = [...prev];
-                        updated[localIdx] = newMsg;
-                        return updated;
-                    }
-                    // New message from other side - just append
-                    return [...prev, newMsg];
-                });
-                setChatError('');
-            })
-            .subscribe();
-
-        return () => { supabase.removeChannel(channel); };
-    }, [ticketId]);
-
-    useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
-
-    // ── Send message via Supabase ──
-    const handleSend = useCallback(async () => {
-        if (!newMessage.trim() || sending) return;
-        setSending(true);
-        setChatError('');
-        const msgText = newMessage.trim();
-        // Optimistic local message
-        const optimisticMsg: ChatMessage = {
-            id: `local_${Date.now()}`,
-            text: msgText,
-            sender: displayName,
-            senderRole,
-            createdAt: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, optimisticMsg]);
-        setNewMessage('');
-        try {
-            const { error } = await supabase.from('ticket_messages').insert({
-                ticket_id: ticketId,
-                text: msgText,
-                sender: isAdmin ? 'Admin' : displayName,
-                sender_role: senderRole,
-                sender_email: isAdmin ? adminEmail : null,
-            });
-            if (error) throw error;
-        } catch (e: any) {
-            console.error('[Chat] Send failed:', e);
-            setChatError('⚠️ Gửi tin nhắn thất bại. Vui lòng thử lại.');
-            setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id));
-            setNewMessage(msgText);
-        } finally { setSending(false); }
-    }, [newMessage, ticketId, sending, displayName, senderRole, isAdmin, adminEmail]);
-
-    // ── Paste image via Supabase ──
-    const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-        const items = e.clipboardData?.items;
-        if (!items) return;
-        for (const item of Array.from(items)) {
-            if (item.type.startsWith('image/')) {
-                e.preventDefault();
-                const blob = item.getAsFile();
-                if (!blob) return;
-                setSending(true);
-                try {
-                    const file = new File([blob], `paste_${Date.now()}.png`, { type: blob.type });
-                    const result = await uploadFileToR2(file, 'design_ticket_chat');
-                    const { error } = await supabase.from('ticket_messages').insert({
-                        ticket_id: ticketId,
-                        text: '📷 Hình ảnh',
-                        sender: isAdmin ? 'Admin' : displayName,
-                        sender_role: senderRole,
-                        sender_email: isAdmin ? adminEmail : null,
-                        image_url: result.url,
-                    });
-                    if (error) throw error;
-                } catch (err: any) {
-                    console.error('[Chat] Paste image failed:', err);
-                    setChatError(`⚠️ Gửi hình ảnh thất bại: ${err.message || 'Lỗi không xác định'}`);
-                } finally { setSending(false); }
-                break;
-            }
-        }
-    }, [ticketId, displayName, senderRole, isAdmin, adminEmail]);
-
-    // ── File upload via Supabase ──
-    const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setSending(true);
-        try {
-            const result = await uploadFileToR2(file, 'design_ticket_chat');
-            const label = file.type.startsWith('image/') ? `📷 ${file.name}` : `📎 ${file.name}`;
-            const { error } = await supabase.from('ticket_messages').insert({
-                ticket_id: ticketId,
-                text: label,
-                sender: isAdmin ? 'Admin' : displayName,
-                sender_role: senderRole,
-                sender_email: isAdmin ? adminEmail : null,
-                image_url: result.url,
-            });
-            if (error) throw error;
-        } catch (err: any) {
-            console.error('[Chat] File upload failed:', err);
-            setChatError(`⚠️ Gửi file thất bại: ${err.message || 'Lỗi không xác định'}`);
-        } finally { setSending(false); }
-        if (fileInputRef.current) fileInputRef.current.value = '';
-    }, [ticketId, displayName, senderRole, isAdmin, adminEmail]);
-
-    const formatTime = (ts: Timestamp | string | null) => {
-        if (!ts) return '';
-        const d = typeof ts === 'string' ? new Date(ts) : ts.toDate();
-        return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' • ' + d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-    };
-
-    return (
-        <>
-        <div className="flex flex-col h-full">
-            {/* Chat header */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200/50 dark:border-white/10 bg-white/50 dark:bg-slate-800/50 backdrop-blur-xl">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
-                    <MessageCircle size={14} className="text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                    <p className="text-xs font-black text-slate-800 dark:text-white">Trao đổi Ticket</p>
-                    <p className="text-[10px] text-slate-400 font-mono">{ticketCode}</p>
-                </div>
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/50 dark:border-emerald-500/20">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">ONLINE</span>
-                </div>
-            </div>
-
-            {/* Chat error banner */}
-            {chatError && (
-                <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200/50 dark:border-amber-500/20">
-                    <AlertCircle size={12} className="text-amber-500 shrink-0" />
-                    <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium flex-1">{chatError}</span>
-                    <button onClick={() => { setChatError(''); window.location.reload(); }} className="text-[9px] font-bold text-amber-600 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 hover:bg-amber-200 transition-colors shrink-0">↻</button>
-                </div>
-            )}
-
-            {/* Messages */}
-            <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[200px] max-h-[400px] custom-scrollbar">
-                {messages.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                        <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3">
-                            <MessageCircle size={24} className="text-slate-300 dark:text-slate-600" />
-                        </div>
-                        <p className="text-xs font-bold text-slate-400 dark:text-slate-500">Chưa có tin nhắn nào</p>
-                        <p className="text-[10px] text-slate-300 dark:text-slate-600 mt-1">Hãy bắt đầu cuộc trò chuyện!</p>
-                    </div>
-                )}
-                {messages.map((msg) => {
-                    const isCustomer = msg.senderRole === 'customer';
-                    const internalAdminName = msg.senderEmail ? (ADMIN_NAMES[msg.senderEmail] || msg.sender) : msg.sender;
-                    // Admin view: show real admin name; Customer view: always show "Admin"
-                    const showName = isCustomer ? msg.sender : (isAdmin ? internalAdminName : 'Admin');
-                    // isMe = my own messages go RIGHT
-                    const isMe = isAdmin ? !isCustomer : isCustomer;
-                    return (
-                        <div key={msg.id} className={clsx("flex gap-2", isMe ? "flex-row-reverse" : "flex-row")}>
-                            <div className={clsx(
-                                "w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-black shadow-sm",
-                                isMe
-                                    ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white"
-                                    : "bg-gradient-to-br from-emerald-400 to-teal-500 text-white"
-                            )}>
-                                {showName?.charAt(0)?.toUpperCase() || '?'}
-                            </div>
-                            <div className={clsx(
-                                "max-w-[75%] rounded-2xl px-3.5 py-2.5 shadow-sm",
-                                isMe
-                                    ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-tr-md"
-                                    : "bg-white/80 dark:bg-slate-700/80 backdrop-blur-xl border border-slate-200/50 dark:border-white/10 text-slate-800 dark:text-slate-200 rounded-tl-md"
-                            )}>
-                                <p className={clsx("text-[10px] font-bold mb-1", isMe ? "text-white/70 text-right" : "text-slate-400 dark:text-slate-500")}>
-                                    {showName}
-                                    {isAdmin && !isCustomer && msg.senderEmail && (
-                                        <span className="ml-1.5 text-[8px] font-medium opacity-50">(nội bộ)</span>
-                                    )}
-                                </p>
-                                {msg.imageUrl && msg.text?.startsWith('📷') && (
-                                    <img src={msg.imageUrl} alt="Uploaded" className="rounded-xl max-w-full max-h-48 object-cover mb-2 border border-white/20 cursor-pointer hover:opacity-90 transition-opacity" onClick={(e) => { e.stopPropagation(); setPreviewImg(msg.imageUrl!); }} />
-                                )}
-                                {msg.imageUrl && msg.text?.startsWith('📎') && (
-                                    <div 
-                                        onClick={() => window.open(msg.imageUrl, '_blank')}
-                                        className="flex items-center gap-2 p-3 mb-2 rounded-xl bg-slate-900/10 dark:bg-black/20 border border-slate-200/50 dark:border-white/10 cursor-pointer hover:bg-slate-900/20 dark:hover:bg-black/40 transition-colors"
-                                    >
-                                        <Paperclip size={18} className="text-violet-500 shrink-0" />
-                                        <span className="text-sm font-medium truncate flex-1 leading-none">{msg.text.replace('📎 ', '')}</span>
-                                        <Download size={14} className="text-slate-400 shrink-0" />
-                                    </div>
-                                )}
-                                <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{msg.text.startsWith('📷 ') || msg.text.startsWith('📎 ') ? '' : msg.text}</p>
-                                <p className={clsx("text-[9px] mt-1.5", isMe ? "text-white/50 text-right" : "text-slate-300 dark:text-slate-600")}>
-                                    {formatTime(msg.createdAt)}
-                                </p>
-                            </div>
-                        </div>
-                    );
-                })}
-                <div ref={messagesEndRef} />
-            </div>
-
-            {/* Input area */}
-            <div className="border-t border-slate-200/50 dark:border-white/10 p-3 bg-white/50 dark:bg-slate-800/50 backdrop-blur-xl">
-                <div className="flex gap-2 items-end">
-                    <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-all shrink-0"
-                    >
-                        <Paperclip size={16} />
-                    </button>
-                    <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
-                    <div className="flex-1 relative">
-                        <textarea
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                            onPaste={handlePaste}
-                            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                            placeholder="Nhập tin nhắn... (Ctrl+V để paste ảnh)"
-                            rows={1}
-                            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-700/80 border border-slate-200/50 dark:border-white/10 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30 resize-none transition-all"
-                        />
-                    </div>
-                    <button
-                        type="button"
-                        onClick={handleSend}
-                        disabled={!newMessage.trim() || sending}
-                        className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-violet-500/30 hover:shadow-xl disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
-                    >
-                        {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                    </button>
-                </div>
-            </div>
-        </div>
-
-            {/* Image Lightbox */}
-            {previewImg && (
-                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setPreviewImg(null)}>
-                    <button onClick={() => setPreviewImg(null)} className="absolute top-4 right-4 w-10 h-10 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-all z-10">
-                        <X size={20} />
-                    </button>
-                    <img src={previewImg} alt="Preview" className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl object-contain" onClick={e => e.stopPropagation()} />
-                </div>
-            )}
-        </>
-    );
 };
 
 // ============================================================
@@ -1033,6 +706,61 @@ const DesignOrderForm: React.FC = () => {
 
     // File viewer modal
     const [viewingFile, setViewingFile] = useState<{url: string, name: string} | null>(null);
+    const [viewerZoom, setViewerZoom] = useState(1);
+    const [viewerPos, setViewerPos] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const dragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
+    const lastPinchDist = useRef(0);
+
+    // Reset zoom when file changes
+    useEffect(() => { setViewerZoom(1); setViewerPos({ x: 0, y: 0 }); }, [viewingFile]);
+
+    const handleViewerWheel = useCallback((e: React.WheelEvent) => {
+        e.preventDefault();
+        setViewerZoom(z => Math.min(5, Math.max(1, z - e.deltaY * 0.002)));
+    }, []);
+
+    const handleViewerTouchStart = useCallback((e: React.TouchEvent) => {
+        if (e.touches.length === 2) {
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            lastPinchDist.current = Math.sqrt(dx * dx + dy * dy);
+        } else if (e.touches.length === 1 && viewerZoom > 1) {
+            setIsDragging(true);
+            dragStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, posX: viewerPos.x, posY: viewerPos.y };
+        }
+    }, [viewerZoom, viewerPos]);
+
+    const handleViewerTouchMove = useCallback((e: React.TouchEvent) => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (lastPinchDist.current > 0) {
+                const scale = dist / lastPinchDist.current;
+                setViewerZoom(z => Math.min(5, Math.max(1, z * scale)));
+            }
+            lastPinchDist.current = dist;
+        } else if (e.touches.length === 1 && isDragging) {
+            setViewerPos({
+                x: dragStart.current.posX + (e.touches[0].clientX - dragStart.current.x),
+                y: dragStart.current.posY + (e.touches[0].clientY - dragStart.current.y),
+            });
+        }
+    }, [isDragging]);
+
+    const handleViewerTouchEnd = useCallback(() => { setIsDragging(false); lastPinchDist.current = 0; }, []);
+
+    const handleViewerMouseDown = useCallback((e: React.MouseEvent) => {
+        if (viewerZoom > 1) { setIsDragging(true); dragStart.current = { x: e.clientX, y: e.clientY, posX: viewerPos.x, posY: viewerPos.y }; }
+    }, [viewerZoom, viewerPos]);
+
+    const handleViewerMouseMove = useCallback((e: React.MouseEvent) => {
+        if (isDragging) { setViewerPos({ x: dragStart.current.posX + (e.clientX - dragStart.current.x), y: dragStart.current.posY + (e.clientY - dragStart.current.y) }); }
+    }, [isDragging]);
+
+    const handleViewerMouseUp = useCallback(() => { setIsDragging(false); }, []);
 
     // AI Suggestion state
     const [aiLoadingField, setAiLoadingField] = useState<string | null>(null);
@@ -1227,75 +955,58 @@ Yêu cầu:
     const isAdmin = ADMIN_EMAILS.includes(userEmail);
     const adminName = ADMIN_NAMES[userEmail] || currentUser?.displayName || 'Admin';
 
-    // Load tickets from Supabase (with realtime subscription)
+    // Load tickets — Firestore PRIMARY with realtime
     const [ticketsLoading, setTicketsLoading] = useState(true);
     const [ticketsError, setTicketsError] = useState('');
     const [ticketsFromCache, setTicketsFromCache] = useState(false);
     useEffect(() => {
         setTicketsLoading(true);
         setTicketsError('');
-        // Initial load
-        const loadTickets = async () => {
-            try {
-                let query = supabase
-                    .from('design_tickets')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-                
-                if (!isAdmin && userEmail) {
-                    query = query.eq('contact_email', userEmail);
-                }
 
-                const { data, error } = await query;
-                if (error) throw error;
-                if (data) {
-                    setMyTickets(data.map((t: SupabaseDesignTicket) => ({
-                        id: t.id,
-                        ticketCode: t.ticket_code,
-                        category: t.category,
-                        action: t.action,
-                        brandName: t.brand_name,
-                        contactName: t.contact_name,
-                        contactPhone: t.contact_phone,
-                        contactEmail: t.contact_email,
-                        contactAddress: t.contact_address,
-                        formData: t.form_data,
-                        imageUrls: t.image_urls || [],
-                        description: t.description,
-                        status: t.status,
-                        revisionRound: t.revision_round,
-                        assignedTo: t.assigned_to,
-                        cancelReason: t.cancel_reason,
-                        createdAt: t.created_at,
-                        updatedAt: t.updated_at,
-                        completedAt: t.completed_at,
-                    } as any)));
-                    setTicketsFromCache(false);
-                }
-                setTicketsLoading(false);
-                setTicketsError('');
-            } catch (err: any) {
-                console.error('[Supabase] Ticket load error:', err);
-                setTicketsLoading(false);
-                setTicketsError(`Lỗi tải dữ liệu: ${err.message}`);
-            }
-        };
-        loadTickets();
+        const ticketsRef = collection(db, 'design_tickets');
+        let q;
+        if (!isAdmin && userEmail) {
+            q = query(ticketsRef, where('contactEmail', '==', userEmail), orderBy('createdAt', 'desc'));
+        } else {
+            q = query(ticketsRef, orderBy('createdAt', 'desc'));
+        }
 
-        // Realtime subscription for ticket changes
-        const channel = supabase
-            .channel('tickets-realtime')
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'design_tickets',
-            }, () => {
-                // Reload all tickets on any change
-                loadTickets();
-            })
-            .subscribe();
+        const unsubTickets = onSnapshot(q, (snapshot) => {
+            const mapped = snapshot.docs.map(d => {
+                const t = d.data();
+                return {
+                    id: d.id,
+                    ticketCode: t.ticketCode || '',
+                    category: t.category || 'label-bag',
+                    action: t.action || 'new',
+                    brandName: t.brandName || '',
+                    contactName: t.contactName || '',
+                    contactPhone: t.contactPhone || '',
+                    contactEmail: t.contactEmail || '',
+                    contactAddress: t.contactAddress || '',
+                    formData: t.formData || {},
+                    imageUrls: t.imageUrls || [],
+                    description: t.description || '',
+                    status: t.status || 'open',
+                    revisionRound: t.revisionRound || 0,
+                    assignedTo: t.assignedTo || '',
+                    cancelReason: t.cancelReason || '',
+                    createdAt: t.createdAt || null,
+                    updatedAt: t.updatedAt || null,
+                    completedAt: t.completedAt || null,
+                } as any;
+            });
+            setMyTickets(mapped);
+            setTicketsFromCache(false);
+            setTicketsLoading(false);
+            setTicketsError('');
+        }, (err) => {
+            console.error('[Firestore] Ticket load error:', err);
+            setTicketsLoading(false);
+            setTicketsError(`Lỗi tải dữ liệu: ${err.message}`);
+        });
 
-        return () => { supabase.removeChannel(channel); };
+        return () => unsubTickets();
     }, []);
 
     // Filtered tickets
@@ -1316,19 +1027,26 @@ Yêu cầu:
         });
     }, [myTickets, filterStatus, filterCategory, searchQuery]);
 
-    // Cancel ticket (Supabase)
+    // Cancel ticket
     const handleCancelTicket = async () => {
         if (!cancelModal || !cancelReason.trim()) return;
         try {
-            await supabase.from('design_tickets').update({
+            // Firestore first
+            await updateDoc(doc(db, 'design_tickets', cancelModal.ticketId), {
                 status: 'cancelled',
-                cancel_reason: cancelReason.trim(),
-            }).eq('id', cancelModal.ticketId);
-            await supabase.from('ticket_messages').insert({
-                ticket_id: cancelModal.ticketId,
+                cancelReason: cancelReason.trim(),
+                updatedAt: serverTimestamp(),
+            });
+            // Sheet backup (fire-and-forget)
+            if (isSheetConfigured()) {
+                updateTicketOnSheet(cancelModal.ticketCode, { status: 'cancelled' })
+                    .catch(e => console.warn('[Sheet] Cancel backup failed:', e));
+            }
+            await addDoc(collection(db, 'ticket_chats', cancelModal.ticketId, 'messages'), {
                 text: `❌ Đơn hàng ${cancelModal.ticketCode} đã bị hủy.\nLý do: ${cancelReason.trim()}`,
                 sender: 'Hệ thống',
-                sender_role: 'admin',
+                senderRole: 'admin',
+                createdAt: serverTimestamp(),
             });
             setCancelModal(null);
             setCancelReason('');
@@ -1338,41 +1056,54 @@ Yêu cầu:
         } catch (e) { console.error(e); }
     };
 
-    // Assign handler (Supabase)
+    // Assign handler
     const handleAssignHandler = async (handlerName: string) => {
         if (!assignModal) return;
         try {
-            await supabase.from('design_tickets').update({
-                assigned_to: handlerName,
-            }).eq('id', assignModal.ticketId);
-            await supabase.from('ticket_messages').insert({
-                ticket_id: assignModal.ticketId,
+            // Firestore first
+            await updateDoc(doc(db, 'design_tickets', assignModal.ticketId), {
+                assignedTo: handlerName,
+                updatedAt: serverTimestamp(),
+            });
+            // Sheet backup (fire-and-forget)
+            if (isSheetConfigured()) {
+                updateTicketOnSheet(assignModal.ticketId, { assignedTo: handlerName })
+                    .catch(e => console.warn('[Sheet] Assign backup failed:', e));
+            }
+            await addDoc(collection(db, 'ticket_chats', assignModal.ticketId, 'messages'), {
                 text: `👤 Người xử lý đã được phân công: ${handlerName}\nPhân công bởi: ${adminName}`,
                 sender: 'Hệ thống',
-                sender_role: 'admin',
+                senderRole: 'admin',
+                createdAt: serverTimestamp(),
             });
             setAssignModal(null);
         } catch (e) { console.error(e); }
     };
 
-    // Update ticket status (generic handler)
+    // Update ticket status
     const [statusUpdating, setStatusUpdating] = useState(false);
     const handleUpdateStatus = async (ticketId: string, ticketCode: string, newStatus: string, extraMessage?: string) => {
         if (statusUpdating) return;
         setStatusUpdating(true);
         try {
-            const updateData: Record<string, unknown> = { status: newStatus, updated_at: new Date().toISOString() };
-            // Increment revision_round when going to revision
+            const updateData: Record<string, unknown> = { status: newStatus, updatedAt: serverTimestamp() };
             if (newStatus === 'revision') {
                 const currentTicket = myTickets.find(t => t.id === ticketId);
-                updateData.revision_round = (currentTicket?.revisionRound || 0) + 1;
+                updateData.revisionRound = (currentTicket?.revisionRound || 0) + 1;
             }
             if (newStatus === 'completed') {
-                updateData.completed_at = new Date().toISOString();
+                updateData.completedAt = serverTimestamp();
             }
-            await supabase.from('design_tickets').update(updateData).eq('id', ticketId);
 
-            // Status emoji/label map
+            // Firestore first
+            await updateDoc(doc(db, 'design_tickets', ticketId), updateData);
+
+            // Sheet backup (fire-and-forget)
+            if (isSheetConfigured()) {
+                updateTicketOnSheet(ticketCode, { status: newStatus })
+                    .catch(e => console.warn('[Sheet] Status backup failed:', e));
+            }
+
             const statusEmojis: Record<string, string> = {
                 'in-review': '🔍 Đang duyệt',
                 'revision': '🔄 Yêu cầu SXTC (Chỉnh sửa)',
@@ -1382,14 +1113,13 @@ Yêu cầu:
             const label = statusEmojis[newStatus] || newStatus;
             const senderRole = isAdmin ? 'admin' : 'customer';
             const senderName = isAdmin ? 'Admin' : (activeTicket?.contactName || 'Khách hàng');
-            await supabase.from('ticket_messages').insert({
-                ticket_id: ticketId,
+            await addDoc(collection(db, 'ticket_chats', ticketId, 'messages'), {
                 text: `${label}\n${extraMessage || `Trạng thái đơn hàng ${ticketCode} đã được cập nhật.`}`,
                 sender: senderName,
-                sender_role: senderRole,
+                senderRole: senderRole,
+                createdAt: serverTimestamp(),
             });
 
-            // Update local state
             if (activeTicket?.id === ticketId) {
                 setActiveTicket(prev => prev ? {
                     ...prev,
@@ -1449,8 +1179,6 @@ Yêu cầu:
         }
         setSubmitting(true); setError('');
 
-        const SHEET_WEBHOOK = 'https://script.google.com/macros/s/AKfycbzLlTLxa9hqObNmS4sbYNjAqAvMd68zeqpN6UJKGlM9pblH_K-fivpRyjW9Mf53rqloIQ/exec';
-
         try {
             const ticketCode = generateTicketCode(selectedCategory);
             // Extract all form data (excluding section headers)
@@ -1479,80 +1207,83 @@ Yêu cầu:
             };
 
             // =============================================
-            // STEP 1: Write to Google Sheet (PRIMARY — always reliable)
+            // STEP 1: Write to Firestore (PRIMARY database)
             // =============================================
+            // Strategy: pre-generate ID with doc() (instant), then
+            // await setDoc with timeout. If server ACK within 8s → great.
+            // If timeout → still show success (data in local cache, syncs later).
+            let ticketDocId = '';
             try {
-                await fetch(SHEET_WEBHOOK, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ticketCode,
-                        category: selectedCategory,
-                        action: selectedAction,
-                        brandName: ticketData.brandName,
-                        contactName: ticketData.contactName,
-                        contactPhone: ticketData.contactPhone,
-                        contactEmail: ticketData.contactEmail,
-                        contactAddress: ticketData.contactAddress,
-                        description: ticketData.description,
-                        imageUrls: ticketData.imageUrls.join(', '),
-                        status: 'open',
-                        createdAt: now,
-                        ...formData,
-                    }),
-                    mode: 'no-cors', // Apps Script requires no-cors from browser
+                const ticketsRef = collection(db, 'design_tickets');
+                const newDocRef = doc(ticketsRef); // instant ID generation
+                ticketDocId = newDocRef.id;
+                const nowTs = Timestamp.now();
+
+                const writePromise = setDoc(newDocRef, {
+                    ticketCode,
+                    category: selectedCategory,
+                    action: selectedAction,
+                    brandName: ticketData.brandName,
+                    contactName: ticketData.contactName,
+                    contactPhone: ticketData.contactPhone,
+                    contactEmail: ticketData.contactEmail,
+                    contactAddress: ticketData.contactAddress,
+                    formData,
+                    imageUrls: ticketData.imageUrls,
+                    description: ticketData.description,
+                    status: 'open',
+                    revisionRound: 0,
+                    createdAt: nowTs,
+                    updatedAt: nowTs,
                 });
-                // no-cors = opaque response, but request IS sent successfully
-                console.log(`[Sheet] ✅ Ticket ${ticketCode} sent to Google Sheet`);
-            } catch (sheetErr) {
-                console.warn('[Sheet] ⚠️ Sheet webhook failed:', sheetErr);
-                // Continue — Firestore might still work
+
+                // Wait up to 8s for server sync (for cross-device visibility)
+                // If timeout, data is still in local IndexedDB and will sync later
+                const timeoutPromise = new Promise<void>((resolve) =>
+                    setTimeout(() => {
+                        console.warn('[Firestore] Write timeout — data queued for sync');
+                        resolve();
+                    }, 8000)
+                );
+                await Promise.race([writePromise, timeoutPromise]);
+                console.log(`[Firestore] ✅ Ticket saved/queued: ${ticketDocId}`);
+
+                // Welcome message (fire-and-forget)
+                addDoc(collection(db, 'ticket_chats', ticketDocId, 'messages'), {
+                    text: `🎉 Ticket ${ticketCode} đã được tạo thành công!\n\nLoại: ${CATEGORY_CONFIG[selectedCategory].label} — ${ACTION_CONFIG[selectedAction].label}\nThương hiệu: ${ticketData.brandName}\n\nAdmin sẽ liên hệ bạn sớm nhất qua chat này. Hãy theo dõi ticket để cập nhật tiến độ!`,
+                    sender: 'Hệ thống',
+                    senderRole: 'admin',
+                    createdAt: Timestamp.now(),
+                }).catch(err => console.warn('[Firestore] Welcome msg failed:', err));
+            } catch (firestoreErr: any) {
+                console.error(`[Firestore] ❌ Insert failed:`, firestoreErr);
+                throw new Error('Không thể lưu ticket. Vui lòng thử lại.');
             }
 
             // =============================================
-            // STEP 2: Write to Supabase (PRIMARY database)
+            // STEP 2: Backup to Google Sheet (fire-and-forget, non-blocking)
             // =============================================
-            let supabaseId = '';
-            try {
-                const { data: insertedRow, error: supaErr } = await supabase
-                    .from('design_tickets')
-                    .insert({
-                        ticket_code: ticketCode,
-                        category: selectedCategory,
-                        action: selectedAction,
-                        brand_name: ticketData.brandName,
-                        contact_name: ticketData.contactName,
-                        contact_phone: ticketData.contactPhone,
-                        contact_email: ticketData.contactEmail,
-                        contact_address: ticketData.contactAddress,
-                        form_data: formData,
-                        image_urls: ticketData.imageUrls,
-                        description: ticketData.description,
-                        status: 'open',
-                    })
-                    .select('id')
-                    .single();
-                if (supaErr) throw supaErr;
-                supabaseId = insertedRow.id;
-                console.log(`[Supabase] ✅ Ticket saved: ${supabaseId}`);
-
-                // Welcome message
-                supabase.from('ticket_messages').insert({
-                    ticket_id: supabaseId,
-                    text: `🎉 Ticket ${ticketCode} đã được tạo thành công!\n\nLoại: ${CATEGORY_CONFIG[selectedCategory].label} — ${ACTION_CONFIG[selectedAction].label}\nThương hiệu: ${ticketData.brandName}\n\nAdmin sẽ liên hệ bạn sớm nhất qua chat này. Hãy theo dõi ticket để cập nhật tiến độ!`,
-                    sender: 'Hệ thống',
-                    sender_role: 'admin',
-                }).then(); // fire-and-forget
-            } catch (supaErr: any) {
-                console.error(`[Supabase] ❌ Insert failed:`, supaErr);
-                throw new Error('Không thể lưu ticket. Vui lòng thử lại.');
+            if (isSheetConfigured()) {
+                createTicketOnSheet({
+                    category: selectedCategory,
+                    action: selectedAction,
+                    brandName: ticketData.brandName,
+                    contactName: ticketData.contactName,
+                    contactPhone: ticketData.contactPhone,
+                    contactEmail: ticketData.contactEmail,
+                    contactAddress: ticketData.contactAddress,
+                    description: ticketData.description,
+                    formData,
+                    imageUrls: ticketData.imageUrls,
+                }).then(() => console.log(`[Sheet] ✅ Ticket ${ticketCode} backed up`))
+                  .catch(err => console.warn('[Sheet] ⚠️ Backup failed (non-critical):', err));
             }
 
             // =============================================
             // STEP 3: Show success
             // =============================================
             const createdTicket: DesignTicket = {
-                id: supabaseId,
+                id: ticketDocId,
                 ...ticketData,
                 createdAt: now as any,
                 updatedAt: now as any,
@@ -2227,9 +1958,9 @@ Yêu cầu:
                 const catCfg = CATEGORY_CONFIG[activeTicket.category] || CATEGORY_CONFIG['label-bag'];
                 const statusCfg = STATUS_CONFIG[activeTicket.status] || STATUS_CONFIG['open'];
                 return (
-                    <div className="flex flex-col lg:flex-row gap-4 lg:items-start">
+                    <div className="flex flex-col gap-6 lg:items-center max-w-4xl mx-auto">
                         {/* LEFT COLUMN: Ticket info + SXTC history */}
-                        <div className="lg:w-1/2 space-y-4">
+                        <div className="w-full space-y-4">
                         {/* Ticket info card */}
                         <div className="relative overflow-hidden rounded-3xl bg-white/70 dark:bg-slate-800/60 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 shadow-2xl">
                             {/* Header */}
@@ -2395,10 +2126,67 @@ Yêu cầu:
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         {Object.entries(activeTicket.formData).map(([k, v]) => {
                                             if (!v || ["Tên nhãn hàng", "Tên đơn vị đặt hàng", "Tên nhãn hàng / Fanpage", "Người đặt hàng", "Số điện thoại", "Email", "Địa chỉ"].includes(k)) return null;
+                                            const val = v.toString().trim();
+                                            const isUrl = /^https?:\/\//i.test(val);
+
+                                            // Extract Google Drive file ID
+                                            const driveMatch = val.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                                            const driveFileId = driveMatch ? driveMatch[1] : null;
+                                            const thumbnailUrl = driveFileId ? `https://lh3.googleusercontent.com/d/${driveFileId}` : null;
+                                            const previewUrl = driveFileId ? `https://drive.google.com/file/d/${driveFileId}/preview` : val;
+
+                                            if (isUrl) {
+                                                return (
+                                                    <div key={k} className="bg-slate-50/70 dark:bg-slate-800/80 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 shadow-sm hover:shadow-lg hover:border-violet-400/60 transition-all overflow-hidden">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-4 pt-3 block">{k}</span>
+                                                        {/* Thumbnail preview — click to open in-app lightbox */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setViewingFile({ url: thumbnailUrl || previewUrl, name: k })}
+                                                            className="w-full cursor-pointer group"
+                                                        >
+                                                            {thumbnailUrl ? (
+                                                                <div className="relative mx-3 mt-2 mb-1 rounded-xl overflow-hidden aspect-video bg-slate-200 dark:bg-slate-700">
+                                                                    <img
+                                                                        src={thumbnailUrl}
+                                                                        alt={k}
+                                                                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                                    />
+                                                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                                                                        <Eye size={24} className="text-white drop-shadow-lg" />
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="mx-3 mt-2 mb-1 rounded-xl bg-gradient-to-br from-violet-100 to-indigo-100 dark:from-violet-900/30 dark:to-indigo-900/30 aspect-video flex items-center justify-center group-hover:from-violet-200 group-hover:to-indigo-200 dark:group-hover:from-violet-800/40 dark:group-hover:to-indigo-800/40 transition-colors">
+                                                                    <div className="text-center">
+                                                                        <ExternalLink size={28} className="text-violet-500 dark:text-violet-400 mx-auto mb-1" />
+                                                                        <span className="text-xs text-violet-600 dark:text-violet-300 font-semibold">Xem trước</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                        {/* External link button */}
+                                                        <div className="px-4 pb-3 pt-1">
+                                                            <a
+                                                                href={val}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-violet-500 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            >
+                                                                <ExternalLink size={11} />
+                                                                Truy cập link
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+
                                             return (
                                                 <div key={k} className="bg-slate-50/70 dark:bg-slate-800/80 rounded-2xl p-4 border border-slate-200/60 dark:border-slate-700/60 shadow-sm hover:shadow-md transition-shadow">
                                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">{k}</span>
-                                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">{v.toString()}</p>
+                                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">{val}</p>
                                                 </div>
                                             );
                                         })}
@@ -2476,19 +2264,6 @@ Yêu cầu:
                         )}
                         </div>{/* end left column */}
 
-                        {/* RIGHT COLUMN: Chat section */}
-                        <div className="lg:w-1/2 lg:sticky lg:top-4">
-                        <div className="relative overflow-hidden rounded-3xl bg-white/70 dark:bg-slate-800/60 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 shadow-2xl">
-                            <TicketChat
-                                ticketId={activeTicket.id}
-                                ticketCode={activeTicket.ticketCode}
-                                customerName={activeTicket.contactName || 'Khách hàng'}
-                                isAdmin={isAdmin}
-                                adminEmail={userEmail}
-                                adminName={adminName}
-                            />
-                        </div>
-                        </div>{/* end right column */}
                     </div>
                 );
             })()}
@@ -2498,6 +2273,32 @@ Yêu cầu:
                     <div className="flex justify-between items-center mb-4 shrink-0">
                         <h3 className="text-white font-bold text-sm sm:text-base truncate pr-4">{viewingFile.name}</h3>
                         <div className="flex items-center gap-2 shrink-0">
+                            {/* Download button */}
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const url = viewingFile.url;
+                                        // For Google-hosted images, use proxy fetch
+                                        if (/lh3\.googleusercontent\.com|\.jpg|\.jpeg|\.png|\.webp|\.gif|\.svg|\.bmp/i.test(url)) {
+                                            const res = await fetch(url);
+                                            const blob = await res.blob();
+                                            const a = document.createElement('a');
+                                            a.href = URL.createObjectURL(blob);
+                                            a.download = viewingFile.name.replace(/[^a-zA-Z0-9_\-\.]/g, '_') + (blob.type.includes('png') ? '.png' : blob.type.includes('gif') ? '.gif' : '.jpg');
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            document.body.removeChild(a);
+                                            URL.revokeObjectURL(a.href);
+                                        } else {
+                                            window.open(url, '_blank');
+                                        }
+                                    } catch { window.open(viewingFile.url, '_blank'); }
+                                }}
+                                className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-emerald-500 transition-colors"
+                                title="Tải xuống"
+                            >
+                                <Download size={20} />
+                            </button>
                             <a href={viewingFile.url} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors" title="Mở tab mới">
                                 <ExternalLink size={20} />
                             </a>
@@ -2506,38 +2307,84 @@ Yêu cầu:
                             </button>
                         </div>
                     </div>
-                    <div className="flex-1 min-h-0 flex items-center justify-center bg-black/20 rounded-2xl overflow-hidden relative">
-                        {/\.(jpg|jpeg|png|webp|gif|svg|bmp)$/i.test(viewingFile.url.split('?')[0].toLowerCase()) ? (
-                            <img src={viewingFile.url} alt={viewingFile.name} className="max-w-full max-h-full object-contain" />
-                        ) : /\.(mp4|webm|mkv|mov|avi)$/i.test(viewingFile.url.split('?')[0].toLowerCase()) ? (
-                            <video controls autoPlay className="max-w-full max-h-full bg-black">
-                                <source src={viewingFile.url} />
-                            </video>
-                        ) : /\.(pdf)$/i.test(viewingFile.url.split('?')[0].toLowerCase()) ? (
-                            // Native browser PDF viewer
-                            <iframe src={viewingFile.url} title={viewingFile.name} className="w-full h-full border-0 bg-white" />
-                        ) : /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(viewingFile.url.split('?')[0].toLowerCase()) ? (
-                            // Microsoft Office Viewer for superior compatibility with Word, Excel, PowerPoint
-                            <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(viewingFile.url)}`} title={viewingFile.name} className="w-full h-full border-0 bg-white" />
-                        ) : /\.(txt|csv|rtf)$/i.test(viewingFile.url.split('?')[0].toLowerCase()) ? (
-                            // Google Docs Viewer as fallback for basic text/data formats
-                            <iframe src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingFile.url)}&embedded=true`} title={viewingFile.name} className="w-full h-full border-0 bg-white" />
-                        ) : (
-                            <div className="text-center space-y-4">
-                                <Archive size={48} className="text-slate-400 mx-auto" />
-                                <p className="text-slate-300 font-medium whitespace-pre-wrap">
-                                    Tệp này không hỗ trợ xem trực tiếp trên Ứng dụng.{'\n'}
-                                    Bạn có thể ấn tải xuống, hoặc mở thẻ mới để xem.
-                                </p>
-                                <a href={viewingFile.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-700 transition-colors shadow-lg hover:shadow-xl">
-                                    <Download size={20} />
-                                    Tải tệp xuống
-                                </a>
+                    <div className="flex-1 min-h-0 flex items-center justify-center bg-black/20 rounded-2xl overflow-hidden relative"
+                        onWheel={handleViewerWheel}
+                        onTouchStart={handleViewerTouchStart}
+                        onTouchMove={handleViewerTouchMove}
+                        onTouchEnd={handleViewerTouchEnd}
+                        onMouseDown={handleViewerMouseDown}
+                        onMouseMove={handleViewerMouseMove}
+                        onMouseUp={handleViewerMouseUp}
+                        onMouseLeave={handleViewerMouseUp}
+                        style={{ cursor: viewerZoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in', touchAction: 'none' }}
+                    >
+                        {/* Zoomable image wrapper */}
+                        {(() => {
+                            const isGoogleImg = /lh3\.googleusercontent\.com/i.test(viewingFile.url);
+                            const isDrivePreview = /drive\.google\.com\/file\/d\//i.test(viewingFile.url);
+                            const ext = viewingFile.url.split('?')[0].toLowerCase();
+                            const isImage = isGoogleImg || /\.(jpg|jpeg|png|webp|gif|svg|bmp)$/i.test(ext);
+
+                            if (isImage) return (
+                                <img
+                                    src={viewingFile.url}
+                                    alt={viewingFile.name}
+                                    className="max-w-full max-h-full object-contain select-none transition-transform duration-100"
+                                    style={{ transform: `scale(${viewerZoom}) translate(${viewerPos.x / viewerZoom}px, ${viewerPos.y / viewerZoom}px)` }}
+                                    draggable={false}
+                                    onDoubleClick={() => { setViewerZoom(1); setViewerPos({ x: 0, y: 0 }); }}
+                                />
+                            );
+                            if (isDrivePreview) return (
+                                <iframe src={viewingFile.url.replace(/\/view.*$/, '/preview')} title={viewingFile.name} className="w-full h-full border-0 bg-white" allow="autoplay" />
+                            );
+                            if (/\.(mp4|webm|mkv|mov|avi)$/i.test(ext)) return (
+                                <video controls autoPlay className="max-w-full max-h-full bg-black"><source src={viewingFile.url} /></video>
+                            );
+                            if (/\.(pdf)$/i.test(ext)) return (
+                                <iframe src={viewingFile.url} title={viewingFile.name} className="w-full h-full border-0 bg-white" />
+                            );
+                            if (/\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(ext)) return (
+                                <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(viewingFile.url)}`} title={viewingFile.name} className="w-full h-full border-0 bg-white" />
+                            );
+                            if (/\.(txt|csv|rtf)$/i.test(ext)) return (
+                                <iframe src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingFile.url)}&embedded=true`} title={viewingFile.name} className="w-full h-full border-0 bg-white" />
+                            );
+                            return (
+                                <div className="text-center space-y-4">
+                                    <Archive size={48} className="text-slate-400 mx-auto" />
+                                    <p className="text-slate-300 font-medium whitespace-pre-wrap">Tệp này không hỗ trợ xem trực tiếp trên Ứng dụng.{'\n'}Bạn có thể ấn tải xuống, hoặc mở thẻ mới để xem.</p>
+                                    <a href={viewingFile.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-700 transition-colors shadow-lg hover:shadow-xl"><Download size={20} />Tải tệp xuống</a>
+                                </div>
+                            );
+                        })()}
+                        {/* Zoom controls overlay */}
+                        {viewerZoom !== 1 && (
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full bg-black/60 backdrop-blur-md border border-white/10 shadow-xl">
+                                <button onClick={() => setViewerZoom(z => Math.max(1, z - 0.5))} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 text-lg font-bold">−</button>
+                                <span className="text-white text-xs font-bold min-w-[40px] text-center">{Math.round(viewerZoom * 100)}%</span>
+                                <button onClick={() => setViewerZoom(z => Math.min(5, z + 0.5))} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 text-lg font-bold">+</button>
+                                <button onClick={() => { setViewerZoom(1); setViewerPos({ x: 0, y: 0 }); }} className="ml-1 px-3 py-1 rounded-full bg-white/10 text-white text-[10px] font-bold hover:bg-white/20">Reset</button>
                             </div>
                         )}
                     </div>
                 </div>
             )}
+            {/* ─── Floating Ticket Chat ─── always visible when tickets exist */}
+            {(() => {
+                const chatTicket = activeTicket || myTickets[0];
+                if (!chatTicket) return null;
+                return (
+                    <FloatingTicketChat
+                        ticketId={chatTicket.id}
+                        ticketCode={chatTicket.ticketCode}
+                        customerName={chatTicket.contactName || 'Khách hàng'}
+                        isAdmin={isAdmin}
+                        adminEmail={userEmail}
+                        adminName={adminName}
+                    />
+                );
+            })()}
         </div>
     );
 };

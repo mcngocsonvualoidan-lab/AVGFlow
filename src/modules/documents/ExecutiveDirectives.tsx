@@ -8,7 +8,7 @@ import {
     BarChart, ComposedChart, Line, LabelList, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
 // import * as XLSX from 'xlsx';
-import { fetchFromSupabase, fetchFromGoogleSheet, syncToSupabase, getCachedDirectives, setCachedDirectives, isCacheStale } from '../../services/directiveService';
+import { fetchFromGoogleSheet, getCachedDirectives, setCachedDirectives, isCacheStale } from '../../services/directiveService';
 
 const REQUIREMENTS = [
     {
@@ -52,7 +52,7 @@ const ExecutiveDirectives: React.FC = () => {
     const [directives, setDirectives] = useState<string[][]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [dataSource, setDataSource] = useState<'supabase' | 'sheet'>('supabase');
+    const [dataSource, setDataSource] = useState<'sheet' | 'cache'>('cache');
     const [selectedYear, setSelectedYear] = useState<number>(2026);
 
 
@@ -98,14 +98,14 @@ const ExecutiveDirectives: React.FC = () => {
                 const { data: cachedData, meta } = getCachedDirectives();
                 if (cachedData && cachedData.length > 0) {
                     setDirectives(cachedData);
-                    setDataSource(meta?.source || 'supabase');
+                    setDataSource('cache');
                     if (meta?.timestamp) setLastUpdated(new Date(meta.timestamp));
-                    // Cache fresh → just background refresh Supabase
+                    // Cache fresh → background refresh from Google Sheet
                     if (!isCacheStale()) {
                         loadData(false, true);
                         return;
                     }
-                    // Cache stale → background refresh (no spinner since we have data)
+                    // Cache stale → background refresh
                     loadData(false, true);
                     return;
                 }
@@ -113,24 +113,7 @@ const ExecutiveDirectives: React.FC = () => {
                 setLoading(true);
             }
 
-            // ===== TIER 2: Supabase (PRIMARY — auto-synced by Apps Script) =====
-            if (!forceSync) {
-                try {
-                    const data = await fetchFromSupabase();
-                    if (data.length > 0) {
-                        setDataSource('supabase');
-                        setDirectives(data);
-                        setLastUpdated(new Date());
-                        // No need to sync Sheet anymore — Apps Script handles it!
-                        return;
-                    }
-                } catch (e) {
-                    console.warn("Supabase fetch failed", e);
-                }
-            }
-
-            // ===== TIER 3: Google Sheet CORS proxy (FALLBACK only) =====
-            // Chỉ chạy khi: Supabase trống HOẶC user bấm "Live Sheet" (forceSync)
+            // ===== TIER 2: Google Sheet (PRIMARY source) =====
             try {
                 const sheetData = await fetchFromGoogleSheet();
                 if (sheetData.length > 0) {
@@ -138,12 +121,10 @@ const ExecutiveDirectives: React.FC = () => {
                     setDataSource('sheet');
                     setLastUpdated(new Date());
                     setCachedDirectives(sheetData, 'sheet');
-                    // Sync back to Supabase (emergency recovery)
-                    syncToSupabase(sheetData).catch(err => console.error("Fallback sync failed:", err));
                 }
             } catch (sheetErr: any) {
                 if (!background) {
-                    console.error("Sheet fallback also failed:", sheetErr);
+                    console.error("Sheet fetch failed:", sheetErr);
                 }
             }
         } catch (err: any) {
@@ -1466,7 +1447,7 @@ const ExecutiveDirectives: React.FC = () => {
                     icon={BarChart3}
                     title="Thông điệp điều hành"
                     subtitle="Executive Dashboard"
-                    description="Hệ thống theo dõi chỉ đạo và kết luận cuộc họp, tự động cập nhật và phân tích dữ liệu từ Google Sheets & Supabase theo thời gian thực."
+                    description="Hệ thống theo dõi chỉ đạo và kết luận cuộc họp, tự động cập nhật và phân tích dữ liệu từ Google Sheets theo thời gian thực."
                     badge="Directive Management"
                     badgeIcon={Sparkles}
                     secondBadge={dataSource === 'sheet' ? 'Live Sheet' : undefined}

@@ -8,7 +8,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from '@/lib/firestore';
 import { useAuth } from './AuthContext';
 import type { Meeting } from '@/types';
 

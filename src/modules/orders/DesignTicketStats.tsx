@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { BarChart3, Users, Clock, TrendingUp, Sparkles, PenLine, Tag } from 'lucide-react';
 import { clsx } from 'clsx';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, PieChart, Pie, Legend } from 'recharts';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp } from '@/lib/firestore';
 
 // Safe date parser for both Firebase Timestamp and ISO string
 function parseDate(val: any): Date | null {

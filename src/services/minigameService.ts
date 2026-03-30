@@ -58,11 +58,12 @@ export interface WerewolfChatMessage {
 }
 
 export interface WerewolfState {
-    phase: string; // 'waiting' | 'roles-assigned' | 'night-wolf' | 'night-seer' | 'night-guard' | 'night-witch' | 'night-resolve' | 'day-discussion' | 'day-vote' | 'day-defense' | 'day-revote' | 'day-result' | 'gameover'
+    phase: string; // 'waiting' | 'roles-assigned' | 'night-wolf' | 'night-seer' | 'night-guard' | 'night-witch' | 'night-resolve' | 'day-discussion' | 'day-vote' | 'day-defense' | 'day-revote' | 'day-result' | 'hunter-revenge' | 'gameover'
     night: number;
     originalHostId?: string | null; // who started the game (to restore host at gameover)
     roles: { [encodedEmail: string]: { role: string; icon: string; alive: boolean } };
     previousRoles?: { [encodedEmail: string]: { role: string; icon: string; alive: boolean } } | null;
+    scratchedCards?: { [encodedEmail: string]: boolean }; // Track who has fully scratched their card
     // Night actions
     wolfVotes?: { [wolfUid: string]: string }; // wolf uid -> target uid
     wolfTarget?: string | null; // resolved wolf target
@@ -75,6 +76,20 @@ export interface WerewolfState {
     // Seer (Tiên tri)
     seerTarget?: string | null; // who the seer peeked at this night
     seerResult?: 'wolf' | 'village' | null; // result of seer peek
+    // Hunter (Thợ săn)
+    hunterPinned?: string | null; // who hunter pinned this night
+    hunterLastPinned?: string | null; // who hunter pinned last night
+    hunterTarget?: string | null; // the specific target that actually died (for logs view)
+    hunterPending?: boolean; // whether hunter target needs to die NEXT night
+    hunterDiedFrom?: 'night' | 'vote' | null; // how hunter died
+    // Arsonist (Kẻ tẩm dầu)
+    arsonistOiled?: string[]; // list of oiled player uids (accumulated)
+    arsonistActionThisNight?: 'oil' | 'ignite' | null; // action chosen this night
+    arsonistOilTarget?: string | null; // who arsonist is oiling this night
+    // Tanner (Kẻ chán đời)
+    tannerWin?: boolean; // tanner wins if voted out during day
+    // Bot players
+    botUids?: string[]; // list of bot UIDs in this game
     // Night resolution
     nightKilled?: string | null; // who died this night (after resolving guard/witch)
     nightLog?: string;
@@ -91,6 +106,7 @@ export interface WerewolfState {
     preDefenseSkipVotes?: string[]; // skip votes snapshot before defense
     // Game end
     gameResult?: string;
+    gameoverAt?: number;
     revealedRoles?: { [encodedEmail: string]: boolean };
     // Night action completion flags
     nightActionsComplete?: {
@@ -98,6 +114,7 @@ export interface WerewolfState {
         seer?: boolean;
         guard?: boolean;
         witch?: boolean;
+        hunter?: boolean;
     };
     // Accumulated game event log for end-game summary
     gameLog?: Array<{
@@ -108,8 +125,12 @@ export interface WerewolfState {
         guardTarget?: string | null;
         witchSave?: boolean;
         witchKill?: string | null;
+        arsonistAction?: string | null;
+        arsonistTarget?: string | null;
+        arsonistBurned?: string[];
         killed?: string[];
         saved?: boolean;
+        seerTarget?: string | null;
         votes?: { [voter: string]: string };
         voteResult?: string | null;
         skipVotes?: string[];

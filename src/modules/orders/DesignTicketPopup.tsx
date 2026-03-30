@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Send, Paperclip, MessageCircle, Clock, PenLine, Calendar, CheckCircle2, AlertCircle, Loader2, UserCheck, Download, Tag, Box, Share2, Sparkles, Phone, Mail, MapPin, FileText, Image as ImageIcon, ZoomIn, ChevronDown, History, AArrowUp, AArrowDown } from 'lucide-react';
+import { X, Clock, PenLine, Calendar, CheckCircle2, AlertCircle, Loader2, UserCheck, Tag, Box, Share2, Sparkles, Phone, Mail, MapPin, FileText, Image as ImageIcon, ZoomIn, ChevronDown, History, AArrowUp, AArrowDown } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Timestamp } from 'firebase/firestore';
-import { supabase } from '../../lib/supabase';
-import type { SupabaseTicketMessage } from '../../lib/supabase';
-import { uploadFileToR2 } from '../../services/r2UploadService';
+import { Timestamp, doc, updateDoc, collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp } from '@/lib/firestore';
+import { db } from '../../lib/firebase';
+import { updateTicket as updateTicketOnSheet, isConfigured as isSheetConfigured } from '../../services/designTicketSheetService';
+import FloatingTicketChat from '../../components/FloatingTicketChat';
 
 // ── Types ──
 interface DesignTicket {
@@ -21,7 +21,7 @@ interface DesignTicket {
 interface ChatMessage {
     id: string; text: string; sender: string;
     senderRole: 'customer' | 'admin'; senderEmail?: string;
-    imageUrl?: string; createdAt: string;
+    imageUrl?: string; createdAt: any;
 }
 interface Props {
     ticket: DesignTicket; onClose: () => void;
@@ -30,10 +30,6 @@ interface Props {
 }
 
 // ── Config ──
-const ADMIN_NAMES: Record<string, string> = {
-    'cambridgeorg.209@gmail.com': 'Lê Trần Thiện Tâm',
-    'trolitct@gmail.com': 'Đinh Hoàng Ngọc Hân',
-};
 const DESIGN_HANDLERS = ['Nguyễn Ngọc Sơn', 'Hà Ngọc Doanh'];
 
 const CAT_CFG: Record<string, { label: string; icon: React.FC<any>; gradient: string }> = {
@@ -78,9 +74,14 @@ function fmtDate(d: Date | null) {
     if (!d) return '—';
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
-function fmtTime(ts: string | null) {
+function fmtTime(ts: any) {
     if (!ts) return '';
-    const d = new Date(ts);
+    let d: Date;
+    if (ts instanceof Timestamp) d = ts.toDate();
+    else if (typeof ts?.toDate === 'function') d = ts.toDate();
+    else if (typeof ts?.seconds === 'number') d = new Date(ts.seconds * 1000);
+    else d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
     return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' • ' + d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 }
 
@@ -175,7 +176,7 @@ const InfoPanel: React.FC<InfoPanelProps> = ({ ticket, onPreview, fontSize, onFo
                         {filteredFormData.map(([k, v]) => (
                             <div key={k} className="px-4 py-2.5 hover:bg-violet-50/40 dark:hover:bg-violet-500/5 transition-colors" style={{ fontSize: fs }}>
                                 <p className="font-bold text-violet-600/80 dark:text-violet-400/80 mb-0.5" style={{ fontSize: fsLabel }}>{k}</p>
-                                <p className="text-slate-700 dark:text-slate-300 leading-relaxed" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{v}</p>
+                                <p className="text-slate-700 dark:text-slate-300 leading-relaxed" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{String(v)}</p>
                             </div>
                         ))}
                     </div>
@@ -208,120 +209,18 @@ const InfoPanel: React.FC<InfoPanelProps> = ({ ticket, onPreview, fontSize, onFo
     );
 };
 
-// ════════════════════════════════════════════════════════════════
-// CHAT PANEL (reusable for both mobile tab & desktop right side)
-// ════════════════════════════════════════════════════════════════
-interface ChatPanelProps {
-    ticketId: string; messages: ChatMessage[]; newMsg: string; sending: boolean; chatErr: string;
-    setNewMsg: (v: string) => void; handleSend: () => void; handlePaste: (e: React.ClipboardEvent) => void;
-    handleFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    setChatErr: (v: string) => void; onPreview: (url: string) => void;
-    endRef: React.RefObject<HTMLDivElement | null>; fileRef: React.RefObject<HTMLInputElement | null>;
-    className?: string;
-}
-const ChatPanel: React.FC<ChatPanelProps> = ({ messages, newMsg, sending, chatErr, setNewMsg, handleSend, handlePaste, handleFile, setChatErr, onPreview, endRef, fileRef, className }) => (
-    <div className={clsx("flex flex-col", className)}>
-        {/* Chat header - compact LIVE indicator */}
-        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-slate-200/50 dark:border-white/10 bg-white/50 dark:bg-slate-800/50">
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/50 dark:border-emerald-500/20 ml-auto">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">LIVE</span>
-            </div>
-        </div>
-
-        {chatErr && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200/50">
-                <AlertCircle size={12} className="text-amber-500" />
-                <span className="text-[10px] text-amber-700 font-medium flex-1">{chatErr}</span>
-                <button onClick={() => setChatErr('')} className="text-[9px] font-bold text-amber-600 px-1.5 py-0.5 rounded bg-amber-100">✕</button>
-            </div>
-        )}
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-            {messages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                    <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3">
-                        <MessageCircle size={24} className="text-slate-300 dark:text-slate-600" />
-                    </div>
-                    <p className="text-xs font-bold text-slate-400">Chưa có tin nhắn</p>
-                    <p className="text-[10px] text-slate-300 mt-1">Bắt đầu trao đổi với khách hàng!</p>
-                </div>
-            )}
-            {messages.map(msg => {
-                const isMe = msg.senderRole === 'admin';
-                const name = isMe ? (msg.senderEmail ? (ADMIN_NAMES[msg.senderEmail] || msg.sender) : msg.sender) : msg.sender;
-                return (
-                    <div key={msg.id} className={clsx("flex gap-2", isMe ? "flex-row-reverse" : "flex-row")}>
-                        <div className={clsx("w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-black shadow-sm",
-                            isMe ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white" : "bg-gradient-to-br from-emerald-400 to-teal-500 text-white"
-                        )}>{isMe ? (name?.charAt(0)?.toUpperCase() || 'A') : (name?.charAt(0)?.toUpperCase() || '?')}</div>
-                        <div className={clsx("max-w-[75%] rounded-2xl px-3.5 py-2.5 shadow-sm",
-                            isMe ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-tr-md"
-                                : "bg-white/80 dark:bg-slate-700/80 backdrop-blur-xl border border-slate-200/50 dark:border-white/10 text-slate-800 dark:text-slate-200 rounded-tl-md"
-                        )}>
-                            <p className={clsx("text-[10px] font-bold mb-1", isMe ? "text-white/70 text-right" : "text-slate-400")}>
-                                {name}
-                                {isMe && msg.senderEmail && <span className="ml-1 text-[8px] opacity-50">(nội bộ)</span>}
-                            </p>
-                            {/* Inline image preview */}
-                            {msg.imageUrl && msg.text?.startsWith('📷') && (
-                                <img src={msg.imageUrl} alt="" className="rounded-xl max-w-full max-h-48 object-cover mb-2 border border-white/20 cursor-pointer hover:opacity-90 transition-opacity"
-                                    onClick={(e) => { e.stopPropagation(); onPreview(msg.imageUrl!); }} />
-                            )}
-                            {msg.imageUrl && msg.text?.startsWith('📎') && (
-                                <div onClick={() => window.open(msg.imageUrl, '_blank')} className="flex items-center gap-2 p-2.5 mb-2 rounded-xl bg-slate-900/10 dark:bg-black/20 border border-slate-200/50 cursor-pointer hover:bg-slate-900/20 transition-colors">
-                                    <Paperclip size={16} className="text-violet-500 shrink-0" />
-                                    <span className="text-sm font-medium truncate flex-1">{msg.text.replace('📎 ', '')}</span>
-                                    <Download size={14} className="text-slate-400 shrink-0" />
-                                </div>
-                            )}
-                            <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{msg.text.startsWith('📷 ') || msg.text.startsWith('📎 ') ? '' : msg.text}</p>
-                            <p className={clsx("text-[9px] mt-1.5", isMe ? "text-white/50 text-right" : "text-slate-300 dark:text-slate-600")}>{fmtTime(msg.createdAt)}</p>
-                        </div>
-                    </div>
-                );
-            })}
-            <div ref={endRef} />
-        </div>
-
-        {/* Input */}
-        <div className="border-t border-slate-200/50 dark:border-white/10 p-3 bg-white/50 dark:bg-slate-800/50">
-            <div className="flex gap-2 items-end">
-                <button type="button" onClick={() => fileRef.current?.click()} className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-all shrink-0">
-                    <Paperclip size={16} />
-                </button>
-                <input ref={fileRef} type="file" onChange={handleFile} className="hidden" />
-                <textarea value={newMsg} onChange={e => setNewMsg(e.target.value)} onPaste={handlePaste}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }}}
-                    placeholder="Nhập tin nhắn... (Ctrl+V paste ảnh)" rows={1}
-                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-700/80 border border-slate-200/50 dark:border-white/10 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30 resize-none"
-                />
-                <button type="button" onClick={handleSend} disabled={!newMsg.trim() || sending}
-                    className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-violet-500/30 hover:shadow-xl disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0">
-                    {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                </button>
-            </div>
-        </div>
-    </div>
-);
 
 // ════════════════════════════════════════════════════════════════
 // MAIN POPUP COMPONENT
 // ════════════════════════════════════════════════════════════════
 const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, adminEmail, adminName, onTicketUpdate }) => {
     const [mobileTab, setMobileTab] = useState<'info' | 'chat' | 'timeline'>('info');
-    const [rightTab, setRightTab] = useState<'chat' | 'timeline'>('chat');
     const [infoFontSize, setInfoFontSize] = useState(12);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
-    const [newMsg, setNewMsg] = useState('');
-    const [sending, setSending] = useState(false);
-    const [chatErr, setChatErr] = useState('');
     const [previewImg, setPreviewImg] = useState<string | null>(null);
     const [updating, setUpdating] = useState(false);
     const [ticket, setTicket] = useState<DesignTicket>(initialTicket);
     const endRef = useRef<HTMLDivElement>(null);
-    const fileRef = useRef<HTMLInputElement>(null);
 
     const cat = CAT_CFG[ticket.category] || CAT_CFG['label-bag'];
     const st = STATUS_CFG[ticket.status] || STATUS_CFG.open;
@@ -333,153 +232,108 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
     const [showStatusMenu, setShowStatusMenu] = useState(false);
     const [showAssignMenu, setShowAssignMenu] = useState(false);
 
-    // ── Status change handler ──
+    // ── Status change handler (Hybrid: Sheet primary, Supabase fallback) ──
     const handleStatusChange = useCallback(async (newStatus: string) => {
         setUpdating(true);
         try {
+            const now = new Date().toISOString();
+
+            // Update Firestore first
             const updateData: any = {
                 status: newStatus,
-                updated_at: new Date().toISOString(),
+                updatedAt: Timestamp.now(),
             };
-            if (newStatus === 'completed') {
-                updateData.completed_at = new Date().toISOString();
-            }
-            if (newStatus === 'revision') {
-                updateData.revision_round = (ticket.revisionRound || 0) + 1;
-            }
+            if (newStatus === 'completed') updateData.completedAt = Timestamp.now();
+            if (newStatus === 'revision') updateData.revisionRound = (ticket.revisionRound || 0) + 1;
 
-            const { error } = await supabase
-                .from('design_tickets')
-                .update(updateData)
-                .eq('id', ticket.id);
+            await updateDoc(doc(db, 'design_tickets', ticket.id), updateData);
 
-            if (error) throw error;
+            // Sheet backup (fire-and-forget)
+            if (isSheetConfigured()) {
+                updateTicketOnSheet(ticket.ticketCode, { status: newStatus })
+                    .catch(err => console.warn('[Sheet] Status backup failed:', err));
+            }
 
             const updatedTicket = {
                 ...ticket,
                 status: newStatus as DesignTicket['status'],
-                updatedAt: updateData.updated_at,
-                ...(newStatus === 'completed' ? { completedAt: updateData.completed_at } : {}),
-                ...(newStatus === 'revision' ? { revisionRound: updateData.revision_round } : {}),
+                updatedAt: now,
+                ...(newStatus === 'completed' ? { completedAt: now } : {}),
+                ...(newStatus === 'revision' ? { revisionRound: (ticket.revisionRound || 0) + 1 } : {}),
             };
             setTicket(updatedTicket);
             onTicketUpdate?.(updatedTicket);
 
-            // Send system message
+            // Send system message via Firestore
             const stLabel = STATUS_CFG[newStatus]?.label || newStatus;
-            await supabase.from('ticket_messages').insert({
-                ticket_id: ticket.id,
+            const messagesRef = collection(db, 'ticket_chats', ticket.id, 'messages');
+            await addDoc(messagesRef, {
                 text: `🔄 Trạng thái đã chuyển sang: ${stLabel}`,
-                sender: 'Admin',
-                sender_role: 'admin',
-                sender_email: adminEmail,
+                sender: 'Admin', senderRole: 'admin', senderEmail: adminEmail,
+                ticketCode: ticket.ticketCode,
+                createdAt: serverTimestamp(),
             });
         } catch (err: any) {
-            setChatErr(`Lỗi cập nhật: ${err.message}`);
+            console.error(`Lỗi cập nhật: ${err.message}`);
         } finally {
             setUpdating(false);
         }
     }, [ticket, adminEmail, onTicketUpdate]);
 
-    // ── Assign handler ──
+    // ── Assign handler (Hybrid: Sheet primary, Supabase fallback) ──
     const handleAssign = useCallback(async (handler: string) => {
         setUpdating(true);
         try {
-            const { error } = await supabase
-                .from('design_tickets')
-                .update({ assigned_to: handler, updated_at: new Date().toISOString() })
-                .eq('id', ticket.id);
+            const now = new Date().toISOString();
 
-            if (error) throw error;
+            // Update Firestore first
+            await updateDoc(doc(db, 'design_tickets', ticket.id), {
+                assignedTo: handler,
+                updatedAt: Timestamp.now(),
+            });
 
-            const updatedTicket = { ...ticket, assignedTo: handler, updatedAt: new Date().toISOString() };
+            // Sheet backup (fire-and-forget)
+            if (isSheetConfigured()) {
+                updateTicketOnSheet(ticket.ticketCode, { assignedTo: handler })
+                    .catch(err => console.warn('[Sheet] Assign backup failed:', err));
+            }
+
+            const updatedTicket = { ...ticket, assignedTo: handler, updatedAt: now };
             setTicket(updatedTicket);
             onTicketUpdate?.(updatedTicket);
-
-            // No chat message for assignment - info is shown in header
         } catch (err: any) {
-            setChatErr(`Lỗi giao việc: ${err.message}`);
+            console.error(`Lỗi giao việc: ${err.message}`);
         } finally {
             setUpdating(false);
         }
     }, [ticket, adminEmail, onTicketUpdate]);
 
-    // ── Load messages + realtime ──
+    // ── Load system events for timeline (Firestore) ──
     useEffect(() => {
-        const load = async () => {
-            const { data } = await supabase.from('ticket_messages').select('*')
-                .eq('ticket_id', ticket.id).order('created_at', { ascending: true });
-            if (data) setMessages(data.map((m: SupabaseTicketMessage) => ({
-                id: m.id, text: m.text, sender: m.sender, senderRole: m.sender_role,
-                senderEmail: m.sender_email || undefined, imageUrl: m.image_url || undefined, createdAt: m.created_at,
-            })));
-        };
-        load();
-        const ch = supabase.channel(`popup-msg-${ticket.id}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ticket_messages', filter: `ticket_id=eq.${ticket.id}` }, (p) => {
-                const m = p.new as SupabaseTicketMessage;
-                const realMsg = { id: m.id, text: m.text, sender: m.sender, senderRole: m.sender_role,
-                    senderEmail: m.sender_email || undefined, imageUrl: m.image_url || undefined, createdAt: m.created_at };
-                setMessages(prev => {
-                    if (prev.some(x => x.id === m.id)) return prev;
-                    // Replace matching optimistic message
-                    const localIdx = prev.findIndex(x => x.id.startsWith('local_') && x.text === m.text && x.senderRole === m.sender_role);
-                    if (localIdx !== -1) {
-                        const updated = [...prev];
-                        updated[localIdx] = realMsg;
-                        return updated;
-                    }
-                    return [...prev, realMsg];
-                });
-            }).subscribe();
-        return () => { supabase.removeChannel(ch); };
+        const messagesRef = collection(db, 'ticket_chats', ticket.id, 'messages');
+        const q = query(messagesRef, orderBy('createdAt', 'asc'), limit(100));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const msgs: ChatMessage[] = snapshot.docs.map(d => {
+                const data = d.data();
+                return {
+                    id: d.id, text: data.text || '', sender: data.sender || '',
+                    senderRole: data.senderRole || 'customer',
+                    senderEmail: data.senderEmail || undefined,
+                    imageUrl: data.imageUrl || undefined,
+                    createdAt: data.createdAt || null,
+                };
+            });
+            setMessages(msgs);
+        }, (error) => {
+            console.error('[Timeline] Firestore listen error:', error);
+        });
+
+        return () => unsubscribe();
     }, [ticket.id]);
 
     useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-    // ── Send ──
-    const handleSend = useCallback(async () => {
-        if (!newMsg.trim() || sending) return;
-        setSending(true); setChatErr('');
-        const txt = newMsg.trim();
-        const opt: ChatMessage = { id: `local_${Date.now()}`, text: txt, sender: adminName, senderRole: 'admin', senderEmail: adminEmail, createdAt: new Date().toISOString() };
-        setMessages(p => [...p, opt]); setNewMsg('');
-        try {
-            const { error } = await supabase.from('ticket_messages').insert({
-                ticket_id: ticket.id, text: txt, sender: 'Admin', sender_role: 'admin', sender_email: adminEmail,
-            });
-            if (error) throw error;
-        } catch { setChatErr('Gửi thất bại'); setMessages(p => p.filter(m => m.id !== opt.id)); setNewMsg(txt); }
-        finally { setSending(false); }
-    }, [newMsg, sending, ticket.id, adminName, adminEmail]);
-
-    const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-        const items = e.clipboardData?.items; if (!items) return;
-        for (const item of Array.from(items)) {
-            if (item.type.startsWith('image/')) {
-                e.preventDefault();
-                const blob = item.getAsFile(); if (!blob) return;
-                setSending(true);
-                try {
-                    const file = new File([blob], `paste_${Date.now()}.png`, { type: blob.type });
-                    const result = await uploadFileToR2(file, 'design_ticket_chat');
-                    await supabase.from('ticket_messages').insert({ ticket_id: ticket.id, text: '📷 Hình ảnh', sender: 'Admin', sender_role: 'admin', sender_email: adminEmail, image_url: result.url });
-                } catch (err: any) { setChatErr(`Gửi ảnh thất bại: ${err.message}`); }
-                finally { setSending(false); } break;
-            }
-        }
-    }, [ticket.id, adminEmail]);
-
-    const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]; if (!file) return;
-        setSending(true);
-        try {
-            const result = await uploadFileToR2(file, 'design_ticket_chat');
-            const label = file.type.startsWith('image/') ? `📷 ${file.name}` : `📎 ${file.name}`;
-            await supabase.from('ticket_messages').insert({ ticket_id: ticket.id, text: label, sender: 'Admin', sender_role: 'admin', sender_email: adminEmail, image_url: result.url });
-        } catch (err: any) { setChatErr(`Gửi file thất bại: ${err.message}`); }
-        finally { setSending(false); if (fileRef.current) fileRef.current.value = ''; }
-    }, [ticket.id, adminEmail]);
 
     // ESC close
     useEffect(() => {
@@ -487,7 +341,6 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
         window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
     }, [onClose, previewImg]);
 
-    const chatProps: ChatPanelProps = { ticketId: ticket.id, messages, newMsg, sending, chatErr, setNewMsg, handleSend, handlePaste, handleFile, setChatErr, onPreview: setPreviewImg, endRef, fileRef };
 
     return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" onClick={onClose}>
@@ -623,12 +476,7 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
                         mobileTab === 'info' ? 'border-violet-500 text-violet-600' : 'border-transparent text-slate-400')}>
                         <FileText size={13} /> Chi tiết
                     </button>
-                    <button onClick={() => setMobileTab('chat')} className={clsx("flex-1 py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all relative",
-                        mobileTab === 'chat' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400')}>
-                        <MessageCircle size={13} /> Chat
-                        {messages.length > 0 && <span className="min-w-[16px] h-[16px] rounded-full bg-indigo-500 text-white text-[9px] font-bold flex items-center justify-center px-1">{messages.length}</span>}
-                    </button>
-                    <button onClick={() => setMobileTab('timeline')} className={clsx("flex-1 py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all",
+                                        <button onClick={() => setMobileTab('timeline')} className={clsx("flex-1 py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all",
                         mobileTab === 'timeline' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-400')}>
                         <History size={13} /> Lịch sử
                     </button>
@@ -644,27 +492,10 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
                     </div>
                     <div className={clsx(
                         "md:w-[55%] md:flex md:flex-col",
-                        (mobileTab === 'chat' || mobileTab === 'timeline') ? 'flex flex-col' : 'hidden'
+                        mobileTab === 'timeline' ? 'flex flex-col' : 'hidden md:flex'
                     )} style={{ minHeight: 0 }}>
-                        {/* Desktop: tab switcher for right panel */}
-                        <div className="hidden md:flex border-b border-slate-200/50 dark:border-white/10 bg-white/50 dark:bg-slate-800/50 shrink-0">
-                            <button onClick={() => setRightTab('chat')} className={clsx("flex-1 py-2.5 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition-all",
-                                rightTab === 'chat' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600')}>
-                                <MessageCircle size={14} /> Trao đổi
-                                {messages.length > 0 && <span className="min-w-[16px] h-[16px] rounded-full bg-indigo-500 text-white text-[9px] font-bold flex items-center justify-center px-1">{messages.length}</span>}
-                            </button>
-                            <button onClick={() => setRightTab('timeline')} className={clsx("flex-1 py-2.5 text-xs font-bold flex items-center justify-center gap-2 border-b-2 transition-all",
-                                rightTab === 'timeline' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-400 hover:text-slate-600')}>
-                                <History size={14} /> Timeline
-                            </button>
-                        </div>
-
-                        {/* Chat or Timeline content */}
-                        {((mobileTab === 'chat') || (mobileTab !== 'timeline' && rightTab === 'chat')) && (
-                            <ChatPanel {...chatProps} className="flex-1 min-h-0" />
-                        )}
-                        {((mobileTab === 'timeline') || (mobileTab !== 'chat' && rightTab === 'timeline')) && (
-                            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                        {/* Timeline content */}
+                        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                                 {(() => {
                                     // Only system events — no chat messages
                                     const systemEvents = messages.filter(m => m.text.startsWith('🔄') || m.text.startsWith('👤') || m.text.startsWith('🎉') || m.text.startsWith('📋'));
@@ -719,10 +550,14 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
                                         </div>
                                     );
                                 })()}
-                            </div>
-                        )}
+                        </div>
                     </div>
                 </div>
+            </div>
+
+            {/* ─── Floating Chat ─── */}
+            <div onClick={e => e.stopPropagation()}>
+                <FloatingTicketChat ticketId={ticket.id} ticketCode={ticket.ticketCode} customerName={ticket.brandName || 'Khách hàng'} isAdmin={true} adminEmail={adminEmail} adminName={adminName} />
             </div>
 
             {/* ─── Image Lightbox ─── */}

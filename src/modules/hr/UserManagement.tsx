@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { auth } from '../../lib/firebase';
 import { uploadToDrive } from '../../services/driveUploadService';
-// import { doc, updateDoc, deleteDoc } from 'firebase/firestore'; // Removed as unused
+// import { doc, updateDoc, deleteDoc } from '@/lib/firestore'; // Removed as unused
 import { useAuth } from '../../context/AuthContext'; // Import useAuth
 import { sendInviteEmail } from '../../utils/emailService';
 import {

@@ -39,14 +39,16 @@ function parseRowsToCatalog(rows: string[][]): CatalogItem[] {
     for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
         if (r.length < 6) continue;
+        // Sheet Kho SP: A=Chủng loại, B=Nhãn hàng, C=Hình ảnh (skip), D=SKU, E=Tên SP, F=ĐVT, G=Trọng lượng/KT, H=Quy cách/Chất liệu
         const item: CatalogItem = {
             chungLoai: (r[0] || '').trim(),
             nhanHang: (r[1] || '').trim(),
-            sku: (r[2] || '').trim(),
-            tenSanPham: (r[3] || '').trim(),
-            dvt: (r[4] || '').trim(),
-            kichThuoc: (r[5] || '').trim(),
-            chatLieu: (r[6] || '').trim(),
+            // r[2] = Hình ảnh (bỏ qua)
+            sku: (r[3] || '').trim(),
+            tenSanPham: (r[4] || '').trim(),
+            dvt: (r[5] || '').trim(),
+            kichThuoc: (r[6] || '').trim(),
+            chatLieu: (r[7] || '').trim(),
         };
         if (item.nhanHang || item.tenSanPham) items.push(item);
     }
