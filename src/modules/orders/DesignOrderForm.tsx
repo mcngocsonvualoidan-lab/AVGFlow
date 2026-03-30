@@ -2079,16 +2079,30 @@ Yêu cầu:
                                         )}
 
                                         {/* CUSTOMER: in-review → approved (Chốt sản phẩm) */}
-                                        {!isAdmin && activeTicket.status === 'in-review' && (
+                                        {!isAdmin && (activeTicket.status === 'in-review' || activeTicket.status === 'revision') && (
                                             <button disabled={statusUpdating} onClick={() => handleUpdateStatus(activeTicket.id, activeTicket.ticketCode, 'approved', `Khách hàng đã chốt sản phẩm cho đơn hàng ${activeTicket.ticketCode}.`)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors border border-emerald-200 dark:border-emerald-500/20 disabled:opacity-50">
                                                 <ThumbsUp size={14} /> Chốt sản phẩm
                                             </button>
                                         )}
 
-                                        {/* CUSTOMER: in-review/approved → revision (Yêu cầu chỉnh sửa) */}
-                                        {!isAdmin && (activeTicket.status === 'in-review' || activeTicket.status === 'approved') && (
+                                        {/* CUSTOMER: open → in-review (Chờ duyệt - nhắc Admin duyệt) */}
+                                        {!isAdmin && activeTicket.status === 'open' && (
+                                            <button disabled={statusUpdating} onClick={() => handleUpdateStatus(activeTicket.id, activeTicket.ticketCode, 'in-review', `Khách hàng yêu cầu Admin xem xét đơn hàng ${activeTicket.ticketCode}.`)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors border border-amber-200 dark:border-amber-500/20 disabled:opacity-50">
+                                                <Clock size={14} /> Chờ duyệt
+                                            </button>
+                                        )}
+
+                                        {/* CUSTOMER: in-review/approved/open → revision (Yêu cầu chỉnh sửa) */}
+                                        {!isAdmin && (activeTicket.status === 'in-review' || activeTicket.status === 'approved' || activeTicket.status === 'open') && (
                                             <button disabled={statusUpdating} onClick={() => handleUpdateStatus(activeTicket.id, activeTicket.ticketCode, 'revision', `Khách hàng yêu cầu chỉnh sửa đơn hàng ${activeTicket.ticketCode}. Lần ${(activeTicket.revisionRound || 0) + 1}.`)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-xs font-bold hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors border border-violet-200 dark:border-violet-500/20 disabled:opacity-50">
                                                 <RotateCcw size={14} /> Yêu cầu chỉnh sửa
+                                            </button>
+                                        )}
+
+                                        {/* CUSTOMER: Cancel — Hủy đơn */}
+                                        {!isAdmin && (
+                                            <button disabled={statusUpdating} onClick={() => setCancelModal({ ticketId: activeTicket.id, ticketCode: activeTicket.ticketCode })} className="flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors border border-red-200 dark:border-red-500/20 disabled:opacity-50">
+                                                <XCircle size={14} /> Hủy đơn
                                             </button>
                                         )}
                                     </div>
