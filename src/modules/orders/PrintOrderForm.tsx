@@ -6,6 +6,7 @@ import { db } from '../../lib/firebase';
 import { collection, addDoc, serverTimestamp } from '@/lib/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { fetchCatalog as fetchCatalogService, subscribeToCatalogChanges, type CatalogItem } from '../../services/catalogService';
+import { findCustomerByEmail, type CustomerContact } from '../../services/customerService';
 
 // ===== CONFIG =====
 const PERSON_OPTIONS = ['Ngọc Bích', 'Ánh Mây', 'Thanh Tuyền', 'Đỗ Chiều', 'Trà My'];
@@ -348,6 +349,10 @@ const MiniCalendar: React.FC<MiniCalendarProps> = ({ value, onChange, onClose, a
 // ===== COMPONENT =====
 const PrintOrderForm: React.FC = () => {
     const { currentUser } = useAuth();
+    const userEmail = (currentUser?.email || '').toLowerCase().trim();
+    const ADMIN_EMAILS_PRINT = ['mcngocsonvualoidan@gmail.com', 'ccmartech.com@gmail.com', 'ngochandepzai22@gmail.com', 'thientam@ccmartech.com', 'cambridgeorg.209@gmail.com', 'trolitct@gmail.com', 'sondesigner0704@gmail.com'];
+    const isAdmin = ADMIN_EMAILS_PRINT.includes(userEmail);
+
     const [person, setPerson] = useState('');
     const [personOther, setPersonOther] = useState('');
     const [rows, setRows] = useState<PrintRow[]>([createEmptyRow()]);
@@ -355,6 +360,29 @@ const PrintOrderForm: React.FC = () => {
     const [error, setError] = useState('');
     const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    // 🔒 Auto-detect customer profile from Sheet
+    const [customerProfile, setCustomerProfile] = useState<CustomerContact | null>(null);
+    const [profileLoading, setProfileLoading] = useState(true);
+
+    useEffect(() => {
+        if (!userEmail) { setProfileLoading(false); return; }
+        let cancelled = false;
+        (async () => {
+            try {
+                const profile = await findCustomerByEmail(userEmail);
+                if (!cancelled && profile) {
+                    setCustomerProfile(profile);
+                    setPerson(profile.name);
+                }
+            } catch (err) {
+                console.warn('[PrintOrderForm] Profile lookup failed:', err);
+            } finally {
+                if (!cancelled) setProfileLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [userEmail]);
 
     // Catalog state
     const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -374,7 +402,7 @@ const PrintOrderForm: React.FC = () => {
         return () => window.removeEventListener('resize', h);
     }, []);
 
-    const selectedPerson = person === '__other__' ? personOther.trim() : person;
+    const selectedPerson = customerProfile && !isAdmin ? customerProfile.name : (person === '__other__' ? personOther.trim() : person);
 
     // ===== FETCH CATALOG (from Supabase via service) =====
     const loadCatalog = useCallback(async () => {
@@ -673,71 +701,96 @@ const PrintOrderForm: React.FC = () => {
                         <User size={12} className="text-cyan-600 dark:text-cyan-400" />
                         <p className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">Người đặt hàng</p>
                     </div>
-                    {/* Person chips */}
-                    <div className={clsx("flex flex-wrap gap-1.5 rounded-xl p-1 -m-1 transition-all", shakeFields.has('person') && "animate-shake-red ring-2 ring-red-400/50")}>
-                        {PERSON_OPTIONS.map((name) => {
-                            const isSelected = person === name;
-                            const avatarColorMap: Record<string, string> = {
-                                'Ngọc Bích': 'from-violet-500 to-purple-600',
-                                'Ánh Mây': 'from-cyan-500 to-blue-600',
-                                'Thanh Tuyền': 'from-amber-500 to-orange-600',
-                                'Đỗ Chiều': 'from-emerald-500 to-teal-600',
-                                'Trà My': 'from-pink-500 to-rose-600',
-                            };
-                            const avatarGradient = avatarColorMap[name] || 'from-slate-500 to-slate-600';
-                            const parts = name.trim().split(/\s+/);
-                            const initial = parts[parts.length - 1].charAt(0);
-                            return (
-                                <button
-                                    key={name}
-                                    type="button"
-                                    onClick={() => { setPerson(name); setPersonOther(''); setError(''); }}
-                                    className={clsx(
-                                        "flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border text-xs font-bold transition-all duration-300",
-                                        isSelected
-                                            ? "border-cyan-400 dark:border-cyan-500/50 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 shadow-md shadow-cyan-500/10 scale-[1.02]"
-                                            : "border-slate-200/80 dark:border-slate-700/60 bg-white/70 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-cyan-300 dark:hover:border-cyan-500/30 hover:shadow-sm"
-                                    )}
-                                >
-                                    <span className={clsx(
-                                        "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 transition-all",
-                                        isSelected
-                                            ? `bg-gradient-to-br ${avatarGradient} shadow-sm`
-                                            : "bg-slate-300 dark:bg-slate-600"
-                                    )}>
-                                        {initial}
-                                    </span>
-                                    <span className="whitespace-nowrap">{name}</span>
-                                    {isSelected && <CheckCircle2 size={12} className="text-cyan-500 ml-0.5 shrink-0" />}
-                                </button>
-                            );
-                        })}
-                        {/* "Khác" button */}
-                        <button
-                            type="button"
-                            onClick={() => { setPerson('__other__'); setError(''); }}
-                            className={clsx(
-                                "flex items-center gap-1.5 pl-1 pr-3 py-1 rounded-full border border-dashed text-xs font-bold transition-all duration-300",
-                                person === '__other__'
-                                    ? "border-cyan-400 dark:border-cyan-500/50 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 shadow-md"
-                                    : "border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:border-cyan-300 hover:text-cyan-500"
+                    {/* Person display */}
+                    {profileLoading ? (
+                        <div className="flex items-center gap-2 py-2">
+                            <Loader2 size={14} className="animate-spin text-cyan-500" />
+                            <span className="text-xs text-slate-400 font-medium">Đang xác nhận thông tin...</span>
+                        </div>
+                    ) : customerProfile && !isAdmin ? (
+                        /* 🔒 Locked — auto-detected from Sheet */
+                        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-gradient-to-r from-cyan-50 to-sky-50 dark:from-cyan-500/10 dark:to-sky-500/10 border border-cyan-200/60 dark:border-cyan-500/20">
+                            <span className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-sky-600 flex items-center justify-center text-white text-xs font-black shadow-md">
+                                {customerProfile.name.split(/\s+/).pop()?.charAt(0) || '?'}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-black text-slate-800 dark:text-white truncate">{customerProfile.name}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                    {customerProfile.position && `${customerProfile.position} — `}{customerProfile.department || customerProfile.company}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/60 dark:border-emerald-500/20">
+                                <CheckCircle2 size={10} className="text-emerald-500" />
+                                <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">Đã xác thực</span>
+                            </div>
+                        </div>
+                    ) : (
+                        /* Admin / Unrecognized — show full person chip selector */
+                        <div className={clsx("flex flex-wrap gap-1.5 rounded-xl p-1 -m-1 transition-all", shakeFields.has('person') && "animate-shake-red ring-2 ring-red-400/50")}>
+                            {PERSON_OPTIONS.map((name) => {
+                                const isSelected = person === name;
+                                const avatarColorMap: Record<string, string> = {
+                                    'Ngọc Bích': 'from-violet-500 to-purple-600',
+                                    'Ánh Mây': 'from-cyan-500 to-blue-600',
+                                    'Thanh Tuyền': 'from-amber-500 to-orange-600',
+                                    'Đỗ Chiều': 'from-emerald-500 to-teal-600',
+                                    'Trà My': 'from-pink-500 to-rose-600',
+                                };
+                                const avatarGradient = avatarColorMap[name] || 'from-slate-500 to-slate-600';
+                                const parts = name.trim().split(/\s+/);
+                                const initial = parts[parts.length - 1].charAt(0);
+                                return (
+                                    <button
+                                        key={name}
+                                        type="button"
+                                        onClick={() => { setPerson(name); setPersonOther(''); setError(''); }}
+                                        className={clsx(
+                                            "flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border text-xs font-bold transition-all duration-300",
+                                            isSelected
+                                                ? "border-cyan-400 dark:border-cyan-500/50 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 shadow-md shadow-cyan-500/10 scale-[1.02]"
+                                                : "border-slate-200/80 dark:border-slate-700/60 bg-white/70 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 hover:border-cyan-300 dark:hover:border-cyan-500/30 hover:shadow-sm"
+                                        )}
+                                    >
+                                        <span className={clsx(
+                                            "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 transition-all",
+                                            isSelected
+                                                ? `bg-gradient-to-br ${avatarGradient} shadow-sm`
+                                                : "bg-slate-300 dark:bg-slate-600"
+                                        )}>
+                                            {initial}
+                                        </span>
+                                        <span className="whitespace-nowrap">{name}</span>
+                                        {isSelected && <CheckCircle2 size={12} className="text-cyan-500 ml-0.5 shrink-0" />}
+                                    </button>
+                                );
+                            })}
+                            {/* "Khác" button */}
+                            <button
+                                type="button"
+                                onClick={() => { setPerson('__other__'); setError(''); }}
+                                className={clsx(
+                                    "flex items-center gap-1.5 pl-1 pr-3 py-1 rounded-full border border-dashed text-xs font-bold transition-all duration-300",
+                                    person === '__other__'
+                                        ? "border-cyan-400 dark:border-cyan-500/50 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 shadow-md"
+                                        : "border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:border-cyan-300 hover:text-cyan-500"
+                                )}
+                            >
+                                <span className="w-6 h-6 rounded-full flex items-center justify-center bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 text-[11px] shrink-0">+</span>
+                                <span>Khác</span>
+                            </button>
+                            {/* "Khác" input — inline on PC, full-width on mobile */}
+                            {person === '__other__' && (
+                                <input
+                                    type="text"
+                                    value={personOther}
+                                    onChange={e => setPersonOther(e.target.value)}
+                                    placeholder="Nhập tên của bạn..."
+                                    className="w-full sm:w-auto sm:flex-1 sm:max-w-xs px-3 py-1.5 rounded-full bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border border-cyan-300 dark:border-cyan-500/30 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-500/30 outline-none transition-all"
+                                    autoFocus
+                                />
                             )}
-                        >
-                            <span className="w-6 h-6 rounded-full flex items-center justify-center bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 text-[11px] shrink-0">+</span>
-                            <span>Khác</span>
-                        </button>
-                        {/* "Khác" input — inline on PC, full-width on mobile */}
-                        {person === '__other__' && (
-                            <input
-                                type="text"
-                                value={personOther}
-                                onChange={e => setPersonOther(e.target.value)}
-                                placeholder="Nhập tên của bạn..."
-                                className="w-full sm:w-auto sm:flex-1 sm:max-w-xs px-3 py-1.5 rounded-full bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border border-cyan-300 dark:border-cyan-500/30 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-500/30 outline-none transition-all"
-                                autoFocus
-                            />
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
 
             {/* ===== SPREADSHEET TABLE ===== */}
