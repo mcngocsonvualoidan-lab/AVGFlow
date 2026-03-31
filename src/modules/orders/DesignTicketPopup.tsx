@@ -35,6 +35,7 @@ const ADMIN_NAMES: Record<string, string> = {
     'cambridgeorg.209@gmail.com': 'Lê Trần Thiện Tâm',
     'trolitct@gmail.com': 'Đinh Hoàng Ngọc Hân',
 };
+const ADMIN_EMAILS_POPUP = ['cambridgeorg.209@gmail.com', 'trolitct@gmail.com'];
 
 const CAT_CFG: Record<string, { label: string; icon: React.FC<any>; gradient: string }> = {
     'label-bag': { label: 'Nhãn / Túi', icon: Tag, gradient: 'from-violet-500 to-purple-600' },
@@ -453,6 +454,7 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
 
     const cat = CAT_CFG[ticket.category] || CAT_CFG['label-bag'];
     const st = STATUS_CFG[ticket.status] || STATUS_CFG.open;
+    const isAdmin = ADMIN_EMAILS_POPUP.includes(adminEmail);
     const StIcon = st.icon; const CatIcon = cat.icon;
     const created = parseDate(ticket.createdAt);
     const updated = parseDate(ticket.updatedAt);
@@ -497,7 +499,9 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
             const messagesRef = collection(db, 'ticket_chats', ticket.id, 'messages');
             await addDoc(messagesRef, {
                 text: `🔄 Trạng thái đã chuyển sang: ${stLabel}`,
-                sender: 'Admin', senderRole: 'admin', senderEmail: adminEmail,
+                sender: isAdmin ? 'Admin' : (ticket.contactName || 'Khách hàng'),
+                senderRole: isAdmin ? 'admin' : 'customer',
+                senderEmail: isAdmin ? adminEmail : (ticket.contactEmail || null),
                 ticketCode: ticket.ticketCode,
                 createdAt: serverTimestamp(),
             });
@@ -821,7 +825,7 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
                             ticketId={ticket.id}
                             ticketCode={ticket.ticketCode}
                             customerName={ticket.brandName || 'Khách hàng'}
-                            isAdmin={true}
+                            isAdmin={isAdmin}
                             adminEmail={adminEmail}
                             messages={messages}
                         />
