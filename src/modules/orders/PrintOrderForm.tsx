@@ -841,7 +841,8 @@ const PrintOrderForm: React.FC = () => {
                                                                     "w-full px-3 py-2.5 pr-8 rounded-lg bg-white dark:bg-slate-900/40 border text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:font-medium dark:placeholder:text-slate-500 outline-none transition-all cursor-pointer",
                                                                     activeCalendar === i ? "ring-2 ring-cyan-500/30 border-cyan-400" : "border-slate-200/80 dark:border-white/10",
                                                                     isRequired && !row[col.key] && "border-red-300 dark:border-red-500/30 bg-red-50/30 dark:bg-red-500/5",
-                                                                    shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red"
+                                                                    shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red",
+                                                                    row[col.key] && "bg-blue-50/60 dark:bg-blue-500/10 border-blue-200/60 dark:border-blue-500/20"
                                                                 )}
                                                             />
                                                             <button type="button" onClick={() => setActiveCalendar(activeCalendar === i ? null : i)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-500 transition">
@@ -868,7 +869,8 @@ const PrintOrderForm: React.FC = () => {
                                                                         : "bg-white dark:bg-slate-900/40 border-slate-200/80 dark:border-white/10 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:font-medium dark:placeholder:text-slate-500 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:bg-white dark:focus:bg-slate-800/60",
                                                                     !isFieldLocked && col.key === 'nhanHang' && activeDropdown === i && "ring-2 ring-cyan-500/30 border-cyan-400",
                                                                     isRequired && !row[col.key] && !isFieldLocked && "border-red-300 dark:border-red-500/30 bg-red-50/30 dark:bg-red-500/5",
-                                                                    shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red"
+                                                                    shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red",
+                                                                    row[col.key] && !isFieldLocked && "!bg-blue-50/60 dark:!bg-blue-500/10 border-blue-200/60 dark:border-blue-500/20"
                                                                 )}
                                                                 autoComplete="off"
                                                             />
@@ -935,7 +937,8 @@ const PrintOrderForm: React.FC = () => {
                                                                         "hover:border-cyan-300/60 dark:hover:border-cyan-500/20",
                                                                         activeCalendar === i ? "ring-2 ring-cyan-500/30 border-cyan-400" : "border-slate-200/80 dark:border-white/10",
                                                                         isRequired && !row[col.key] && "border-red-300 dark:border-red-500/30 bg-red-50/30 dark:bg-red-500/5",
-                                                                        shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red"
+                                                                        shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red",
+                                                                        row[col.key] && "!bg-blue-50/60 dark:!bg-blue-500/10 border-blue-200/60 dark:border-blue-500/20"
                                                                     )}
                                                                 />
                                                                 <button type="button" onClick={() => setActiveCalendar(activeCalendar === i ? null : i)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-500 transition">
@@ -962,7 +965,8 @@ const PrintOrderForm: React.FC = () => {
                                                                             : "bg-white/70 dark:bg-slate-900/40 border-slate-200/80 dark:border-white/10 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 placeholder:text-[10px] placeholder:font-medium dark:placeholder:text-slate-500 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:bg-white dark:focus:bg-slate-800/60 hover:border-cyan-300/60 dark:hover:border-cyan-500/20",
                                                                         !isFieldLocked && col.key === 'nhanHang' && activeDropdown === i && "ring-2 ring-cyan-500/30 border-cyan-400",
                                                                         isRequired && !row[col.key] && !isFieldLocked && "border-red-300 dark:border-red-500/30 bg-red-50/30 dark:bg-red-500/5",
-                                                                        shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red"
+                                                                        shakeFields.has(`row-${i}-${col.key}`) && "animate-shake-red",
+                                                                        row[col.key] && !isFieldLocked && "!bg-blue-50/60 dark:!bg-blue-500/10 border-blue-200/60 dark:border-blue-500/20"
                                                                     )}
                                                                     autoComplete="off"
                                                                 />
