@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Tag, Box, Share2, PenLine, Sparkles, ArrowLeft, Loader2, AlertCircle, Shield, Paperclip, Clock, Hash, ChevronRight, ChevronLeft, ChevronDown, Upload, Search, Filter, XCircle, X, UserCheck, Calendar, Check, Download, FileText, ExternalLink, Eye, Archive, PlayCircle, RotateCcw, CheckCircle2, ThumbsUp } from 'lucide-react';
+import { Tag, Box, Share2, PenLine, Sparkles, ArrowLeft, Loader2, AlertCircle, Shield, Paperclip, Clock, Hash, ChevronRight, ChevronLeft, ChevronDown, Upload, Search, Filter, XCircle, X, UserCheck, Calendar, Check, Download, FileText, ExternalLink, Eye, Archive, PlayCircle, RotateCcw, CheckCircle2, ThumbsUp, MessageCircle, Send } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Timestamp, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, where, setDoc } from '@/lib/firestore';
 import { db } from '../../lib/firebase';
@@ -11,7 +11,13 @@ import { initializeGemini } from '../../lib/gemini';
 // Design ticket handlers (only specific staff)
 const DESIGN_HANDLERS = ['Nguyễn Ngọc Sơn', 'Hà Ngọc Doanh'];
 import DesignTicketStats from './DesignTicketStats';
-import FloatingTicketChat from '../../components/FloatingTicketChat';
+// FloatingTicketChat replaced by inline embedded chat
+
+// System event emojis — messages starting with these are timeline events, NOT chat
+const SYSTEM_EMOJIS_DOF = ['🔄', '👤', '🎉', '📋', '🔍', '✅', '❌'];
+function isSystemEventDOF(text: string): boolean {
+    return SYSTEM_EMOJIS_DOF.some(e => text.startsWith(e));
+}
 
 // Admin emails who can manage tickets
 const ADMIN_EMAILS = ['cambridgeorg.209@gmail.com', 'trolitct@gmail.com'];
@@ -709,6 +715,14 @@ const DesignOrderForm: React.FC = () => {
     const [viewerZoom, setViewerZoom] = useState(1);
     const [viewerPos, setViewerPos] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
+    const [publicChatTab, setPublicChatTab] = useState<'info' | 'chat'>('info');
+    const [chatMessages, setChatMessages] = useState<{id:string;text:string;sender:string;senderRole:'customer'|'admin';senderEmail?:string;imageUrl?:string;createdAt:any}[]>([]);
+    const [chatNewMsg, setChatNewMsg] = useState('');
+    const [chatSending, setChatSending] = useState(false);
+    const [chatError, setChatError] = useState('');
+    const [chatPreviewImg, setChatPreviewImg] = useState<string|null>(null);
+    const chatEndRef = useRef<HTMLDivElement>(null);
+    const chatFileRef = useRef<HTMLInputElement>(null);
     const dragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
     const lastPinchDist = useRef(0);
 
@@ -1008,6 +1022,24 @@ Yêu cầu:
 
         return () => unsubTickets();
     }, []);
+
+    // Chat messages listener - loads when activeTicket changes
+    useEffect(() => {
+        if (!activeTicket) { setChatMessages([]); return; }
+        const messagesRef = collection(db, 'ticket_chats', activeTicket.id, 'messages');
+        const q = query(messagesRef, orderBy('createdAt', 'asc'));
+        const unsub = onSnapshot(q, (snapshot) => {
+            const msgs = snapshot.docs.map(d => {
+                const data = d.data();
+                return { id: d.id, text: data.text || '', sender: data.sender || '', senderRole: (data.senderRole || 'customer') as 'customer' | 'admin', senderEmail: data.senderEmail || undefined, imageUrl: data.imageUrl || undefined, createdAt: data.createdAt || null };
+            });
+            setChatMessages(msgs);
+        }, (error) => { console.error('[Chat] Firestore listen error:', error); });
+        return () => unsub();
+    }, [activeTicket?.id]);
+
+    // Auto-scroll chat
+    useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
     // Filtered tickets
     const filteredTickets = useMemo(() => {
@@ -1958,9 +1990,25 @@ Yêu cầu:
                 const catCfg = CATEGORY_CONFIG[activeTicket.category] || CATEGORY_CONFIG['label-bag'];
                 const statusCfg = STATUS_CONFIG[activeTicket.status] || STATUS_CONFIG['open'];
                 return (
-                    <div className="flex flex-col gap-6 lg:items-center max-w-4xl mx-auto">
+                    <div className="flex flex-col max-w-6xl mx-auto w-full">
+                        {/* Mobile tab switcher */}
+                        <div className="flex lg:hidden border-b border-slate-200/50 dark:border-white/10 bg-white/50 dark:bg-slate-800/50 backdrop-blur-xl rounded-t-2xl mb-3 overflow-hidden shrink-0">
+                            <button onClick={() => setPublicChatTab('info')} className={clsx('flex-1 py-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all',
+                                publicChatTab === 'info' ? 'border-violet-500 text-violet-600' : 'border-transparent text-slate-400')}>
+                                <FileText size={13} /> Thông tin
+                            </button>
+                            <button onClick={() => setPublicChatTab('chat')} className={clsx('flex-1 py-3 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all relative',
+                                publicChatTab === 'chat' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400')}>
+                                <MessageCircle size={13} /> Chat
+                                {chatMessages.filter(m => !isSystemEventDOF(m.text)).length > 0 && publicChatTab !== 'chat' && (
+                                    <span className="absolute top-1.5 right-[20%] w-2 h-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-800" />
+                                )}
+                            </button>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row gap-4 lg:gap-5">
                         {/* LEFT COLUMN: Ticket info + SXTC history */}
-                        <div className="w-full space-y-4">
+                        <div className={clsx('lg:flex-1 space-y-4 min-w-0', publicChatTab === 'info' ? 'block' : 'hidden lg:block')}>
                         {/* Ticket info card */}
                         <div className="relative overflow-hidden rounded-3xl bg-white/70 dark:bg-slate-800/60 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 shadow-2xl">
                             {/* Header */}
@@ -2278,6 +2326,101 @@ Yêu cầu:
                         )}
                         </div>{/* end left column */}
 
+                        {/* RIGHT COLUMN: Inline Chat */}
+                        <div className={clsx('lg:w-[380px] shrink-0', publicChatTab === 'chat' ? 'block' : 'hidden lg:block')}>
+                            <div className="sticky top-4 rounded-3xl overflow-hidden bg-white/70 dark:bg-slate-800/60 backdrop-blur-2xl border border-slate-200/50 dark:border-white/10 shadow-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 120px)', minHeight: '450px' }}>
+                                {/* Chat header */}
+                                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-slate-200/50 dark:border-white/10 bg-gradient-to-r from-indigo-500/5 to-violet-500/5 dark:from-indigo-500/10 dark:to-violet-500/10 shrink-0">
+                                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md shrink-0">
+                                        <MessageCircle size={13} className="text-white" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-[11px] font-black text-slate-800 dark:text-white truncate">Trao đổi Đơn hàng</p>
+                                        <p className="text-[9px] text-slate-400 font-mono truncate">{activeTicket.ticketCode}</p>
+                                    </div>
+                                    <span className="text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{chatMessages.filter(m => !isSystemEventDOF(m.text)).length}</span>
+                                </div>
+                                {/* Chat error */}
+                                {chatError && (
+                                    <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200/50 dark:border-amber-500/20 shrink-0">
+                                        <AlertCircle size={11} className="text-amber-500 shrink-0" />
+                                        <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium flex-1 truncate">{chatError}</span>
+                                        <button onClick={() => setChatError('')} className="text-[9px] font-bold text-amber-600 px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 hover:bg-amber-200 shrink-0">X</button>
+                                    </div>
+                                )}
+                                {/* Messages */}
+                                <div className="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar min-h-0">
+                                    {chatMessages.filter(m => !isSystemEventDOF(m.text)).length === 0 && (
+                                        <div className="flex flex-col items-center justify-center h-full text-center py-6">
+                                            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-2.5">
+                                                <MessageCircle size={20} className="text-slate-300 dark:text-slate-600" />
+                                            </div>
+                                            <p className="text-[11px] font-bold text-slate-400">Chưa có tin nhắn nào</p>
+                                            <p className="text-[9px] text-slate-300 dark:text-slate-600 mt-0.5">Hãy gửi tin nhắn đầu tiên!</p>
+                                        </div>
+                                    )}
+                                    {chatMessages.filter(m => !isSystemEventDOF(m.text)).map((msg) => {
+                                        const isCustomer = msg.senderRole === 'customer';
+                                        const showName = isCustomer ? msg.sender : (isAdmin ? (ADMIN_NAMES[msg.senderEmail || ''] || msg.sender) : 'Admin');
+                                        const isMe = isAdmin ? !isCustomer : isCustomer;
+                                        return (
+                                            <div key={msg.id} className={clsx('flex gap-1.5 w-full', isMe ? 'flex-row-reverse' : 'flex-row')}>
+                                                <div className={clsx('w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-[9px] font-black shadow-sm mt-0.5',
+                                                    isMe ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white' : 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white'
+                                                )}>{showName?.charAt(0)?.toUpperCase() || '?'}</div>
+                                                <div className={clsx('max-w-[82%] rounded-2xl px-3 py-2 shadow-sm break-words relative',
+                                                    isMe ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-tr-sm' : 'bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-white/5 text-slate-800 dark:text-slate-200 rounded-tl-sm'
+                                                )}>
+                                                    {!isMe && <p className="text-[9px] font-black mb-0.5 text-emerald-500 opacity-70">{showName}</p>}
+                                                    {msg.imageUrl && (
+                                                        <div className="mb-1.5 rounded-xl overflow-hidden border border-black/10 dark:border-white/10 group relative max-w-[180px]">
+                                                            <img src={msg.imageUrl} alt="attached" className="w-full h-auto cursor-pointer hover:scale-105 transition-transform" onClick={() => setChatPreviewImg(msg.imageUrl || null)} />
+                                                        </div>
+                                                    )}
+                                                    <p className="text-[11px] leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                                                    <p className={clsx('text-[8px] mt-1 opacity-50', isMe ? 'text-right' : '')}>
+                                                        {msg.createdAt ? (() => { const ts = msg.createdAt; let d: Date; if (typeof ts?.toDate === 'function') d = ts.toDate(); else if (typeof ts?.seconds === 'number') d = new Date(ts.seconds * 1000); else d = new Date(ts); return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}) + ' • ' + d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}); })() : ''}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    <div ref={chatEndRef} />
+                                </div>
+                                {/* Input */}
+                                <div className="px-3 py-2.5 border-t border-slate-200/50 dark:border-white/10 bg-slate-50/50 dark:bg-slate-800/50 backdrop-blur-xl shrink-0">
+                                    <div className="flex gap-1.5">
+                                        <button type="button" onClick={() => chatFileRef.current?.click()} className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-all shrink-0">
+                                            <Paperclip size={14} />
+                                        </button>
+                                        <input ref={chatFileRef} type="file" onChange={async (e) => {
+                                            const file = e.target.files?.[0]; if (!file) return;
+                                            setChatSending(true);
+                                            try {
+                                                const result = await uploadFileToR2(file, 'design_ticket_chat');
+                                                const label = file.type.startsWith('image/') ? `📷 ${file.name}` : `📎 ${file.name}`;
+                                                await addDoc(collection(db, 'ticket_chats', activeTicket.id, 'messages'), { text: label, sender: isAdmin ? 'Admin' : (activeTicket.contactName || 'Khách hàng'), senderRole: isAdmin ? 'admin' : 'customer', senderEmail: isAdmin ? userEmail : null, ticketCode: activeTicket.ticketCode, imageUrl: result.url, createdAt: serverTimestamp() });
+                                            } catch (err: any) { setChatError(`⚠️ Gửi file thất bại: ${err.message || 'Lỗi'}`); } finally { setChatSending(false); }
+                                            if (chatFileRef.current) chatFileRef.current.value = '';
+                                        }} className="hidden" />
+                                        <div className="flex-1 relative align-center flex">
+                                            <textarea value={chatNewMsg} onChange={(e) => setChatNewMsg(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!chatNewMsg.trim() || chatSending) return; const t = chatNewMsg.trim(); setChatNewMsg(''); setChatSending(true); setTimeout(() => setChatSending(false), 300); addDoc(collection(db, 'ticket_chats', activeTicket.id, 'messages'), { text: t, sender: isAdmin ? 'Admin' : (activeTicket.contactName || 'Khách hàng'), senderRole: isAdmin ? 'admin' : 'customer', senderEmail: isAdmin ? userEmail : null, ticketCode: activeTicket.ticketCode, createdAt: serverTimestamp() }).catch(() => { setChatError('⚠️ Gửi tin nhắn thất bại.'); setChatNewMsg(t); }); } }}
+                                                placeholder="Nhập tin nhắn..."
+                                                rows={1}
+                                                className="w-full h-8 px-3 py-2 rounded-xl bg-slate-100/80 dark:bg-slate-700/80 border border-slate-200/50 dark:border-white/10 text-[11px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30 resize-none transition-all"
+                                            />
+                                        </div>
+                                        <button type="button" onClick={() => { if (!chatNewMsg.trim() || chatSending) return; const t = chatNewMsg.trim(); setChatNewMsg(''); setChatSending(true); setTimeout(() => setChatSending(false), 300); addDoc(collection(db, 'ticket_chats', activeTicket.id, 'messages'), { text: t, sender: isAdmin ? 'Admin' : (activeTicket.contactName || 'Khách hàng'), senderRole: isAdmin ? 'admin' : 'customer', senderEmail: isAdmin ? userEmail : null, ticketCode: activeTicket.ticketCode, createdAt: serverTimestamp() }).catch(() => { setChatError('⚠️ Gửi tin nhắn thất bại.'); setChatNewMsg(t); }); }}
+                                            disabled={!chatNewMsg.trim() || chatSending}
+                                            className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-lg disabled:opacity-40 transition-all shrink-0">
+                                            {chatSending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        </div>{/* end flex row */}
                     </div>
                 );
             })()}
@@ -2384,21 +2527,16 @@ Yêu cầu:
                     </div>
                 </div>
             )}
-            {/* ─── Floating Ticket Chat ─── always visible when tickets exist */}
-            {(() => {
-                const chatTicket = activeTicket || myTickets[0];
-                if (!chatTicket) return null;
-                return (
-                    <FloatingTicketChat
-                        ticketId={chatTicket.id}
-                        ticketCode={chatTicket.ticketCode}
-                        customerName={chatTicket.contactName || 'Khách hàng'}
-                        isAdmin={isAdmin}
-                        adminEmail={userEmail}
-                        adminName={adminName}
-                    />
-                );
-            })()}
+            {/* Floating chat removed — chat is now inline in ticket-view */}
+            {/* Chat Image Lightbox */}
+            {chatPreviewImg && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setChatPreviewImg(null)}>
+                    <button onClick={() => setChatPreviewImg(null)} className="absolute top-4 right-4 w-10 h-10 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-all z-10">
+                        <X size={20} />
+                    </button>
+                    <img src={chatPreviewImg} alt="Preview" className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl object-contain" onClick={e => e.stopPropagation()} />
+                </div>
+            )}
         </div>
     );
 };
