@@ -7,6 +7,7 @@ import { db } from '../../lib/firebase';
 import DesignTicketStats from './DesignTicketStats';
 import DesignTicketPopup from './DesignTicketPopup';
 import { useAuth } from '../../context/AuthContext';
+import { showBrowserNotification, requestNotificationPermission } from '../../services/chatNotificationService';
 
 // ============================================================
 // TYPES
@@ -122,6 +123,9 @@ const DesignOrdersManager: React.FC = () => {
     const [categoryFilter, setCategoryFilter] = useState('all');
     const [sortNewestFirst, setSortNewestFirst] = useState(true);
 
+    // Admin email (declared early for use in chat listeners)
+    const adminEmail = currentUser?.email || '';
+
     // Load tickets — Firestore PRIMARY with realtime
     useEffect(() => {
         setLoading(true);
@@ -165,7 +169,14 @@ const DesignOrdersManager: React.FC = () => {
         return () => unsubTickets();
     }, []);
 
-    // ── Fetch message counts per ticket (Firestore) ──
+    // ── Fetch message counts per ticket (Firestore) + detect new messages ──
+    const prevMessageCountsRef = React.useRef<Record<string, { total: number; lastMessageAt: string }>>({});
+    const [chatToasts, setChatToasts] = useState<{ id: string; ticketCode: string; sender: string; text: string }[]>([]);
+    const initialLoadRef = React.useRef(true);
+
+    // Request notification permission on mount
+    useEffect(() => { requestNotificationPermission(); }, []);
+
     useEffect(() => {
         // Only subscribe if we have tickets
         if (tickets.length === 0) return;
@@ -175,22 +186,52 @@ const DesignOrdersManager: React.FC = () => {
             return onSnapshot(messagesRef, (snapshot) => {
                 const total = snapshot.size;
                 let lastMessageAt = '';
+                let latestMsg: { sender: string; text: string; senderEmail: string } | null = null;
                 snapshot.docs.forEach(d => {
-                    const ts = d.data().createdAt;
+                    const data = d.data();
+                    const ts = data.createdAt;
                     if (ts) {
                         const dateStr = typeof ts === 'string' ? ts : ts.toDate?.()?.toISOString() || '';
-                        if (dateStr > lastMessageAt) lastMessageAt = dateStr;
+                        if (dateStr > lastMessageAt) {
+                            lastMessageAt = dateStr;
+                            latestMsg = { sender: data.sender || '', text: data.text || '', senderEmail: data.senderEmail || '' };
+                        }
                     }
                 });
+
+                // Detect new message (not from current user, count increased)
+                const prev = prevMessageCountsRef.current[t.id];
+                if (!initialLoadRef.current && prev && total > prev.total && latestMsg) {
+                    const msg = latestMsg as { sender: string; text: string; senderEmail: string };
+                    if (msg.senderEmail.toLowerCase() !== adminEmail.toLowerCase()) {
+                        // Show in-app toast
+                        const toastId = `chat-${t.id}-${Date.now()}`;
+                        const displayText = msg.text.length > 60 ? msg.text.slice(0, 60) + '...' : msg.text;
+                        setChatToasts(prev => [...prev, { id: toastId, ticketCode: t.ticketCode, sender: msg.sender, text: displayText }]);
+                        setTimeout(() => setChatToasts(prev => prev.filter(tt => tt.id !== toastId)), 6000);
+
+                        // Show browser notification (when tab unfocused)
+                        showBrowserNotification(
+                            `💬 ${msg.sender} — ${t.ticketCode}`,
+                            displayText,
+                            '/orders'
+                        );
+                    }
+                }
+
                 setMessageCounts(prev => ({
                     ...prev,
                     [t.id]: { total, lastMessageAt },
                 }));
+                prevMessageCountsRef.current[t.id] = { total, lastMessageAt };
             });
         });
 
+        // After first batch of listeners fire, mark initial load complete
+        setTimeout(() => { initialLoadRef.current = false; }, 2000);
+
         return () => unsubscribers.forEach(unsub => unsub());
-    }, [tickets]);
+    }, [tickets, adminEmail]);
 
     // Filtered & sorted tickets
     const filteredTickets = useMemo(() => {
@@ -235,7 +276,6 @@ const DesignOrdersManager: React.FC = () => {
     const openCount = useMemo(() => tickets.filter(t => t.status === 'open' || t.status === 'in-review' || t.status === 'revision').length, [tickets]);
 
     // Compute unread counts per ticket
-    const adminEmail = currentUser?.email || '';
     const lastReadMap = useMemo(() => getLastReadMap(adminEmail), [adminEmail, selectedTicket]);
 
     const getUnreadCount = useCallback((ticketId: string): number => {
@@ -455,6 +495,38 @@ const DesignOrdersManager: React.FC = () => {
                     adminName={currentUser?.displayName || currentUser?.email || 'Admin'}
                 />
             )}
+
+            {/* 🔔 Chat Toast Notifications */}
+            <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 max-w-[360px] pointer-events-none">
+                {chatToasts.map(toast => (
+                    <div
+                        key={toast.id}
+                        className="pointer-events-auto animate-slide-in-right bg-white/95 dark:bg-slate-800/95 backdrop-blur-2xl rounded-2xl shadow-2xl shadow-violet-500/10 border border-violet-200/60 dark:border-violet-500/20 p-4 flex items-start gap-3 cursor-pointer hover:scale-[1.02] transition-transform"
+                        onClick={() => {
+                            const ticket = tickets.find(t => t.ticketCode === toast.ticketCode);
+                            if (ticket) handleOpenTicket(ticket);
+                            setChatToasts(prev => prev.filter(tt => tt.id !== toast.id));
+                        }}
+                    >
+                        <div className="shrink-0 w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
+                            <MessageCircle size={16} className="text-white" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-black text-slate-800 dark:text-white">{toast.sender}</span>
+                                <span className="text-[9px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">{toast.ticketCode}</span>
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 line-clamp-2">{toast.text}</p>
+                        </div>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setChatToasts(prev => prev.filter(tt => tt.id !== toast.id)); }}
+                            className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        >
+                            <XCircle size={16} />
+                        </button>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };

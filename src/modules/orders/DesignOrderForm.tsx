@@ -7,6 +7,7 @@ import { uploadFileToR2 } from '../../services/r2UploadService';
 import { createTicket as createTicketOnSheet, updateTicket as updateTicketOnSheet, isConfigured as isSheetConfigured } from '../../services/designTicketSheetService';
 import { useAuth } from '../../context/AuthContext';
 import { initializeGemini } from '../../lib/gemini';
+import { showBrowserNotification, requestNotificationPermission } from '../../services/chatNotificationService';
 
 // Design ticket handlers (only specific staff)
 const DESIGN_HANDLERS = ['Nguyễn Ngọc Sơn', 'Hà Ngọc Doanh'];
@@ -1065,6 +1066,76 @@ Yêu cầu:
         return () => unsubTickets();
     }, []);
 
+    // 🔔 Message count tracking + unread notifications per ticket (Public side)
+    const [ticketMsgCounts, setTicketMsgCounts] = useState<Record<string, { total: number; lastMessageAt: string }>>({});
+    const prevMsgCountsRef = useRef<Record<string, { total: number; lastMessageAt: string }>>({});
+    const [chatToasts, setChatToasts] = useState<{ id: string; ticketCode: string; sender: string; text: string }[]>([]);
+    const initialLoadDoneRef = useRef(false);
+
+    // Request notification permission
+    useEffect(() => { requestNotificationPermission(); }, []);
+
+    // Last-read tracking (localStorage)
+    const LAST_READ_KEY_PUBLIC = `avgflow_ticket_lastread_${userEmail}`;
+    const getLastReadMap = useCallback((): Record<string, string> => {
+        try { const r = localStorage.getItem(LAST_READ_KEY_PUBLIC); return r ? JSON.parse(r) : {}; } catch { return {}; }
+    }, [LAST_READ_KEY_PUBLIC]);
+    const markTicketRead = useCallback((ticketId: string) => {
+        const map = getLastReadMap();
+        map[ticketId] = new Date().toISOString();
+        localStorage.setItem(LAST_READ_KEY_PUBLIC, JSON.stringify(map));
+    }, [getLastReadMap, LAST_READ_KEY_PUBLIC]);
+    const getUnreadCount = useCallback((ticketId: string): number => {
+        const mc = ticketMsgCounts[ticketId];
+        if (!mc || mc.total === 0) return 0;
+        const lastReadMap = getLastReadMap();
+        const lastRead = lastReadMap[ticketId];
+        if (!lastRead) return mc.total;
+        return new Date(mc.lastMessageAt) > new Date(lastRead) ? mc.total : 0;
+    }, [ticketMsgCounts, getLastReadMap]);
+
+    // Per-ticket message listeners
+    useEffect(() => {
+        if (myTickets.length === 0) return;
+        const unsubs = myTickets.map(t => {
+            const messagesRef = collection(db, 'ticket_chats', t.id, 'messages');
+            return onSnapshot(messagesRef, (snapshot) => {
+                const total = snapshot.size;
+                let lastMessageAt = '';
+                let latestMsg: { sender: string; text: string; senderEmail: string } | null = null;
+                snapshot.docs.forEach(d => {
+                    const data = d.data();
+                    const ts = data.createdAt;
+                    if (ts) {
+                        const dateStr = typeof ts === 'string' ? ts : ts.toDate?.()?.toISOString() || '';
+                        if (dateStr > lastMessageAt) {
+                            lastMessageAt = dateStr;
+                            latestMsg = { sender: data.sender || '', text: data.text || '', senderEmail: data.senderEmail || '' };
+                        }
+                    }
+                });
+
+                // Detect NEW message (not from current user)
+                const prev = prevMsgCountsRef.current[t.id];
+                if (initialLoadDoneRef.current && prev && total > prev.total && latestMsg) {
+                    const msg = latestMsg as { sender: string; text: string; senderEmail: string };
+                    if (msg.senderEmail.toLowerCase() !== userEmail.toLowerCase()) {
+                        const toastId = `chat-${t.id}-${Date.now()}`;
+                        const displayText = msg.text.length > 60 ? msg.text.slice(0, 60) + '...' : msg.text;
+                        setChatToasts(prev => [...prev, { id: toastId, ticketCode: t.ticketCode, sender: msg.sender, text: displayText }]);
+                        setTimeout(() => setChatToasts(prev => prev.filter(tt => tt.id !== toastId)), 6000);
+                        showBrowserNotification(`💬 ${msg.sender} — ${t.ticketCode}`, displayText, window.location.href);
+                    }
+                }
+
+                setTicketMsgCounts(prev => ({ ...prev, [t.id]: { total, lastMessageAt } }));
+                prevMsgCountsRef.current[t.id] = { total, lastMessageAt };
+            });
+        });
+        setTimeout(() => { initialLoadDoneRef.current = true; }, 2000);
+        return () => unsubs.forEach(u => u());
+    }, [myTickets, userEmail]);
+
     // Chat messages listener - loads when activeTicket changes
     useEffect(() => {
         if (!activeTicket) { setChatMessages([]); return; }
@@ -1537,8 +1608,8 @@ Yêu cầu:
                                     createdStr = ts?.toDate ? ts.toDate().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : (ts ? new Date(ts as unknown as string).toLocaleDateString('vi-VN') : '');
                                 } catch { createdStr = ''; }
                                 return (
-                                    <div key={ticket.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group">
-                                        <button type="button" onClick={() => setPopupTicket(ticket)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                                    <div key={ticket.id} className={clsx("flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group", getUnreadCount(ticket.id) > 0 && 'bg-violet-50/40 dark:bg-violet-500/5')}>
+                                        <button type="button" onClick={() => { markTicketRead(ticket.id); setPopupTicket(ticket); }} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                                             <div className={clsx("w-9 h-9 rounded-xl bg-gradient-to-br flex items-center justify-center shrink-0 shadow-md relative", catCfg.gradient)}>
                                                 {React.createElement(catCfg.icon, { size: 16, className: 'text-white' })}
                                                 <span className={clsx("absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-800", statusCfg.dot)} />
@@ -1547,6 +1618,7 @@ Yêu cầu:
                                                 <div className="flex items-center gap-2 flex-wrap">
                                                     <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-200">{ticket.ticketCode}</span>
                                                     <span className={clsx("text-[9px] font-bold px-1.5 py-0.5 rounded-md border", statusCfg.bg, statusCfg.color, statusCfg.border)}>{statusCfg.label}</span>
+                                                    {(() => { const unread = getUnreadCount(ticket.id); return unread > 0 ? (<span className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-500/25 text-red-600 dark:text-red-400 animate-pulse"><MessageCircle size={9} />{unread}</span>) : null; })()}
                                                     {ticket.assignedTo && (
                                                         <span className="text-[9px] font-medium text-indigo-500 dark:text-indigo-400 flex items-center gap-0.5"><UserCheck size={9} />{ticket.assignedTo.split(' ').pop()}</span>
                                                     )}
@@ -2624,6 +2696,38 @@ Yêu cầu:
                     <img src={chatPreviewImg} alt="Preview" className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl object-contain" onClick={e => e.stopPropagation()} />
                 </div>
             )}
+
+            {/* 🔔 Chat Toast Notifications */}
+            <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 max-w-[360px] pointer-events-none">
+                {chatToasts.map(toast => (
+                    <div
+                        key={toast.id}
+                        className="pointer-events-auto animate-slide-in-right bg-white/95 dark:bg-slate-800/95 backdrop-blur-2xl rounded-2xl shadow-2xl shadow-violet-500/10 border border-violet-200/60 dark:border-violet-500/20 p-4 flex items-start gap-3 cursor-pointer hover:scale-[1.02] transition-transform"
+                        onClick={() => {
+                            const ticket = myTickets.find(t => t.ticketCode === toast.ticketCode);
+                            if (ticket) { markTicketRead(ticket.id); setPopupTicket(ticket); }
+                            setChatToasts(prev => prev.filter(tt => tt.id !== toast.id));
+                        }}
+                    >
+                        <div className="shrink-0 w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
+                            <MessageCircle size={16} className="text-white" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-black text-slate-800 dark:text-white">{toast.sender}</span>
+                                <span className="text-[9px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">{toast.ticketCode}</span>
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 line-clamp-2">{toast.text}</p>
+                        </div>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setChatToasts(prev => prev.filter(tt => tt.id !== toast.id)); }}
+                            className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                        >
+                            <XCircle size={16} />
+                        </button>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };

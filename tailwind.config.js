@@ -65,6 +65,7 @@ export default {
                 'pulse-glow': 'pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                 'subtle-pulse': 'subtlePulse 2.5s ease-in-out infinite',
                 'shake-red': 'shakeRed 0.5s ease-in-out 3',
+                'slide-in-right': 'slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
             },
             keyframes: {
                 lightSweep: {
@@ -86,6 +87,10 @@ export default {
                     '0%, 100%': { borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(254,226,226,0.2)', transform: 'translateX(0)' },
                     '10%, 30%, 50%, 70%, 90%': { borderColor: '#ef4444', backgroundColor: 'rgba(254,226,226,0.5)', transform: 'translateX(-3px)', boxShadow: '0 0 8px rgba(239,68,68,0.3)' },
                     '20%, 40%, 60%, 80%': { borderColor: '#ef4444', backgroundColor: 'rgba(254,226,226,0.5)', transform: 'translateX(3px)', boxShadow: '0 0 8px rgba(239,68,68,0.3)' },
+                },
+                slideInRight: {
+                    '0%': { transform: 'translateX(120%)', opacity: '0' },
+                    '100%': { transform: 'translateX(0)', opacity: '1' },
                 },
             }
         },
