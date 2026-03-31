@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Clock, PenLine, Calendar, CheckCircle2, AlertCircle, Loader2, UserCheck, Tag, Box, Share2, Sparkles, Phone, Mail, MapPin, FileText, Image as ImageIcon, ZoomIn, ChevronDown, History, AArrowUp, AArrowDown } from 'lucide-react';
+import { X, Clock, PenLine, Calendar, CheckCircle2, AlertCircle, Loader2, UserCheck, Tag, Box, Share2, Sparkles, Phone, Mail, MapPin, FileText, Image as ImageIcon, ZoomIn, ChevronDown, History, AArrowUp, AArrowDown, MessageCircle, Send, Paperclip } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Timestamp, doc, updateDoc, collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp } from '@/lib/firestore';
 import { db } from '../../lib/firebase';
 import { updateTicket as updateTicketOnSheet, isConfigured as isSheetConfigured } from '../../services/designTicketSheetService';
-import FloatingTicketChat from '../../components/FloatingTicketChat';
+import { uploadFileToR2 } from '../../services/r2UploadService';
 
 // ── Types ──
 interface DesignTicket {
@@ -31,6 +31,10 @@ interface Props {
 
 // ── Config ──
 const DESIGN_HANDLERS = ['Nguyễn Ngọc Sơn', 'Hà Ngọc Doanh'];
+const ADMIN_NAMES: Record<string, string> = {
+    'cambridgeorg.209@gmail.com': 'Lê Trần Thiện Tâm',
+    'trolitct@gmail.com': 'Đinh Hoàng Ngọc Hân',
+};
 
 const CAT_CFG: Record<string, { label: string; icon: React.FC<any>; gradient: string }> = {
     'label-bag': { label: 'Nhãn / Túi', icon: Tag, gradient: 'from-violet-500 to-purple-600' },
@@ -46,7 +50,7 @@ const STATUS_CFG: Record<string, { label: string; icon: React.FC<any>; color: st
     cancelled: { label: 'Đã hủy', icon: X, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-500/10', border: 'border-red-200 dark:border-red-500/20' },
 };
 
-// Status transitions — defines what statuses you can go to from current
+// Status transitions
 const STATUS_TRANSITIONS: Record<string, string[]> = {
     open: ['in-review', 'cancelled'],
     'in-review': ['revision', 'approved', 'cancelled'],
@@ -56,7 +60,6 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
     cancelled: [],
 };
 
-// Fields that are contact info (already shown in contact section)
 const CONTACT_FIELDS = new Set([
     'Tên đơn vị đặt hàng', 'Người đặt hàng', 'Số điện thoại',
     'Địa chỉ', 'Email', 'Ngày đặt hàng',
@@ -86,7 +89,7 @@ function fmtTime(ts: any) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// INFO PANEL (reusable for both mobile tab & desktop left side)
+// INFO PANEL
 // ════════════════════════════════════════════════════════════════
 interface InfoPanelProps {
     ticket: DesignTicket;
@@ -100,7 +103,7 @@ const InfoPanel: React.FC<InfoPanelProps> = ({ ticket, onPreview, fontSize, onFo
         ? Object.entries(ticket.formData).filter(([k, v]) => v && !CONTACT_FIELDS.has(k))
         : [];
 
-    const fs = fontSize; // base font size in px
+    const fs = fontSize;
     const fsLabel = fs - 1;
     const fsSmall = Math.max(9, fs - 3);
 
@@ -119,7 +122,7 @@ const InfoPanel: React.FC<InfoPanelProps> = ({ ticket, onPreview, fontSize, onFo
                 </button>
             </div>
 
-            {/* ── Contact Card ── */}
+            {/* Contact Card */}
             {(ticket.contactName || ticket.contactPhone || ticket.contactEmail) && (
                 <div className="rounded-2xl overflow-hidden border border-indigo-200/40 dark:border-indigo-500/15 shadow-sm">
                     <div className="px-4 py-2 bg-gradient-to-r from-indigo-500/10 to-violet-500/5 dark:from-indigo-500/15 dark:to-violet-500/10 border-b border-indigo-200/30 dark:border-indigo-500/10">
@@ -130,33 +133,25 @@ const InfoPanel: React.FC<InfoPanelProps> = ({ ticket, onPreview, fontSize, onFo
                     <div className="px-4 py-3 bg-white/60 dark:bg-slate-800/30 space-y-2">
                         {ticket.contactName && (
                             <div className="flex items-center gap-2" style={{ fontSize: fs }}>
-                                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center shrink-0">
-                                    <UserCheck size={13} className="text-indigo-500" />
-                                </div>
+                                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center shrink-0"><UserCheck size={13} className="text-indigo-500" /></div>
                                 <span className="font-bold text-slate-700 dark:text-slate-200">{ticket.contactName}</span>
                             </div>
                         )}
                         {ticket.contactPhone && (
                             <div className="flex items-center gap-2" style={{ fontSize: fs }}>
-                                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center shrink-0">
-                                    <Phone size={13} className="text-indigo-500" />
-                                </div>
+                                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center shrink-0"><Phone size={13} className="text-indigo-500" /></div>
                                 <span className="text-slate-600 dark:text-slate-300">{ticket.contactPhone}</span>
                             </div>
                         )}
                         {ticket.contactEmail && (
                             <div className="flex items-center gap-2" style={{ fontSize: fs }}>
-                                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center shrink-0">
-                                    <Mail size={13} className="text-indigo-500" />
-                                </div>
+                                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center shrink-0"><Mail size={13} className="text-indigo-500" /></div>
                                 <span className="text-slate-600 dark:text-slate-300">{ticket.contactEmail}</span>
                             </div>
                         )}
                         {ticket.contactAddress && (
                             <div className="flex items-center gap-2" style={{ fontSize: fs }}>
-                                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center shrink-0">
-                                    <MapPin size={13} className="text-indigo-500" />
-                                </div>
+                                <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center shrink-0"><MapPin size={13} className="text-indigo-500" /></div>
                                 <span className="text-slate-600 dark:text-slate-300">{ticket.contactAddress}</span>
                             </div>
                         )}
@@ -164,7 +159,7 @@ const InfoPanel: React.FC<InfoPanelProps> = ({ ticket, onPreview, fontSize, onFo
                 </div>
             )}
 
-            {/* ── Order Detail Cards ── */}
+            {/* Order Detail Cards */}
             {filteredFormData.length > 0 && (
                 <div className="rounded-2xl overflow-hidden border border-violet-200/40 dark:border-violet-500/15 shadow-sm">
                     <div className="px-4 py-2 bg-gradient-to-r from-violet-500/10 to-fuchsia-500/5 dark:from-violet-500/15 dark:to-fuchsia-500/10 border-b border-violet-200/30 dark:border-violet-500/10">
@@ -183,7 +178,7 @@ const InfoPanel: React.FC<InfoPanelProps> = ({ ticket, onPreview, fontSize, onFo
                 </div>
             )}
 
-            {/* ── Images Card ── */}
+            {/* Images Card */}
             {ticket.imageUrls && ticket.imageUrls.length > 0 && (
                 <div className="rounded-2xl overflow-hidden border border-slate-200/50 dark:border-white/10 shadow-sm">
                     <div className="px-4 py-2 bg-gradient-to-r from-slate-100/80 to-slate-50/50 dark:from-slate-800/50 dark:to-slate-800/30 border-b border-slate-200/30 dark:border-white/5">
@@ -211,9 +206,239 @@ const InfoPanel: React.FC<InfoPanelProps> = ({ ticket, onPreview, fontSize, onFo
 
 
 // ════════════════════════════════════════════════════════════════
+// INLINE CHAT PANEL (embedded, not floating)
+// ════════════════════════════════════════════════════════════════
+interface InlineChatPanelProps {
+    ticketId: string;
+    ticketCode: string;
+    customerName: string;
+    isAdmin: boolean;
+    adminEmail: string;
+    messages: ChatMessage[];
+}
+
+const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ ticketId, ticketCode, customerName, isAdmin, adminEmail, messages }) => {
+    const [newMessage, setNewMessage] = useState('');
+    const [sending, setSending] = useState(false);
+    const [chatError, setChatError] = useState('');
+    const [previewImg, setPreviewImg] = useState<string | null>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const senderRole = isAdmin ? 'admin' : 'customer';
+    const displayName = isAdmin ? 'Admin' : customerName;
+
+    // Filter to chat messages only (exclude system events)
+    const chatMessages = messages.filter(m =>
+        !m.text.startsWith('🔄') && !m.text.startsWith('👤') && !m.text.startsWith('🎉') && !m.text.startsWith('📋')
+    );
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages.length]);
+
+    const handleSend = useCallback(async () => {
+        if (!newMessage.trim() || sending) return;
+        const msgText = newMessage.trim();
+        setNewMessage('');
+        setChatError('');
+        setSending(true);
+        setTimeout(() => setSending(false), 300);
+
+        const messagesRef = collection(db, 'ticket_chats', ticketId, 'messages');
+        addDoc(messagesRef, {
+            text: msgText,
+            sender: isAdmin ? 'Admin' : displayName,
+            senderRole,
+            senderEmail: isAdmin ? adminEmail : null,
+            ticketCode,
+            createdAt: serverTimestamp(),
+        }).catch((error) => {
+            console.error('[Chat] Send failed:', error);
+            setChatError('⚠️ Gửi tin nhắn thất bại.');
+            setNewMessage(msgText);
+        });
+    }, [newMessage, ticketId, ticketCode, sending, displayName, senderRole, isAdmin, adminEmail]);
+
+    const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const item of Array.from(items)) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const blob = item.getAsFile();
+                if (!blob) return;
+                setSending(true);
+                try {
+                    const file = new File([blob], `paste_${Date.now()}.png`, { type: blob.type });
+                    const result = await uploadFileToR2(file, 'design_ticket_chat');
+                    const messagesRef = collection(db, 'ticket_chats', ticketId, 'messages');
+                    await addDoc(messagesRef, {
+                        text: '📷 Hình ảnh',
+                        sender: isAdmin ? 'Admin' : displayName,
+                        senderRole,
+                        senderEmail: isAdmin ? adminEmail : null,
+                        ticketCode,
+                        imageUrl: result.url,
+                        createdAt: serverTimestamp(),
+                    });
+                } catch (err: any) {
+                    console.error('[Chat] Paste image failed:', err);
+                    setChatError(`⚠️ Gửi hình ảnh thất bại: ${err.message || 'Lỗi'}`);
+                } finally { setSending(false); }
+                break;
+            }
+        }
+    }, [ticketId, ticketCode, displayName, senderRole, isAdmin, adminEmail]);
+
+    const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setSending(true);
+        try {
+            const result = await uploadFileToR2(file, 'design_ticket_chat');
+            const label = file.type.startsWith('image/') ? `📷 ${file.name}` : `📎 ${file.name}`;
+            const messagesRef = collection(db, 'ticket_chats', ticketId, 'messages');
+            await addDoc(messagesRef, {
+                text: label,
+                sender: isAdmin ? 'Admin' : displayName,
+                senderRole,
+                senderEmail: isAdmin ? adminEmail : null,
+                ticketCode,
+                imageUrl: result.url,
+                createdAt: serverTimestamp(),
+            });
+        } catch (err: any) {
+            console.error('[Chat] File upload failed:', err);
+            setChatError(`⚠️ Gửi file thất bại: ${err.message || 'Lỗi'}`);
+        } finally { setSending(false); }
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    }, [ticketId, ticketCode, displayName, senderRole, isAdmin, adminEmail]);
+
+    return (
+        <div className="flex flex-col h-full">
+            {/* Chat header */}
+            <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-slate-200/50 dark:border-white/10 bg-gradient-to-r from-indigo-500/5 to-violet-500/5 dark:from-indigo-500/10 dark:to-violet-500/10 shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md shrink-0">
+                    <MessageCircle size={13} className="text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-black text-slate-800 dark:text-white truncate">Trao đổi Đơn hàng</p>
+                    <p className="text-[9px] text-slate-400 font-mono truncate">{ticketCode}</p>
+                </div>
+                <span className="text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{chatMessages.length}</span>
+            </div>
+
+            {/* Chat error */}
+            {chatError && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200/50 dark:border-amber-500/20 shrink-0">
+                    <AlertCircle size={11} className="text-amber-500 shrink-0" />
+                    <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium flex-1 truncate">{chatError}</span>
+                    <button onClick={() => setChatError('')} className="text-[9px] font-bold text-amber-600 px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 hover:bg-amber-200 shrink-0">X</button>
+                </div>
+            )}
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar min-h-0">
+                {chatMessages.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full text-center py-6">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-2.5">
+                            <MessageCircle size={20} className="text-slate-300 dark:text-slate-600" />
+                        </div>
+                        <p className="text-[11px] font-bold text-slate-400">Chưa có tin nhắn nào</p>
+                        <p className="text-[9px] text-slate-300 dark:text-slate-600 mt-0.5">Hãy gửi tin nhắn đầu tiên!</p>
+                    </div>
+                )}
+                {chatMessages.map((msg) => {
+                    const isCustomer = msg.senderRole === 'customer';
+                    const internalAdminName = msg.senderEmail ? (ADMIN_NAMES[msg.senderEmail] || msg.sender) : msg.sender;
+                    const showName = isCustomer ? msg.sender : (isAdmin ? internalAdminName : 'Admin');
+                    const isMe = isAdmin ? !isCustomer : isCustomer;
+
+                    return (
+                        <div key={msg.id} className={clsx("flex gap-1.5 w-full", isMe ? "flex-row-reverse" : "flex-row")}>
+                            <div className={clsx(
+                                "w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-[9px] font-black shadow-sm mt-0.5",
+                                isMe
+                                    ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white"
+                                    : "bg-gradient-to-br from-emerald-400 to-teal-500 text-white"
+                            )}>
+                                {showName?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                            <div className={clsx(
+                                "max-w-[82%] rounded-2xl px-3 py-2 shadow-sm break-words relative",
+                                isMe
+                                    ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-tr-sm"
+                                    : "bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-white/5 text-slate-800 dark:text-slate-200 rounded-tl-sm"
+                            )}>
+                                {!isMe && <p className="text-[9px] font-black mb-0.5 text-emerald-500 opacity-70">{showName}</p>}
+
+                                {msg.imageUrl && (
+                                    <div className="mb-1.5 rounded-xl overflow-hidden border border-black/10 dark:border-white/10 group relative max-w-[180px]">
+                                        <img src={msg.imageUrl} alt="attached" className="w-full h-auto cursor-pointer hover:scale-105 transition-transform" onClick={() => setPreviewImg(msg.imageUrl || null)} />
+                                    </div>
+                                )}
+
+                                <p className="text-[11px] leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                                <p className={clsx("text-[8px] mt-1 opacity-50", isMe ? "text-right" : "")}>{fmtTime(msg.createdAt)}</p>
+                            </div>
+                        </div>
+                    );
+                })}
+                <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="px-3 py-2.5 border-t border-slate-200/50 dark:border-white/10 bg-slate-50/50 dark:bg-slate-800/50 backdrop-blur-xl shrink-0">
+                <div className="flex gap-1.5">
+                    <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-all shrink-0"
+                    >
+                        <Paperclip size={14} />
+                    </button>
+                    <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
+                    <div className="flex-1 relative align-center flex">
+                        <textarea
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                            onPaste={handlePaste}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                            placeholder="Nhập tin nhắn..."
+                            rows={1}
+                            className="w-full h-8 px-3 py-2 rounded-xl bg-slate-100/80 dark:bg-slate-700/80 border border-slate-200/50 dark:border-white/10 text-[11px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30 resize-none transition-all"
+                        />
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleSend}
+                        disabled={!newMessage.trim() || sending}
+                        className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-lg disabled:opacity-40 transition-all shrink-0"
+                    >
+                        {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                    </button>
+                </div>
+            </div>
+
+            {/* Lightbox */}
+            {previewImg && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setPreviewImg(null)}>
+                    <button onClick={() => setPreviewImg(null)} className="absolute top-4 right-4 w-10 h-10 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-all z-10">
+                        <X size={20} />
+                    </button>
+                    <img src={previewImg} alt="Preview" className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl object-contain" onClick={e => e.stopPropagation()} />
+                </div>
+            )}
+        </div>
+    );
+};
+
+
+// ════════════════════════════════════════════════════════════════
 // MAIN POPUP COMPONENT
 // ════════════════════════════════════════════════════════════════
-const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, adminEmail, adminName, onTicketUpdate }) => {
+const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, adminEmail, adminName: _adminName, onTicketUpdate }) => {
     const [mobileTab, setMobileTab] = useState<'info' | 'chat' | 'timeline'>('info');
     const [infoFontSize, setInfoFontSize] = useState(12);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -232,13 +457,16 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
     const [showStatusMenu, setShowStatusMenu] = useState(false);
     const [showAssignMenu, setShowAssignMenu] = useState(false);
 
-    // ── Status change handler (Hybrid: Sheet primary, Supabase fallback) ──
+    // Unread chat count for mobile tab badge
+    const chatMessages = messages.filter(m =>
+        !m.text.startsWith('🔄') && !m.text.startsWith('👤') && !m.text.startsWith('🎉') && !m.text.startsWith('📋')
+    );
+
+    // ── Status change handler ──
     const handleStatusChange = useCallback(async (newStatus: string) => {
         setUpdating(true);
         try {
             const now = new Date().toISOString();
-
-            // Update Firestore first
             const updateData: any = {
                 status: newStatus,
                 updatedAt: Timestamp.now(),
@@ -248,7 +476,6 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
 
             await updateDoc(doc(db, 'design_tickets', ticket.id), updateData);
 
-            // Sheet backup (fire-and-forget)
             if (isSheetConfigured()) {
                 updateTicketOnSheet(ticket.ticketCode, { status: newStatus })
                     .catch(err => console.warn('[Sheet] Status backup failed:', err));
@@ -264,7 +491,6 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
             setTicket(updatedTicket);
             onTicketUpdate?.(updatedTicket);
 
-            // Send system message via Firestore
             const stLabel = STATUS_CFG[newStatus]?.label || newStatus;
             const messagesRef = collection(db, 'ticket_chats', ticket.id, 'messages');
             await addDoc(messagesRef, {
@@ -280,19 +506,16 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
         }
     }, [ticket, adminEmail, onTicketUpdate]);
 
-    // ── Assign handler (Hybrid: Sheet primary, Supabase fallback) ──
+    // ── Assign handler ──
     const handleAssign = useCallback(async (handler: string) => {
         setUpdating(true);
         try {
             const now = new Date().toISOString();
-
-            // Update Firestore first
             await updateDoc(doc(db, 'design_tickets', ticket.id), {
                 assignedTo: handler,
                 updatedAt: Timestamp.now(),
             });
 
-            // Sheet backup (fire-and-forget)
             if (isSheetConfigured()) {
                 updateTicketOnSheet(ticket.ticketCode, { assignedTo: handler })
                     .catch(err => console.warn('[Sheet] Assign backup failed:', err));
@@ -308,10 +531,10 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
         }
     }, [ticket, adminEmail, onTicketUpdate]);
 
-    // ── Load system events for timeline (Firestore) ──
+    // ── Load messages (includes chat + system events) ──
     useEffect(() => {
         const messagesRef = collection(db, 'ticket_chats', ticket.id, 'messages');
-        const q = query(messagesRef, orderBy('createdAt', 'asc'), limit(100));
+        const q = query(messagesRef, orderBy('createdAt', 'asc'), limit(200));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const msgs: ChatMessage[] = snapshot.docs.map(d => {
@@ -326,14 +549,13 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
             });
             setMessages(msgs);
         }, (error) => {
-            console.error('[Timeline] Firestore listen error:', error);
+            console.error('[Messages] Firestore listen error:', error);
         });
 
         return () => unsubscribe();
     }, [ticket.id]);
 
     useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-
 
     // ESC close
     useEffect(() => {
@@ -343,13 +565,13 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
 
 
     return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4" onClick={onClose}>
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
             {/* Modal */}
-            <div className="relative w-full max-w-5xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl shadow-black/30 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()} style={{ fontFamily: "'Be Vietnam Pro', sans-serif" }}>
+            <div className="relative w-full max-w-6xl max-h-[92vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl shadow-black/30 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()} style={{ fontFamily: "'Be Vietnam Pro', sans-serif" }}>
 
-                {/* ─── Header (all info consolidated here) ─── */}
+                {/* ─── Header ─── */}
                 <div className={clsx("relative px-5 md:px-6 py-3 md:py-4 bg-gradient-to-r text-white shrink-0", cat.gradient)} style={{ fontFamily: "'Be Vietnam Pro', sans-serif" }}>
                     <button onClick={onClose} className="absolute top-3 right-4 w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all z-10">
                         <X size={16} />
@@ -357,7 +579,6 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
 
                     {/* Row 1: Brand + Interactive chips */}
                     <div className="flex flex-col md:flex-row md:items-center md:gap-5">
-                        {/* Brand info */}
                         <div className="flex items-center gap-3 shrink-0">
                             <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-xl border border-white/20 flex items-center justify-center shrink-0">
                                 <CatIcon size={18} className="text-white" />
@@ -368,10 +589,10 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
                             </div>
                         </div>
 
-                        {/* Interactive chips row — Glassmorphism */}
+                        {/* Interactive chips */}
                         <div className="flex-1 min-w-0 mt-2.5 md:mt-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                                {/* Status chip (clickable → dropdown) */}
+                                {/* Status chip */}
                                 <div className="relative">
                                     <button
                                         onClick={() => { if (nextStatuses.length > 0) { setShowStatusMenu(!showStatusMenu); setShowAssignMenu(false); } }}
@@ -409,7 +630,7 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
                                     )}
                                 </div>
 
-                                {/* Assign chip (clickable → dropdown) */}
+                                {/* Assign chip */}
                                 <div className="relative">
                                     <button
                                         onClick={() => { setShowAssignMenu(!showAssignMenu); setShowStatusMenu(false); }}
@@ -470,94 +691,114 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
                     </div>
                 </div>
 
-                {/* ─── Mobile: Tab switcher ─── */}
+                {/* ─── Mobile: Tab switcher (3 tabs) ─── */}
                 <div className="flex md:hidden border-b border-slate-200/50 dark:border-white/10 bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
                     <button onClick={() => setMobileTab('info')} className={clsx("flex-1 py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all",
                         mobileTab === 'info' ? 'border-violet-500 text-violet-600' : 'border-transparent text-slate-400')}>
                         <FileText size={13} /> Chi tiết
                     </button>
-                                        <button onClick={() => setMobileTab('timeline')} className={clsx("flex-1 py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all",
+                    <button onClick={() => setMobileTab('timeline')} className={clsx("flex-1 py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all",
                         mobileTab === 'timeline' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-400')}>
                         <History size={13} /> Lịch sử
                     </button>
+                    <button onClick={() => setMobileTab('chat')} className={clsx("flex-1 py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 border-b-2 transition-all relative",
+                        mobileTab === 'chat' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-400')}>
+                        <MessageCircle size={13} /> Chat
+                        {chatMessages.length > 0 && mobileTab !== 'chat' && (
+                            <span className="absolute top-1.5 right-[20%] w-2 h-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-800" />
+                        )}
+                    </button>
                 </div>
 
-                {/* ─── Content ─── */}
+                {/* ─── Content: 3-column layout (desktop) / tabs (mobile) ─── */}
                 <div className="flex-1 overflow-hidden flex flex-col md:flex-row min-h-0">
+                    {/* Column 1: Info */}
                     <div className={clsx(
-                        "md:w-[45%] md:border-r border-slate-200/50 dark:border-white/10 overflow-y-auto",
+                        "md:w-[35%] md:border-r border-slate-200/50 dark:border-white/10 overflow-y-auto",
                         "md:block", mobileTab === 'info' ? 'block' : 'hidden'
                     )}>
                         <InfoPanel ticket={ticket} onPreview={setPreviewImg} fontSize={infoFontSize} onFontSizeChange={(d) => setInfoFontSize(prev => Math.max(11, Math.min(20, prev + d)))} />
                     </div>
+
+                    {/* Column 2: Timeline */}
                     <div className={clsx(
-                        "md:w-[55%] md:flex md:flex-col",
+                        "md:w-[30%] md:flex md:flex-col md:border-r border-slate-200/50 dark:border-white/10",
                         mobileTab === 'timeline' ? 'flex flex-col' : 'hidden md:flex'
                     )} style={{ minHeight: 0 }}>
-                        {/* Timeline content */}
-                        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                                {(() => {
-                                    // Only system events — no chat messages
-                                    const systemEvents = messages.filter(m => m.text.startsWith('🔄') || m.text.startsWith('👤') || m.text.startsWith('🎉') || m.text.startsWith('📋'));
-                                    if (systemEvents.length === 0) return (
-                                        <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                                            <div className="w-16 h-16 rounded-2xl bg-white/60 dark:bg-white/5 backdrop-blur-xl border border-white/30 dark:border-white/10 flex items-center justify-center mb-4 shadow-lg">
-                                                <History size={28} className="text-slate-300 dark:text-slate-500" />
-                                            </div>
-                                            <p className="text-sm font-bold text-slate-400">Chưa có sự kiện nào</p>
-                                            <p className="text-[10px] text-slate-300 mt-1">Các thay đổi trạng thái sẽ hiển thị tại đây</p>
+                        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-200/50 dark:border-white/10 bg-gradient-to-r from-amber-500/5 to-orange-500/5 dark:from-amber-500/10 dark:to-orange-500/10 shrink-0">
+                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-md shrink-0">
+                                <History size={13} className="text-white" />
+                            </div>
+                            <p className="text-[11px] font-black text-slate-800 dark:text-white">Lịch sử hoạt động</p>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                            {(() => {
+                                const systemEvents = messages.filter(m => m.text.startsWith('🔄') || m.text.startsWith('👤') || m.text.startsWith('🎉') || m.text.startsWith('📋'));
+                                if (systemEvents.length === 0) return (
+                                    <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                                        <div className="w-14 h-14 rounded-2xl bg-white/60 dark:bg-white/5 backdrop-blur-xl border border-white/30 dark:border-white/10 flex items-center justify-center mb-3 shadow-lg">
+                                            <History size={24} className="text-slate-300 dark:text-slate-500" />
                                         </div>
-                                    );
-                                    return (
-                                        <div className="relative">
-                                            {/* Glass timeline line */}
-                                            <div className="absolute left-[18px] top-4 bottom-4 w-[2px] rounded-full" style={{ background: 'linear-gradient(180deg, rgba(139,92,213,0.4) 0%, rgba(99,102,241,0.3) 50%, rgba(148,163,184,0.15) 100%)' }} />
+                                        <p className="text-[11px] font-bold text-slate-400">Chưa có sự kiện nào</p>
+                                        <p className="text-[9px] text-slate-300 mt-0.5">Các thay đổi trạng thái sẽ hiển thị tại đây</p>
+                                    </div>
+                                );
+                                return (
+                                    <div className="relative">
+                                        <div className="absolute left-[15px] top-4 bottom-4 w-[2px] rounded-full" style={{ background: 'linear-gradient(180deg, rgba(139,92,213,0.4) 0%, rgba(99,102,241,0.3) 50%, rgba(148,163,184,0.15) 100%)' }} />
+                                        <div className="space-y-2">
+                                            {[...systemEvents].reverse().map((msg) => {
+                                                const isStatus = msg.text.startsWith('🔄');
+                                                const isAssign = msg.text.startsWith('👤');
+                                                const icon = isStatus ? <Clock size={10} /> : isAssign ? <UserCheck size={10} /> : <CheckCircle2 size={10} />;
+                                                const accentFrom = isStatus ? 'from-amber-400 to-orange-500' : isAssign ? 'from-sky-400 to-blue-500' : 'from-emerald-400 to-green-500';
+                                                const cardBorder = isStatus ? 'border-amber-200/40 dark:border-amber-500/15' : isAssign ? 'border-sky-200/40 dark:border-sky-500/15' : 'border-emerald-200/40 dark:border-emerald-500/15';
+                                                const cardGlow = isStatus ? 'hover:shadow-amber-200/20' : isAssign ? 'hover:shadow-sky-200/20' : 'hover:shadow-emerald-200/20';
 
-                                            <div className="space-y-2">
-                                                {[...systemEvents].reverse().map((msg) => {
-                                                    const isStatus = msg.text.startsWith('🔄');
-                                                    const isAssign = msg.text.startsWith('👤');
-                                                    const icon = isStatus ? <Clock size={11} /> : isAssign ? <UserCheck size={11} /> : <CheckCircle2 size={11} />;
-                                                    const accentFrom = isStatus ? 'from-amber-400 to-orange-500' : isAssign ? 'from-sky-400 to-blue-500' : 'from-emerald-400 to-green-500';
-                                                    const cardBorder = isStatus ? 'border-amber-200/40 dark:border-amber-500/15' : isAssign ? 'border-sky-200/40 dark:border-sky-500/15' : 'border-emerald-200/40 dark:border-emerald-500/15';
-                                                    const cardGlow = isStatus ? 'hover:shadow-amber-200/20 dark:hover:shadow-amber-500/10' : isAssign ? 'hover:shadow-sky-200/20 dark:hover:shadow-sky-500/10' : 'hover:shadow-emerald-200/20 dark:hover:shadow-emerald-500/10';
-
-                                                    return (
-                                                        <div key={msg.id} className="relative flex items-start gap-3 pl-0.5">
-                                                            {/* Dot */}
-                                                            <div className={clsx("w-[38px] h-[38px] rounded-xl bg-gradient-to-br flex items-center justify-center shrink-0 text-white z-10 shadow-lg", accentFrom)}
-                                                                style={{ backdropFilter: 'blur(8px)' }}>
-                                                                {icon}
-                                                            </div>
-                                                            {/* Glass card */}
-                                                            <div className={clsx(
-                                                                "flex-1 min-w-0 rounded-xl px-3.5 py-2.5 border transition-all",
-                                                                "bg-white/50 dark:bg-white/[0.04] backdrop-blur-xl",
-                                                                "shadow-sm hover:shadow-md",
-                                                                cardBorder, cardGlow
-                                                            )}>
-                                                                <p className="text-[12px] font-semibold text-slate-700 dark:text-slate-200 leading-relaxed" style={{ wordBreak: 'break-word' }}>
-                                                                    {msg.text}
-                                                                </p>
-                                                                <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 font-medium">
-                                                                    {fmtTime(msg.createdAt)} • {msg.sender}
-                                                                </p>
-                                                            </div>
+                                                return (
+                                                    <div key={msg.id} className="relative flex items-start gap-2 pl-0.5">
+                                                        <div className={clsx("w-[32px] h-[32px] rounded-lg bg-gradient-to-br flex items-center justify-center shrink-0 text-white z-10 shadow-md", accentFrom)}>
+                                                            {icon}
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
+                                                        <div className={clsx(
+                                                            "flex-1 min-w-0 rounded-xl px-3 py-2 border transition-all",
+                                                            "bg-white/50 dark:bg-white/[0.04] backdrop-blur-xl",
+                                                            "shadow-sm hover:shadow-md",
+                                                            cardBorder, cardGlow
+                                                        )}>
+                                                            <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 leading-relaxed" style={{ wordBreak: 'break-word' }}>
+                                                                {msg.text}
+                                                            </p>
+                                                            <p className="text-[8px] text-slate-400 dark:text-slate-500 mt-0.5 font-medium">
+                                                                {fmtTime(msg.createdAt)} • {msg.sender}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
-                                    );
-                                })()}
+                                    </div>
+                                );
+                            })()}
+                            <div ref={endRef} />
                         </div>
                     </div>
-                </div>
-            </div>
 
-            {/* ─── Floating Chat ─── */}
-            <div onClick={e => e.stopPropagation()}>
-                <FloatingTicketChat ticketId={ticket.id} ticketCode={ticket.ticketCode} customerName={ticket.brandName || 'Khách hàng'} isAdmin={true} adminEmail={adminEmail} adminName={adminName} />
+                    {/* Column 3: Chat */}
+                    <div className={clsx(
+                        "md:w-[35%] md:flex md:flex-col",
+                        mobileTab === 'chat' ? 'flex flex-col flex-1' : 'hidden md:flex'
+                    )} style={{ minHeight: 0 }}>
+                        <InlineChatPanel
+                            ticketId={ticket.id}
+                            ticketCode={ticket.ticketCode}
+                            customerName={ticket.brandName || 'Khách hàng'}
+                            isAdmin={true}
+                            adminEmail={adminEmail}
+                            messages={messages}
+                        />
+                    </div>
+                </div>
             </div>
 
             {/* ─── Image Lightbox ─── */}
