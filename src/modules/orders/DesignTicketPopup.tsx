@@ -88,6 +88,12 @@ function fmtTime(ts: any) {
     return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' • ' + d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 }
 
+// System event emojis — messages starting with these are timeline events, NOT chat
+const SYSTEM_EMOJIS = ['🔄', '👤', '🎉', '📋', '🔍', '✅', '❌'];
+function isSystemEvent(text: string): boolean {
+    return SYSTEM_EMOJIS.some(e => text.startsWith(e));
+}
+
 // ════════════════════════════════════════════════════════════════
 // INFO PANEL
 // ════════════════════════════════════════════════════════════════
@@ -229,9 +235,7 @@ const InlineChatPanel: React.FC<InlineChatPanelProps> = ({ ticketId, ticketCode,
     const displayName = isAdmin ? 'Admin' : customerName;
 
     // Filter to chat messages only (exclude system events)
-    const chatMessages = messages.filter(m =>
-        !m.text.startsWith('🔄') && !m.text.startsWith('👤') && !m.text.startsWith('🎉') && !m.text.startsWith('📋')
-    );
+    const chatMessages = messages.filter(m => !isSystemEvent(m.text));
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -458,9 +462,7 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
     const [showAssignMenu, setShowAssignMenu] = useState(false);
 
     // Unread chat count for mobile tab badge
-    const chatMessages = messages.filter(m =>
-        !m.text.startsWith('🔄') && !m.text.startsWith('👤') && !m.text.startsWith('🎉') && !m.text.startsWith('📋')
-    );
+    const chatMessages = messages.filter(m => !isSystemEvent(m.text));
 
     // ── Status change handler ──
     const handleStatusChange = useCallback(async (newStatus: string) => {
@@ -733,7 +735,7 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
                         </div>
                         <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
                             {(() => {
-                                const systemEvents = messages.filter(m => m.text.startsWith('🔄') || m.text.startsWith('👤') || m.text.startsWith('🎉') || m.text.startsWith('📋'));
+                                const systemEvents = messages.filter(m => isSystemEvent(m.text));
                                 if (systemEvents.length === 0) return (
                                     <div className="flex flex-col items-center justify-center h-full text-center py-8">
                                         <div className="w-14 h-14 rounded-2xl bg-white/60 dark:bg-white/5 backdrop-blur-xl border border-white/30 dark:border-white/10 flex items-center justify-center mb-3 shadow-lg">
@@ -748,12 +750,38 @@ const DesignTicketPopup: React.FC<Props> = ({ ticket: initialTicket, onClose, ad
                                         <div className="absolute left-[15px] top-4 bottom-4 w-[2px] rounded-full" style={{ background: 'linear-gradient(180deg, rgba(139,92,213,0.4) 0%, rgba(99,102,241,0.3) 50%, rgba(148,163,184,0.15) 100%)' }} />
                                         <div className="space-y-2">
                                             {[...systemEvents].reverse().map((msg) => {
-                                                const isStatus = msg.text.startsWith('🔄');
                                                 const isAssign = msg.text.startsWith('👤');
-                                                const icon = isStatus ? <Clock size={10} /> : isAssign ? <UserCheck size={10} /> : <CheckCircle2 size={10} />;
-                                                const accentFrom = isStatus ? 'from-amber-400 to-orange-500' : isAssign ? 'from-sky-400 to-blue-500' : 'from-emerald-400 to-green-500';
-                                                const cardBorder = isStatus ? 'border-amber-200/40 dark:border-amber-500/15' : isAssign ? 'border-sky-200/40 dark:border-sky-500/15' : 'border-emerald-200/40 dark:border-emerald-500/15';
-                                                const cardGlow = isStatus ? 'hover:shadow-amber-200/20' : isAssign ? 'hover:shadow-sky-200/20' : 'hover:shadow-emerald-200/20';
+                                                const isApproved = msg.text.startsWith('✅');
+                                                const isCancel = msg.text.startsWith('❌');
+                                                const isComplete = msg.text.startsWith('🎉');
+
+                                                let icon, accentFrom, cardBorder, cardGlow;
+                                                if (isCancel) {
+                                                    icon = <X size={10} />;
+                                                    accentFrom = 'from-red-400 to-rose-500';
+                                                    cardBorder = 'border-red-200/40 dark:border-red-500/15';
+                                                    cardGlow = 'hover:shadow-red-200/20';
+                                                } else if (isApproved) {
+                                                    icon = <CheckCircle2 size={10} />;
+                                                    accentFrom = 'from-emerald-400 to-green-500';
+                                                    cardBorder = 'border-emerald-200/40 dark:border-emerald-500/15';
+                                                    cardGlow = 'hover:shadow-emerald-200/20';
+                                                } else if (isComplete) {
+                                                    icon = <CheckCircle2 size={10} />;
+                                                    accentFrom = 'from-green-400 to-emerald-600';
+                                                    cardBorder = 'border-green-200/40 dark:border-green-500/15';
+                                                    cardGlow = 'hover:shadow-green-200/20';
+                                                } else if (isAssign) {
+                                                    icon = <UserCheck size={10} />;
+                                                    accentFrom = 'from-sky-400 to-blue-500';
+                                                    cardBorder = 'border-sky-200/40 dark:border-sky-500/15';
+                                                    cardGlow = 'hover:shadow-sky-200/20';
+                                                } else {
+                                                    icon = <Clock size={10} />;
+                                                    accentFrom = 'from-amber-400 to-orange-500';
+                                                    cardBorder = 'border-amber-200/40 dark:border-amber-500/15';
+                                                    cardGlow = 'hover:shadow-amber-200/20';
+                                                }
 
                                                 return (
                                                     <div key={msg.id} className="relative flex items-start gap-2 pl-0.5">
