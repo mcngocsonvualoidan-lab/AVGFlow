@@ -125,7 +125,7 @@ interface FormField {
 }
 
 // Customer data — type imported from customerService
-import { fetchCustomers as fetchCustomerService, subscribeToCustomerChanges, type CustomerContact } from '../../services/customerService';
+import { fetchCustomers as fetchCustomerService, subscribeToCustomerChanges, findCustomerByEmail, type CustomerContact } from '../../services/customerService';
 import { fetchCatalog as fetchCatalogFromService, subscribeToCatalogChanges } from '../../services/catalogService';
 
 const CUSTOMER_INFO_FIELDS: FormField[] = [
@@ -688,12 +688,38 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 // ============================================================
 const DesignOrderForm: React.FC = () => {
     const { currentUser } = useAuth();
+    const userEmail = (currentUser?.email || '').toLowerCase().trim();
+    const isAdmin = ADMIN_EMAILS.includes(userEmail);
+    const adminName = ADMIN_NAMES[userEmail] || currentUser?.displayName || 'Admin';
+
     const [step, setStep] = useState<'select-category' | 'select-action' | 'fill-form' | 'ticket-view'>('select-category');
     const [selectedCategory, setSelectedCategory] = useState<CategoryKey | null>(null);
     const [selectedAction, setSelectedAction] = useState<'edit' | 'new' | null>(null);
     const [formValues, setFormValues] = useState<Record<string, string>>({});
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
+
+    // 🔒 Auto-detect customer profile from Sheet
+    const [autoProfile, setAutoProfile] = useState<CustomerContact | null>(null);
+    const [, _setProfileLoading] = useState(true);
+
+    useEffect(() => {
+        if (!userEmail) { _setProfileLoading(false); return; }
+        let cancelled = false;
+        (async () => {
+            try {
+                const profile = await findCustomerByEmail(userEmail);
+                if (!cancelled && profile) {
+                    setAutoProfile(profile);
+                }
+            } catch (err) {
+                console.warn('[DesignOrderForm] Profile lookup failed:', err);
+            } finally {
+                if (!cancelled) _setProfileLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [userEmail]);
 
     // Ticket state
     const [activeTicket, setActiveTicket] = useState<DesignTicket | null>(null);
@@ -875,6 +901,25 @@ Yêu cầu:
         return () => unsubscribe();
     }, []);
 
+    // Auto-fill "Ngày đặt hàng" with today's date when entering form
+    // Also auto-fill customer fields if profile detected
+    useEffect(() => {
+        if (step === 'fill-form') {
+            setFormValues(p => {
+                const updates: Record<string, string> = {};
+                if (!p['Ngày đặt hàng']) updates['Ngày đặt hàng'] = getTodayDDMMYYYY();
+                if (autoProfile && !isAdmin) {
+                    updates['Tên đơn vị đặt hàng'] = autoProfile.company || '';
+                    updates['Người đặt hàng'] = autoProfile.name || '';
+                    updates['Số điện thoại'] = autoProfile.phone || '';
+                    updates['Địa chỉ'] = autoProfile.address || '';
+                    updates['Email'] = autoProfile.email || '';
+                }
+                return { ...p, ...updates };
+            });
+        }
+    }, [step, autoProfile, isAdmin]);
+
     // Derived customer data — independent lists
     const companyList = useMemo(() => [...new Set(customerContacts.map(c => c.company))].filter(Boolean), [customerContacts]);
     // Person list shows ALL contacts (independent of selected company)
@@ -965,11 +1010,6 @@ Yêu cầu:
     const [uploadedImages, setUploadedImages] = useState<{ name: string; url: string; preview: string }[]>([]);
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-
-    // Admin check
-    const userEmail = currentUser?.email || '';
-    const isAdmin = ADMIN_EMAILS.includes(userEmail);
-    const adminName = ADMIN_NAMES[userEmail] || currentUser?.displayName || 'Admin';
 
     // Load tickets — Firestore PRIMARY with realtime
     const [ticketsLoading, setTicketsLoading] = useState(true);
@@ -1636,6 +1676,13 @@ Yêu cầu:
                                     'backdrop-blur-xl border text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30 transition-all shadow-sm'
                                 );
                                 if (f.type === 'customer-company-dropdown') {
+                                    if (autoProfile && !isAdmin) {
+                                        return (
+                                            <div className="w-full px-4 py-3 rounded-2xl bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-500/10 dark:to-purple-500/10 border border-violet-200/60 dark:border-violet-500/20 text-sm font-semibold text-slate-800 dark:text-slate-200 cursor-not-allowed">
+                                                {autoProfile.company || '—'}
+                                            </div>
+                                        );
+                                    }
                                     return (
                                         <SearchableDropdown
                                             value={formValues[f.label] || ''}
@@ -1648,6 +1695,23 @@ Yêu cầu:
                                     );
                                 }
                                 if (f.type === 'customer-person-dropdown') {
+                                    if (autoProfile && !isAdmin) {
+                                        return (
+                                            <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-500/10 dark:to-purple-500/10 border border-violet-200/60 dark:border-violet-500/20 cursor-not-allowed">
+                                                <span className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-black shadow-sm">
+                                                    {autoProfile.name.split(/\s+/).pop()?.charAt(0) || '?'}
+                                                </span>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{autoProfile.name}</p>
+                                                    {autoProfile.position && <p className="text-[10px] text-slate-500 dark:text-slate-400">{autoProfile.position}</p>}
+                                                </div>
+                                                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/60 dark:border-emerald-500/20">
+                                                    <CheckCircle2 size={9} className="text-emerald-500" />
+                                                    <span className="text-[8px] font-bold text-emerald-600 dark:text-emerald-400">Đã xác thực</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
                                     return (
                                         <SearchableDropdown
                                             value={formValues[f.label] || ''}
@@ -1703,8 +1767,16 @@ Yêu cầu:
                                         />
                                     );
                                 }
+                                const isLockedCustomerField = autoProfile && !isAdmin && ['Số điện thoại', 'Địa chỉ', 'Email'].includes(f.label);
                                 return (
-                                    <input type="text" value={formValues[f.label] || ''} onChange={(e) => setFormValues(p => ({ ...p, [f.label]: e.target.value }))} placeholder={f.placeholder} className={cls} />
+                                    <input
+                                        type="text"
+                                        value={formValues[f.label] || ''}
+                                        onChange={(e) => !isLockedCustomerField && setFormValues(p => ({ ...p, [f.label]: e.target.value }))}
+                                        placeholder={f.placeholder}
+                                        readOnly={!!isLockedCustomerField}
+                                        className={clsx(cls, isLockedCustomerField && 'bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-500/10 dark:to-purple-500/10 border-violet-200/60 dark:border-violet-500/20 cursor-not-allowed')}
+                                    />
                                 );
                             };
                             const flushHalf = () => {
