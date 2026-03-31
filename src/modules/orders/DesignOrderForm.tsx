@@ -11,6 +11,7 @@ import { initializeGemini } from '../../lib/gemini';
 // Design ticket handlers (only specific staff)
 const DESIGN_HANDLERS = ['Nguyễn Ngọc Sơn', 'Hà Ngọc Doanh'];
 import DesignTicketStats from './DesignTicketStats';
+import DesignTicketPopup from './DesignTicketPopup';
 // FloatingTicketChat replaced by inline embedded chat
 
 // System event emojis — messages starting with these are timeline events, NOT chat
@@ -697,6 +698,7 @@ const DesignOrderForm: React.FC = () => {
     // Ticket state
     const [activeTicket, setActiveTicket] = useState<DesignTicket | null>(null);
     const [myTickets, setMyTickets] = useState<DesignTicket[]>([]);
+    const [popupTicket, setPopupTicket] = useState<DesignTicket | null>(null);
 
     // Search & Filter
     const [searchQuery, setSearchQuery] = useState('');
@@ -1496,7 +1498,7 @@ Yêu cầu:
                                 } catch { createdStr = ''; }
                                 return (
                                     <div key={ticket.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group">
-                                        <button type="button" onClick={() => { setActiveTicket(ticket); setStep('ticket-view'); }} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                                        <button type="button" onClick={() => setPopupTicket(ticket)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                                             <div className={clsx("w-9 h-9 rounded-xl bg-gradient-to-br flex items-center justify-center shrink-0 shadow-md relative", catCfg.gradient)}>
                                                 {React.createElement(catCfg.icon, { size: 16, className: 'text-white' })}
                                                 <span className={clsx("absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-800", statusCfg.dot)} />
@@ -2528,6 +2530,19 @@ Yêu cầu:
                 </div>
             )}
             {/* Floating chat removed — chat is now inline in ticket-view */}
+            {/* DesignTicketPopup for list item clicks */}
+            {popupTicket && (
+                <DesignTicketPopup
+                    ticket={popupTicket as any}
+                    onClose={() => setPopupTicket(null)}
+                    adminEmail={userEmail}
+                    adminName={adminName}
+                    onTicketUpdate={(updated) => {
+                        setMyTickets(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } as DesignTicket : t));
+                        setPopupTicket(prev => prev?.id === updated.id ? { ...prev, ...updated } as DesignTicket : prev);
+                    }}
+                />
+            )}
             {/* Chat Image Lightbox */}
             {chatPreviewImg && (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setChatPreviewImg(null)}>
